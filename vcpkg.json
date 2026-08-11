@@ -1,0 +1,9 @@
+{
+  "name": "eyetrace-query",
+  "version-string": "0.1.0",
+  "dependencies": [
+    "tinyxml2",
+    "nlohmann-json"
+  ],
+  "builtin-baseline": "15ba82e5c7bde5a274cd06047664cff308ec1292"
+}

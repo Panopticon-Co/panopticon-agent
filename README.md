@@ -6,50 +6,69 @@ source XML, parse selected Event ID 1 fields, and write normalized NDJSON.
 
 ## Status
 
-Milestone 3 is implemented: EyeTrace Query retrieves a bounded number of the
-newest recorded Sysmon Event ID 1 records and prints each one as raw XML. XML
-parsing and NDJSON output are not implemented yet.
+Milestone 4 is implemented, together with JSON output requested for the next
+milestone. EyeTrace Query retrieves bounded Sysmon Event ID 1 records, parses
+their XML, and emits normalized NDJSON. Raw XML remains available for learning
+and troubleshooting.
 
 ## Milestone 1 prerequisites
 
 - Windows 11 on Arm64
 - Visual Studio 2026 with the **Desktop development with C++** workload
 - CMake 3.20 or later
+- vcpkg (bundled with this Visual Studio installation)
 
 This workspace's CMake comes with Visual Studio. In an Arm64 Developer
 PowerShell for Visual Studio, configure and build with:
 
 ```powershell
-cmake -S . -B build-arm64 -G Ninja
-cmake --build build-arm64
+cmake -S . -B build-arm64-vcpkg -G Ninja `
+  -DCMAKE_TOOLCHAIN_FILE="C:/Program Files/Microsoft Visual Studio/18/Community/VC/vcpkg/scripts/buildsystems/vcpkg.cmake" `
+  -DVCPKG_TARGET_TRIPLET=arm64-windows
+cmake --build build-arm64-vcpkg
 ```
 
 If `cmake` is not on `PATH`, use Visual Studio's bundled executable:
 
 ```powershell
-& 'C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe' -S . -B build-arm64 -G Ninja
+& 'C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe' -S . -B build-arm64-vcpkg -G Ninja `
+  -DCMAKE_TOOLCHAIN_FILE="C:/Program Files/Microsoft Visual Studio/18/Community/VC/vcpkg/scripts/buildsystems/vcpkg.cmake" `
+  -DVCPKG_TARGET_TRIPLET=arm64-windows
 ```
 
-## Raw XML usage (Milestone 3)
+`vcpkg.json` pins a registry baseline and declares TinyXML2 and nlohmann/json.
+CMake's manifest mode installs them into the ignored build directory.
+
+## NDJSON usage
 
 ```powershell
-.\build-arm64\eyetrace-query.exe --limit 3 > "$env:TEMP\eyetrace.xml"
-notepad "$env:TEMP\eyetrace.xml"
+.\build-arm64-vcpkg\eyetrace-query.exe --limit 3 --output "$env:TEMP\eyetrace.ndjson"
 ```
 
-`--limit` accepts an integer from 1 to 1000 and defaults to 20. Results are
-newest first. The XML contains sensitive telemetry, so the example writes it
-to a temporary file instead of printing it in a shared terminal. Do not commit
-the file.
+The program writes the same NDJSON lines to the console and the optional output
+file. `--limit` accepts an integer from 1 to 1000 and defaults to 20. Results
+are newest first. Each JSON object has `schema_version`, `timestamp`, `source`,
+`host`, `event`, `process`, and `parent` sections. Missing optional values are
+JSON `null`; malformed XML or present-but-invalid numeric fields are errors.
+
+Validate each local output line in PowerShell:
+
+```powershell
+Get-Content "$env:TEMP\eyetrace.ndjson" | ForEach-Object { $_ | ConvertFrom-Json | Out-Null }
+```
+
+To inspect the original XML instead, use `--format xml`. Telemetry is sensitive:
+do not commit raw XML or NDJSON files.
 
 ## How the first build works
 
-`src/main.cpp` includes `windows.h` and `winevt.h`, both supplied by the
-Windows SDK installed with Visual Studio. They declare the Windows Event Log
-API, including the `EvtQuery`, `EvtNext`, and `EvtRender` functions we will add
-next. `CMakeLists.txt` links `wevtapi`; on MSVC this selects the SDK import
-library `wevtapi.lib`, allowing the linker to resolve those functions to the
-Windows Event Log implementation at runtime.
+`src/event_log_reader.cpp` includes `windows.h` and `winevt.h`, both supplied
+by the Windows SDK installed with Visual Studio. They declare the Windows Event
+Log API, including `EvtQuery`, `EvtNext`, and `EvtRender`. `CMakeLists.txt`
+links `wevtapi`; on MSVC this selects the SDK import library `wevtapi.lib`,
+allowing the linker to resolve those functions to the Windows Event Log
+implementation at runtime. TinyXML2 parses rendered XML, and nlohmann/json
+serializes the normalized event to NDJSON.
 
 `/W4` enables a useful MSVC warning level, `/permissive-` uses more standard
 C++ conformance, `/EHsc` enables normal C++ exception handling, and `/utf-8`
