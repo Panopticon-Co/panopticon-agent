@@ -4,7 +4,10 @@ project(eyetrace_query VERSION 0.1.0 LANGUAGES CXX)
 
 add_executable(eyetrace-query
     src/main.cpp
+    src/event_log_reader.cpp
 )
+
+target_include_directories(eyetrace-query PRIVATE include)
 
 target_compile_features(eyetrace-query PRIVATE cxx_std_20)
 
