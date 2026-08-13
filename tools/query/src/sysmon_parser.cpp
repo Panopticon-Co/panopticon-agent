@@ -1,4 +1,4 @@
-#include "eyetrace/sysmon_parser.hpp"
+#include "panopticon/officer/query/sysmon_parser.hpp"
 
 #include <tinyxml2.h>
 
@@ -7,7 +7,7 @@
 #include <string>
 #include <unordered_map>
 
-namespace eyetrace {
+namespace panopticon::officer::query {
 namespace {
 
 using FieldMap = std::unordered_map<std::string, std::string>;
@@ -157,4 +157,4 @@ std::optional<TelemetryEvent> SysmonParser::parse_xml(std::string_view xml, std:
     return result;
 }
 
-}  // namespace eyetrace
+}  // namespace panopticon::officer::query

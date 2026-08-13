@@ -1,5 +1,5 @@
-#include "eyetrace/event_log_reader.hpp"
-#include "eyetrace/win_event_handle.hpp"
+#include "panopticon/officer/query/event_log_reader.hpp"
+#include "panopticon/officer/query/win_event_handle.hpp"
 
 #include <windows.h>
 #include <winevt.h>
@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-namespace eyetrace {
+namespace panopticon::officer::query {
 namespace {
 
 constexpr wchar_t kSysmonChannel[] = L"Microsoft-Windows-Sysmon/Operational";
@@ -118,4 +118,4 @@ std::optional<std::vector<std::string>> EventLogReader::read_newest_event_xmls(
     return xml_events;
 }
 
-}  // namespace eyetrace
+}  // namespace panopticon::officer::query

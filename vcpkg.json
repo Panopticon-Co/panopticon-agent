@@ -1,5 +1,5 @@
 {
-  "name": "eyetrace-query",
+  "name": "officer",
   "version-string": "0.1.0",
   "dependencies": [
     "tinyxml2",

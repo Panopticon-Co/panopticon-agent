@@ -1,0 +1,4 @@
+<Event xmlns="http://schemas.microsoft.com/win/2004/08/events/event">
+  <System><Provider Name="Microsoft-Windows-Sysmon" /><EventID>13</EventID><EventRecordID>103</EventRecordID><Channel>Microsoft-Windows-Sysmon/Operational</Channel><Computer>LAB-ARM64</Computer></System>
+  <EventData><Data Name="UtcTime">2026-08-11 12:03:00.000</Data><Data Name="ProcessGuid">{SANITIZED-REGISTRY}</Data><Data Name="ProcessId">4242</Data><Data Name="Image">C:\OfficerLab\sample.exe</Data><Data Name="User">LAB\analyst</Data><Data Name="EventType">SetValue</Data><Data Name="TargetObject">HKCU\Software\Officer\SafeValue</Data><Data Name="Details">DWORD (0x00000001)</Data></EventData>
+</Event>

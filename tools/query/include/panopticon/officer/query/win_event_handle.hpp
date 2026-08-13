@@ -5,7 +5,7 @@
 
 #include <utility>
 
-namespace eyetrace {
+namespace panopticon::officer::query {
 
 // Owns exactly one EVT_HANDLE. Copying is forbidden because two owners would
 // otherwise both call EvtClose on the same Windows resource.
@@ -42,4 +42,4 @@ private:
     EVT_HANDLE handle_{nullptr};
 };
 
-}  // namespace eyetrace
+}  // namespace panopticon::officer::query

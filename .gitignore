@@ -3,5 +3,5 @@ build-*/
 .vs/
 out/
 *.ndjson
-!docs/sample-output.ndjson
+!tools/query/docs/sample-output.ndjson
 *.evtx

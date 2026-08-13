@@ -1,12 +1,12 @@
 #pragma once
 
-#include "eyetrace/telemetry_event.hpp"
+#include "panopticon/officer/query/telemetry_event.hpp"
 
 #include <optional>
 #include <string>
 #include <string_view>
 
-namespace eyetrace {
+namespace panopticon::officer::query {
 
 class SysmonParser {
 public:
@@ -16,4 +16,4 @@ public:
         std::string_view xml, std::string& error_message);
 };
 
-}  // namespace eyetrace
+}  // namespace panopticon::officer::query

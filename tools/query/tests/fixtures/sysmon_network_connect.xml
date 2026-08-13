@@ -1,7 +1,7 @@
 <Event xmlns="http://schemas.microsoft.com/win/2004/08/events/event">
   <System><Provider Name="Microsoft-Windows-Sysmon" /><EventID>3</EventID><EventRecordID>101</EventRecordID><Channel>Microsoft-Windows-Sysmon/Operational</Channel><Computer>LAB-ARM64</Computer></System>
   <EventData>
-    <Data Name="UtcTime">2026-08-11 12:01:00.000</Data><Data Name="ProcessGuid">{SANITIZED-NETWORK}</Data><Data Name="ProcessId">4242</Data><Data Name="Image">C:\TelemetryLab\sample.exe</Data><Data Name="User">LAB\analyst</Data>
+    <Data Name="UtcTime">2026-08-11 12:01:00.000</Data><Data Name="ProcessGuid">{SANITIZED-NETWORK}</Data><Data Name="ProcessId">4242</Data><Data Name="Image">C:\OfficerLab\sample.exe</Data><Data Name="User">LAB\analyst</Data>
     <Data Name="Protocol">tcp</Data><Data Name="Initiated">true</Data><Data Name="SourceIp">10.0.0.10</Data><Data Name="SourcePort">50000</Data><Data Name="DestinationIp">203.0.113.10</Data><Data Name="DestinationHostname">example.test</Data><Data Name="DestinationPort">443</Data>
   </EventData>
 </Event>

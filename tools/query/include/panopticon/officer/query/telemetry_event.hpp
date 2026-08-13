@@ -4,7 +4,7 @@
 #include <optional>
 #include <string>
 
-namespace eyetrace {
+namespace panopticon::officer::query {
 
 struct EventSource {
     std::optional<std::string> provider;
@@ -69,4 +69,4 @@ struct TelemetryEvent {
     std::optional<RegistryDetails> registry;
 };
 
-}  // namespace eyetrace
+}  // namespace panopticon::officer::query

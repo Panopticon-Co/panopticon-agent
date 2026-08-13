@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-namespace eyetrace {
+namespace panopticon::officer::query {
 
 class EventLogReader {
 public:
@@ -16,4 +16,4 @@ public:
     read_newest_event_xmls(std::uint32_t event_id, std::size_t limit, std::string& error_message);
 };
 
-}  // namespace eyetrace
+}  // namespace panopticon::officer::query
