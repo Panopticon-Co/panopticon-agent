@@ -26,3 +26,27 @@ target_link_libraries(eyetrace-query PRIVATE
     tinyxml2::tinyxml2
     nlohmann_json::nlohmann_json
 )
+
+enable_testing()
+
+add_executable(parser-tests
+    tests/parser_tests.cpp
+    src/sysmon_parser.cpp
+)
+
+target_include_directories(parser-tests PRIVATE include)
+target_compile_features(parser-tests PRIVATE cxx_std_20)
+target_link_libraries(parser-tests PRIVATE tinyxml2::tinyxml2)
+target_compile_definitions(parser-tests PRIVATE EYETRACE_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
+
+if(MSVC)
+    target_compile_options(parser-tests PRIVATE /W4 /permissive- /EHsc /utf-8)
+endif()
+
+add_test(NAME parser-tests COMMAND parser-tests)
+
+add_test(NAME cli-help COMMAND eyetrace-query --help)
+add_test(NAME cli-invalid-limit COMMAND eyetrace-query --limit 0)
+set_tests_properties(cli-invalid-limit PROPERTIES WILL_FAIL TRUE)
+add_test(NAME cli-invalid-event-id COMMAND eyetrace-query --event-id 999)
+set_tests_properties(cli-invalid-event-id PROPERTIES WILL_FAIL TRUE)

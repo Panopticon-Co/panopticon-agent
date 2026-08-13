@@ -1,0 +1,4 @@
+<Event xmlns="http://schemas.microsoft.com/win/2004/08/events/event">
+  <System><Provider Name="Microsoft-Windows-Sysmon" /><EventID>11</EventID><EventRecordID>102</EventRecordID><Channel>Microsoft-Windows-Sysmon/Operational</Channel><Computer>LAB-ARM64</Computer></System>
+  <EventData><Data Name="UtcTime">2026-08-11 12:02:00.000</Data><Data Name="ProcessGuid">{SANITIZED-FILE}</Data><Data Name="ProcessId">4242</Data><Data Name="Image">C:\TelemetryLab\sample.exe</Data><Data Name="User">LAB\analyst</Data><Data Name="TargetFilename">C:\TelemetryLab\output.txt</Data><Data Name="CreationUtcTime">2026-08-11 12:02:00.000</Data></EventData>
+</Event>

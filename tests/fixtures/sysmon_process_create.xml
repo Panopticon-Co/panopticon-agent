@@ -1,0 +1,16 @@
+<Event xmlns="http://schemas.microsoft.com/win/2004/08/events/event">
+  <System>
+    <Provider Name="Microsoft-Windows-Sysmon" />
+    <EventID>1</EventID><EventRecordID>100</EventRecordID>
+    <Channel>Microsoft-Windows-Sysmon/Operational</Channel><Computer>LAB-ARM64</Computer>
+  </System>
+  <EventData>
+    <Data Name="UtcTime">2026-08-11 12:00:00.000</Data><Data Name="ProcessGuid">{SANITIZED-PROCESS}</Data>
+    <Data Name="ProcessId">4242</Data><Data Name="Image">C:\TelemetryLab\sample.exe</Data>
+    <Data Name="CommandLine">&quot;C:\TelemetryLab\sample.exe&quot; --safe-test</Data>
+    <Data Name="CurrentDirectory">C:\TelemetryLab\</Data><Data Name="User">LAB\analyst</Data>
+    <Data Name="IntegrityLevel">Medium</Data><Data Name="Hashes">SHA256=SANITIZED</Data>
+    <Data Name="ParentProcessGuid">{SANITIZED-PARENT}</Data><Data Name="ParentProcessId">1000</Data>
+    <Data Name="ParentImage">C:\Windows\System32\cmd.exe</Data><Data Name="ParentCommandLine">cmd.exe</Data>
+  </EventData>
+</Event>

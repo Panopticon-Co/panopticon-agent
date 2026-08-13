@@ -6,10 +6,9 @@ source XML, parse selected Event ID 1 fields, and write normalized NDJSON.
 
 ## Status
 
-Milestone 4 is implemented, together with JSON output requested for the next
-milestone. EyeTrace Query retrieves bounded Sysmon Event ID 1 records, parses
-their XML, and emits normalized NDJSON. Raw XML remains available for learning
-and troubleshooting.
+Version 0.1 is implemented. EyeTrace Query retrieves bounded recorded Sysmon
+events, renders XML, parses supported telemetry, and emits normalized NDJSON.
+It is a historical reader, not a live collector or EDR.
 
 ## Milestone 1 prerequisites
 
@@ -39,10 +38,24 @@ If `cmake` is not on `PATH`, use Visual Studio's bundled executable:
 `vcpkg.json` pins a registry baseline and declares TinyXML2 and nlohmann/json.
 CMake's manifest mode installs them into the ignored build directory.
 
+## Supported Sysmon telemetry
+
+| Event ID | Telemetry |
+| --- | --- |
+| 1 | Process creation |
+| 3 | Network connection |
+| 11 | File creation |
+| 12 | Registry create/delete |
+| 13 | Registry value set |
+| 14 | Registry rename |
+
+Use `--event-id` to choose one event type. Sysmon must be configured to record
+that type; in particular, network connection events are disabled by default.
+
 ## NDJSON usage
 
 ```powershell
-.\build-arm64-vcpkg\eyetrace-query.exe --limit 3 --output "$env:TEMP\eyetrace.ndjson"
+.\build-arm64-vcpkg\eyetrace-query.exe --event-id 1 --limit 3 --output "$env:TEMP\eyetrace.ndjson"
 ```
 
 The program writes the same NDJSON lines to the console and the optional output
@@ -59,6 +72,38 @@ Get-Content "$env:TEMP\eyetrace.ndjson" | ForEach-Object { $_ | ConvertFrom-Json
 
 To inspect the original XML instead, use `--format xml`. Telemetry is sensitive:
 do not commit raw XML or NDJSON files.
+
+Examples for other supported historical data:
+
+```powershell
+.\build-arm64-vcpkg\eyetrace-query.exe --event-id 11 --limit 10
+.\build-arm64-vcpkg\eyetrace-query.exe --event-id 13 --limit 10
+.\build-arm64-vcpkg\eyetrace-query.exe --event-id 3 --limit 10
+```
+
+## Exit codes and diagnostics
+
+| Code | Meaning |
+| ---: | --- |
+| 0 | Successful query and output |
+| 2 | Invalid command-line arguments |
+| 3 | Windows Event Log acquisition failure |
+| 4 | XML or telemetry parsing failure |
+| 5 | Output-file failure |
+
+Diagnostics include hints for a missing Sysmon channel, access denied, invalid
+Event Log XPath, no matching events, XML parsing failures, and output failures.
+
+## Tests
+
+Run the sanitized parser and CLI validation tests after building:
+
+```powershell
+ctest --test-dir build-arm64-vcpkg --output-on-failure
+```
+
+Fixtures in `tests/fixtures/` and `docs/sample-output.ndjson` are sanitized.
+Never replace them with live telemetry.
 
 ## How the first build works
 

@@ -13,130 +13,148 @@ namespace {
 using FieldMap = std::unordered_map<std::string, std::string>;
 
 std::optional<std::string> child_text(const tinyxml2::XMLElement* parent, const char* name) {
-    if (parent == nullptr) {
-        return std::nullopt;
-    }
-
-    const tinyxml2::XMLElement* child = parent->FirstChildElement(name);
-    if (child == nullptr || child->GetText() == nullptr) {
-        return std::nullopt;
-    }
-    return std::string(child->GetText());
+    if (parent == nullptr) return std::nullopt;
+    const auto* child = parent->FirstChildElement(name);
+    return child == nullptr || child->GetText() == nullptr ? std::nullopt
+                                                           : std::optional<std::string>(child->GetText());
 }
 
-std::optional<std::string> field_value(const FieldMap& fields, const char* name) {
-    const auto field = fields.find(name);
-    if (field == fields.end()) {
-        return std::nullopt;
-    }
-    return field->second;
+std::optional<std::string> field(const FieldMap& fields, const char* name) {
+    const auto found = fields.find(name);
+    return found == fields.end() ? std::nullopt : std::optional<std::string>(found->second);
 }
 
 template <typename Integer>
-std::optional<Integer> parse_integer(const std::optional<std::string>& value, const char* field_name,
-                                     std::string& error_message) {
-    if (!value.has_value()) {
+std::optional<Integer> parse_integer(const std::optional<std::string>& value, const char* name,
+                                     std::string& error) {
+    if (!value) return std::nullopt;
+    Integer parsed{};
+    const auto [end, status] = std::from_chars(value->data(), value->data() + value->size(), parsed);
+    if (status != std::errc{} || end != value->data() + value->size()) {
+        error = "Sysmon field '" + std::string(name) + "' contains an invalid integer: '" + *value + "'.";
         return std::nullopt;
     }
+    return parsed;
+}
 
-    Integer result = 0;
-    const auto [end, error] = std::from_chars(value->data(), value->data() + value->size(), result);
-    if (error != std::errc{} || end != value->data() + value->size()) {
-        error_message = "Sysmon field '" + std::string(field_name) +
-                        "' contains an invalid integer: '" + *value + "'.";
-        return std::nullopt;
-    }
-    return result;
+bool require_valid_number(const std::optional<std::string>& original, bool parsed) {
+    return !original || parsed;
+}
+
+void set_process_context(TelemetryEvent& event, const FieldMap& fields, std::string& error) {
+    event.timestamp = field(fields, "UtcTime");
+    event.process.guid = field(fields, "ProcessGuid");
+    event.process.image = field(fields, "Image");
+    event.process.user = field(fields, "User");
+    const auto pid_text = field(fields, "ProcessId");
+    event.process.pid = parse_integer<std::uint32_t>(pid_text, "ProcessId", error);
+}
+
+bool process_context_is_valid(const FieldMap& fields, const TelemetryEvent& event) {
+    return require_valid_number(field(fields, "ProcessId"), event.process.pid.has_value());
 }
 
 }  // namespace
 
-std::optional<TelemetryEvent> SysmonParser::parse_process_create_xml(std::string_view xml,
-                                                                       std::string& error_message) {
+std::optional<TelemetryEvent> SysmonParser::parse_xml(std::string_view xml, std::string& error_message) {
     tinyxml2::XMLDocument document;
     if (document.Parse(xml.data(), xml.size()) != tinyxml2::XML_SUCCESS) {
         error_message = "Could not parse event XML: " + std::string(document.ErrorStr());
         return std::nullopt;
     }
 
-    const tinyxml2::XMLElement* event = document.FirstChildElement("Event");
-    const tinyxml2::XMLElement* system = event == nullptr ? nullptr : event->FirstChildElement("System");
-    const tinyxml2::XMLElement* event_data =
-        event == nullptr ? nullptr : event->FirstChildElement("EventData");
-    if (event == nullptr || system == nullptr || event_data == nullptr) {
+    const auto* event_xml = document.FirstChildElement("Event");
+    const auto* system = event_xml == nullptr ? nullptr : event_xml->FirstChildElement("System");
+    const auto* event_data = event_xml == nullptr ? nullptr : event_xml->FirstChildElement("EventData");
+    if (event_xml == nullptr || system == nullptr || event_data == nullptr) {
         error_message = "The XML does not contain the expected Event, System, and EventData sections.";
         return std::nullopt;
     }
 
-    const tinyxml2::XMLElement* provider = system->FirstChildElement("Provider");
-    const char* provider_name = provider == nullptr ? nullptr : provider->Attribute("Name");
-
-    const std::optional<std::string> event_id_text = child_text(system, "EventID");
-    const std::optional<std::uint32_t> event_id =
-        parse_integer<std::uint32_t>(event_id_text, "System/EventID", error_message);
-    if (!event_id.has_value()) {
-        if (error_message.empty()) {
-            error_message = "The XML is missing System/EventID.";
-        }
-        return std::nullopt;
-    }
-    if (*event_id != 1) {
-        error_message = "This parser supports Sysmon Event ID 1, but the XML contains Event ID " +
-                        std::to_string(*event_id) + ".";
-        return std::nullopt;
-    }
-
-    const std::optional<std::string> record_id_text = child_text(system, "EventRecordID");
-    const std::optional<std::uint64_t> record_id =
-        parse_integer<std::uint64_t>(record_id_text, "System/EventRecordID", error_message);
-    if (record_id_text.has_value() && !record_id.has_value()) {
+    const auto event_id_text = child_text(system, "EventID");
+    const auto event_id = parse_integer<std::uint32_t>(event_id_text, "System/EventID", error_message);
+    if (!event_id) {
+        if (error_message.empty()) error_message = "The XML is missing System/EventID.";
         return std::nullopt;
     }
 
     FieldMap fields;
-    for (const tinyxml2::XMLElement* data = event_data->FirstChildElement("Data"); data != nullptr;
+    for (const auto* data = event_data->FirstChildElement("Data"); data != nullptr;
          data = data->NextSiblingElement("Data")) {
-        const char* name = data->Attribute("Name");
-        if (name != nullptr) {
+        if (const char* name = data->Attribute("Name")) {
             fields.insert_or_assign(name, data->GetText() == nullptr ? "" : data->GetText());
         }
     }
 
-    const std::optional<std::string> process_id_text = field_value(fields, "ProcessId");
-    const std::optional<std::uint32_t> process_id =
-        parse_integer<std::uint32_t>(process_id_text, "ProcessId", error_message);
-    if (process_id_text.has_value() && !process_id.has_value()) {
-        return std::nullopt;
+    TelemetryEvent result;
+    result.source.event_id = event_id;
+    if (const auto* provider = system->FirstChildElement("Provider")) {
+        if (const char* name = provider->Attribute("Name")) result.source.provider = name;
     }
+    result.source.channel = child_text(system, "Channel");
+    result.host_name = child_text(system, "Computer");
+    const auto record_id_text = child_text(system, "EventRecordID");
+    result.source.record_id = parse_integer<std::uint64_t>(record_id_text, "System/EventRecordID", error_message);
+    if (!require_valid_number(record_id_text, result.source.record_id.has_value())) return std::nullopt;
 
-    const std::optional<std::string> parent_process_id_text = field_value(fields, "ParentProcessId");
-    const std::optional<std::uint32_t> parent_process_id =
-        parse_integer<std::uint32_t>(parent_process_id_text, "ParentProcessId", error_message);
-    if (parent_process_id_text.has_value() && !parent_process_id.has_value()) {
-        return std::nullopt;
+    set_process_context(result, fields, error_message);
+    if (!process_context_is_valid(fields, result)) return std::nullopt;
+
+    switch (*event_id) {
+        case 1: {
+            result.category = "process";
+            result.type = "create";
+            result.process.command_line = field(fields, "CommandLine");
+            result.process.current_directory = field(fields, "CurrentDirectory");
+            result.process.integrity_level = field(fields, "IntegrityLevel");
+            result.process.hashes = field(fields, "Hashes");
+            result.parent.guid = field(fields, "ParentProcessGuid");
+            result.parent.image = field(fields, "ParentImage");
+            result.parent.command_line = field(fields, "ParentCommandLine");
+            const auto parent_pid_text = field(fields, "ParentProcessId");
+            result.parent.pid = parse_integer<std::uint32_t>(parent_pid_text, "ParentProcessId", error_message);
+            if (!require_valid_number(parent_pid_text, result.parent.pid.has_value())) return std::nullopt;
+            break;
+        }
+        case 3: {
+            result.category = "network";
+            result.type = "connection";
+            NetworkDetails network;
+            network.protocol = field(fields, "Protocol");
+            network.initiated = field(fields, "Initiated");
+            network.source_ip = field(fields, "SourceIp");
+            network.destination_ip = field(fields, "DestinationIp");
+            network.destination_hostname = field(fields, "DestinationHostname");
+            const auto source_port = field(fields, "SourcePort");
+            const auto destination_port = field(fields, "DestinationPort");
+            network.source_port = parse_integer<std::uint32_t>(source_port, "SourcePort", error_message);
+            if (!require_valid_number(source_port, network.source_port.has_value())) return std::nullopt;
+            network.destination_port = parse_integer<std::uint32_t>(destination_port, "DestinationPort", error_message);
+            if (!require_valid_number(destination_port, network.destination_port.has_value())) return std::nullopt;
+            result.network = std::move(network);
+            break;
+        }
+        case 11: {
+            result.category = "file";
+            result.type = "create";
+            result.file = FileDetails{field(fields, "TargetFilename"), field(fields, "CreationUtcTime")};
+            break;
+        }
+        case 12:
+        case 13:
+        case 14: {
+            result.category = "registry";
+            result.type = *event_id == 12 ? "create_or_delete" : (*event_id == 13 ? "value_set" : "rename");
+            result.registry = RegistryDetails{field(fields, "EventType"), field(fields, "TargetObject"),
+                                              field(fields, "Details"), field(fields, "NewName")};
+            break;
+        }
+        default:
+            error_message = "Unsupported Sysmon Event ID " + std::to_string(*event_id) +
+                            ". Supported IDs are 1, 3, 11, 12, 13, and 14.";
+            return std::nullopt;
     }
-
-    TelemetryEvent telemetry_event;
-    telemetry_event.source.provider = provider_name == nullptr ? std::nullopt
-                                                                : std::optional<std::string>(provider_name);
-    telemetry_event.source.channel = child_text(system, "Channel");
-    telemetry_event.source.event_id = event_id;
-    telemetry_event.source.record_id = record_id;
-    telemetry_event.host_name = child_text(system, "Computer");
-    telemetry_event.timestamp = field_value(fields, "UtcTime");
-    telemetry_event.process.guid = field_value(fields, "ProcessGuid");
-    telemetry_event.process.pid = process_id;
-    telemetry_event.process.image = field_value(fields, "Image");
-    telemetry_event.process.command_line = field_value(fields, "CommandLine");
-    telemetry_event.process.current_directory = field_value(fields, "CurrentDirectory");
-    telemetry_event.process.user = field_value(fields, "User");
-    telemetry_event.process.integrity_level = field_value(fields, "IntegrityLevel");
-    telemetry_event.process.hashes = field_value(fields, "Hashes");
-    telemetry_event.parent.guid = field_value(fields, "ParentProcessGuid");
-    telemetry_event.parent.pid = parent_process_id;
-    telemetry_event.parent.image = field_value(fields, "ParentImage");
-    telemetry_event.parent.command_line = field_value(fields, "ParentCommandLine");
-    return telemetry_event;
+    return result;
 }
 
 }  // namespace eyetrace
