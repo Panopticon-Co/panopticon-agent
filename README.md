@@ -4,15 +4,24 @@ Officer is the Windows endpoint telemetry agent for the Panopticon EDR/XDR
 project. It is written in C++20 and is being developed as a set of independently
 testable collectors, enrichment stages, pipelines, queues, and transports.
 
-## Phase 0 status
+## Phase 1 status
 
 The original EyeTrace Query v0.1 implementation is preserved by the Git tag
 `eyetrace-query-v0.1` and has moved to `tools/query/` as `officer-query`.
 
-The root `officer-agent` executable is currently a bootstrap target. Agent
-contracts and the Panopticon event schema are the next implementation phase.
-There is no live collector, service, network transport, detection engine, or
-response executor in this phase.
+Phase 1 defines the source-neutral process telemetry contract, separates raw
+facts from enrichment, normalizes process-start telemetry into Panopticon event
+schema 0.1, and validates strict JSON serialization. Stable process identities
+are derived with Windows CNG SHA-256 from the host ID, PID, and process start
+time so PID reuse cannot merge unrelated processes.
+
+See [the Phase 1 design](docs/architecture/phase-1-contracts.md), the
+[process identity decision](docs/adr/003-process-entity-id.md), and the frozen
+[JSON Schema](schema/event.schema.json).
+
+There is still no live collector, Windows service, network transport, durable
+spool, detection engine, or response executor. The executable reports the
+implemented contract version and exits.
 
 ## Repository boundaries
 
@@ -29,7 +38,9 @@ execution are out of scope.
 
 ## Targets
 
-- `officer-agent`: Officer agent runtime, currently a Phase 0 bootstrap.
+- `officer-core`: source-neutral contracts, identity, normalization, and JSON boundary.
+- `officer-agent`: Officer agent runtime bootstrap linked to `officer-core`.
+- `officer-core-tests`: Phase 1 identity, normalization, and contract tests.
 - `officer-query`: historical Sysmon query and diagnostic utility.
 - `officer-tests`: sanitized parser tests for the query utility.
 
