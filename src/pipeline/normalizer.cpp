@@ -47,6 +47,18 @@ bool context_is_valid(const NormalizationContext& context, std::string& error_me
     return true;
 }
 
+std::string source_kind_name(telemetry::TelemetrySourceKind kind) {
+    switch (kind) {
+        case telemetry::TelemetrySourceKind::etw:
+            return "etw";
+        case telemetry::TelemetrySourceKind::sysmon:
+            return "sysmon";
+        case telemetry::TelemetrySourceKind::windows_event_log:
+            return "windows_event_log";
+    }
+    return "unknown";
+}
+
 }  // namespace
 
 std::string format_utc_timestamp(telemetry::UtcTimestamp timestamp) {
@@ -132,6 +144,12 @@ std::optional<telemetry::PanopticonEvent> normalize_process_event(
 
     telemetry::PanopticonEvent result;
     result.event = {*event_id, "process", "start", timestamp};
+    result.source = {
+        source_kind_name(enriched.raw.source.kind),
+        enriched.raw.source.provider,
+        enriched.raw.source.channel,
+        enriched.raw.source.record_id,
+    };
     result.agent = context.agent;
     result.host = context.host;
     result.user = {

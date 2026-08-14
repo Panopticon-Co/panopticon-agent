@@ -111,6 +111,14 @@ nlohmann::json event_to_json(const telemetry::PanopticonEvent& event) {
              {"type", event.event.type},
              {"timestamp", event.event.timestamp},
          }},
+        {"source",
+         {
+             {"kind", event.source.kind},
+             {"provider", event.source.provider},
+             {"channel", nullable_string(event.source.channel)},
+             {"record_id",
+              event.source.record_id ? Json(*event.source.record_id) : Json(nullptr)},
+         }},
         {"agent", {{"id", event.agent.id}, {"version", event.agent.version}}},
         {"host",
          {
@@ -153,7 +161,10 @@ std::optional<telemetry::PanopticonEvent> deserialize_event(
     error_message.clear();
     try {
         const Json root = Json::parse(json_text.begin(), json_text.end());
-        require_exact_keys(root, {"schema_version", "event", "agent", "host", "user", "process"}, "$" );
+        require_exact_keys(
+            root,
+            {"schema_version", "event", "source", "agent", "host", "user", "process"},
+            "$");
 
         telemetry::PanopticonEvent result;
         result.schema_version = required_string(root, "schema_version", "$" );
@@ -170,7 +181,26 @@ std::optional<telemetry::PanopticonEvent> deserialize_event(
             required_string(event, "timestamp", "$.event"),
         };
         if (result.event.category != "process" || result.event.type != "start") {
-            throw std::runtime_error("Phase 1 accepts only process/start events.");
+            throw std::runtime_error("Schema 0.2 accepts only process/start events.");
+        }
+
+        const Json& source = root.at("source");
+        require_exact_keys(source, {"kind", "provider", "channel", "record_id"}, "$.source");
+        result.source = {
+            required_string(source, "kind", "$.source"),
+            required_string(source, "provider", "$.source"),
+            optional_string(source, "channel", "$.source"),
+            source.at("record_id").is_null()
+                ? std::nullopt
+                : std::optional<std::uint64_t>{
+                      source.at("record_id").is_number_unsigned()
+                          ? source.at("record_id").get<std::uint64_t>()
+                          : throw std::runtime_error(
+                                "$.source.record_id must be an unsigned integer or null.")},
+        };
+        if (result.source.kind != "etw" && result.source.kind != "sysmon" &&
+            result.source.kind != "windows_event_log") {
+            throw std::runtime_error("$.source.kind is not a supported telemetry source.");
         }
 
         const Json& agent = root.at("agent");

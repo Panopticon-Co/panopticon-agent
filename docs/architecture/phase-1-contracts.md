@@ -11,7 +11,7 @@ The implemented flow is:
 
 ```text
 source adapter -> RawProcessEvent -> EnrichedProcessEvent
-               -> normalizer -> PanopticonEvent 0.1 -> JSON boundary
+               -> normalizer -> PanopticonEvent -> JSON boundary
 ```
 
 The source adapter owns decoding. The enricher owns derived information such as
@@ -24,7 +24,7 @@ spooled or transported.
 - A source-neutral `RawProcessEvent` with explicit source provenance.
 - A separate `EnrichedProcessEvent`; observed facts are not overwritten.
 - A strongly typed normalized process-start event.
-- The frozen JSON Schema in `schema/event.schema.json`.
+- The initial 0.1 JSON Schema, preserved in the Phase 1 Git history.
 - Stable event IDs and PID-reuse-safe process entity IDs using Windows CNG
   SHA-256.
 - Strict JSON serialization and deserialization with explicit nulls for absent
@@ -64,10 +64,10 @@ they do not belong inside them.
 - Raw and enriched C++ types have no JSON, queue, database, transport, or
   detection dependencies.
 
-## What Phase 2 should build on this
+## Phase 2 outcome
 
-Phase 2 should implement a bounded in-memory event bus and a single live ETW
-process collector behind a narrow adapter interface. It should publish
-`RawProcessEvent`, not JSON. Backpressure, shutdown, loss counters, and a
-synthetic collector test seam should be designed before adding more telemetry
-sources.
+Phase 2 added ETW and Sysmon process collectors behind one narrow adapter
+interface. Both publish `RawProcessEvent`, not JSON. A direct callback is the
+current pipeline boundary; a bounded queue, explicit backpressure, loss
+counters, and collector health belong to Phase 3. Schema 0.2 added source
+provenance without changing the Phase 1 separation of responsibilities.

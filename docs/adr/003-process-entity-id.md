@@ -1,7 +1,7 @@
 # ADR 003: derive process identity from host, PID, and start time
 
 - Status: accepted
-- Date: 2026-08-13
+- Date: 2026-08-14
 
 ## Context
 
@@ -16,12 +16,19 @@ Officer derives a process entity ID as a lowercase SHA-256 digest over a
 length-delimited, versioned representation of:
 
 ```text
-host.id + process.pid + process.start_time_in_UTC_nanoseconds
+host.id + process.pid + process.start_time_in_UTC_milliseconds
 ```
 
-The visible identifier is `proc_` followed by the 64-character digest. Hashing
+The canonical representation uses domain version `process-entity-v2`. The
+visible identifier is `proc_` followed by the 64-character digest. Hashing
 uses the Windows Cryptography API: Next Generation (CNG), provided by
 `bcrypt.dll`.
+
+Millisecond precision is intentional. Sysmon reports its process creation time
+at millisecond precision while ETW can report finer `FILETIME` precision. Using
+the greatest precision shared by both sources allows observations of the same
+process to converge on one entity identity without discarding the original raw
+timestamps.
 
 Event IDs use a separate `evt_` domain and include source provenance in addition
 to the process identity facts. Keeping entity and event domains separate avoids
@@ -30,6 +37,7 @@ confusing “this process” with “this observation of the process.”
 ## Consequences
 
 - Replaying the same facts produces the same identifier.
+- ETW and Sysmon observations within the same start-time millisecond converge.
 - A reused PID receives a different identifier when its start time changes.
 - The same PID and start time on different hosts remain distinct.
 - Parent identity cannot be safely derived from parent PID alone. It remains

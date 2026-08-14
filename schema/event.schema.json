@@ -1,13 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://panopticon.local/schema/officer/event-0.1.json",
+  "$id": "https://panopticon.local/schema/officer/event-0.2.json",
   "title": "Panopticon Officer process event",
-  "description": "The frozen Phase 1 normalized process-start contract.",
+  "description": "The Phase 2 normalized process-start contract with source provenance.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "event", "agent", "host", "user", "process"],
+  "required": ["schema_version", "event", "source", "agent", "host", "user", "process"],
   "properties": {
-    "schema_version": { "const": "0.1" },
+    "schema_version": { "const": "0.2" },
     "event": {
       "type": "object",
       "additionalProperties": false,
@@ -19,6 +19,25 @@
         "timestamp": {
           "type": "string",
           "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "provider", "channel", "record_id"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["etw", "sysmon", "windows_event_log"]
+        },
+        "provider": { "type": "string", "minLength": 1 },
+        "channel": { "$ref": "#/$defs/nullableString" },
+        "record_id": {
+          "oneOf": [
+            { "type": "integer", "minimum": 0 },
+            { "type": "null" }
+          ]
         }
       }
     },

@@ -89,8 +89,15 @@ std::optional<std::string> sha256_hex(std::string_view input, std::string& error
     return output.str();
 }
 
-std::string timestamp_ticks(telemetry::UtcTimestamp timestamp) {
+std::string timestamp_nanoseconds(telemetry::UtcTimestamp timestamp) {
     const auto ticks = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                           timestamp.time_since_epoch())
+                           .count();
+    return std::to_string(ticks);
+}
+
+std::string timestamp_milliseconds(telemetry::UtcTimestamp timestamp) {
+    const auto ticks = std::chrono::duration_cast<std::chrono::milliseconds>(
                            timestamp.time_since_epoch())
                            .count();
     return std::to_string(ticks);
@@ -109,10 +116,12 @@ std::optional<std::string> derive_process_entity_id(
     }
 
     std::string canonical;
-    append_field(canonical, "process-entity-v1");
+    append_field(canonical, "process-entity-v2");
     append_field(canonical, host_id);
     append_field(canonical, std::to_string(pid));
-    append_field(canonical, timestamp_ticks(process_start_time));
+    // Sysmon timestamps have millisecond precision while ETW carries FILETIME
+    // precision. Canonicalizing here lets both sources identify the same process.
+    append_field(canonical, timestamp_milliseconds(process_start_time));
 
     const auto digest = sha256_hex(canonical, error_message);
     return digest ? std::optional<std::string>{"proc_" + *digest} : std::nullopt;
@@ -141,7 +150,7 @@ std::optional<std::string> derive_process_event_id(
         canonical,
         event.source.record_id ? std::to_string(*event.source.record_id) : std::string{});
     append_field(canonical, std::to_string(event.pid));
-    append_field(canonical, timestamp_ticks(event.process_start_time));
+    append_field(canonical, timestamp_nanoseconds(event.process_start_time));
 
     const auto digest = sha256_hex(canonical, error_message);
     return digest ? std::optional<std::string>{"evt_" + *digest} : std::nullopt;

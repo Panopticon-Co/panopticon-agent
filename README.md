@@ -41,35 +41,42 @@ Detection rules remain configurable on the Panopticon side. Collection code
 does not contain detection logic, and source adapters do not produce JSON or
 communicate with the server directly.
 
-## Current status: Phase 1
+## Current status: Phase 2
 
-Phase 1 establishes and tests the pipeline's contracts before live collection
-introduces concurrency and operating-system lifecycle concerns.
+Phase 2 connects two independent live Windows sources to the Phase 1 contracts.
+Both publish source-neutral process facts, then the agent normalizes and prints
+one compact JSON object per observation.
 
 Implemented now:
 
 - A source-neutral raw process-start contract with source provenance.
 - A separate enrichment contract so observed facts are not overwritten.
-- Panopticon normalized process event schema `0.1`.
+- Panopticon normalized process event schema `0.2` with source provenance.
 - Deterministic event IDs and PID-reuse-safe process entity IDs.
 - Windows CNG SHA-256 identity derivation.
 - Strict JSON serialization, deserialization, and malformed-input rejection.
 - Native Windows ARM64 contract and parser tests.
+- Raw Windows ETW subscription to `Microsoft-Windows-Kernel-Process`.
+- Live Sysmon subscription through Windows Event Log `EvtSubscribe`.
+- Source provenance in Panopticon schema `0.2`.
+- Clean Ctrl+C shutdown for both collector lifecycles.
 - `officer-query`, the preserved EyeTrace v0.1 historical Sysmon reader.
 
 Not implemented yet:
 
-- A live ETW or Sysmon subscription inside `officer-agent`.
 - The bounded event bus and backpressure handling.
 - Durable SQLite spooling or network delivery.
 - Windows service installation and lifecycle management.
+- Network, file, registry, DNS, image-load, and process-stop payload schemas.
 
-The next phase should connect one live ETW process collector to the existing
-`RawProcessEvent` boundary. It should not bypass the contracts by emitting JSON
-from the collector.
+The next phase moves normalization off acquisition callback threads and onto a
+bounded queue with explicit health and loss counters.
 
-See [the Phase 1 design](docs/architecture/phase-1-contracts.md), the
-[process identity decision](docs/adr/003-process-entity-id.md), and the frozen
+See [the Phase 2 design](docs/architecture/phase-2-live-collection.md), the
+[roadmap](docs/roadmap.md), the
+[future ingestion boundary](docs/architecture/detection-ingestion-boundary.md),
+[the Phase 1 design](docs/architecture/phase-1-contracts.md), the
+[process identity decision](docs/adr/003-process-entity-id.md), and the current
 [JSON Schema](schema/event.schema.json).
 
 ## Build and test on Windows ARM64
@@ -87,28 +94,46 @@ ctest --test-dir build-officer-arm64 --output-on-failure
 
 The build produces:
 
-- `officer-agent.exe` — the Phase 1 agent bootstrap linked to `officer-core`.
-- `officer-core-tests.exe` — identity, normalization, and JSON contract tests.
-- `officer-query.exe` — the historical Sysmon query and diagnostic utility.
-- `officer-tests.exe` — sanitized Sysmon parser tests.
+- `officer-agent.exe` - the live Phase 2 console agent.
+- `officer-collectors.lib` - independent ETW and Sysmon acquisition adapters.
+- `officer-core-tests.exe` - identity, normalization, and JSON contract tests.
+- `officer-collector-tests.exe` - sanitized source-decoder and interface tests.
+- `officer-query.exe` - the historical Sysmon query and diagnostic utility.
+- `officer-tests.exe` - sanitized Sysmon parser tests.
 
-Running the current bootstrap confirms the compiled versions but does not start
-collection:
+## Run live collection
+
+Open an elevated PowerShell. Start both sources, then launch Notepad from a
+second terminal or the Start menu:
 
 ```powershell
-.\build-officer-arm64\officer-agent.exe
+.\build-officer-arm64\officer-agent.exe --source all
 ```
 
-```text
-Officer agent 0.1.0
-Panopticon event contract 0.1
-Phase 1 contracts are ready; no live collectors are started.
+```powershell
+Start-Process notepad.exe
 ```
 
-## Working telemetry example
+Officer writes status and errors to stderr and one normalized JSON event per
+line to stdout. Press Ctrl+C to stop both subscriptions and release the ETW
+session. Use `--source etw` or `--source sysmon` to isolate one adapter.
 
-The agent is not live yet, but `officer-query` can already retrieve historical
-events from a running Sysmon installation. From an elevated PowerShell, query
+Both sources may report the same process. Their events retain distinct source
+provenance and event IDs while converging on one process entity ID when their
+timestamps identify the same Windows process.
+
+Elevation is required to control the system ETW session and read the protected
+Sysmon channel. If the process is force-killed and leaves the fixed development
+session behind, clean it from an elevated terminal with:
+
+```powershell
+logman stop Panopticon-Officer-Process -ets
+```
+
+## Historical telemetry utility
+
+`officer-query` remains available to retrieve historical events from a running
+Sysmon installation. From an elevated PowerShell, query
 the newest Sysmon process-creation event and write the same NDJSON to the
 console and a temporary file:
 
@@ -126,24 +151,29 @@ diagnostic utility, not the future live Officer pipeline. Event IDs `3`, `11`,
 `12`, `13`, and `14` can also inspect network, file, and registry activity. See
 [Officer Query usage](tools/query/README.md).
 
-## Desired normalized event
+## Example normalized event
 
-The Phase 1 normalizer and tests already produce and validate the following
-shape in memory. The values below are sanitized and formatted for readability;
-the future live agent will emit one compact JSON object per event.
+The values below are sanitized and formatted for readability. Live output is
+compact NDJSON and will reflect the source fields actually available.
 
 ```json
 {
-  "schema_version": "0.1",
+  "schema_version": "0.2",
   "event": {
     "id": "evt_1111111111111111111111111111111111111111111111111111111111111111",
     "category": "process",
     "type": "start",
     "timestamp": "2026-08-13T20:15:42.123Z"
   },
+  "source": {
+    "kind": "sysmon",
+    "provider": "Microsoft-Windows-Sysmon",
+    "channel": "Microsoft-Windows-Sysmon/Operational",
+    "record_id": 100
+  },
   "agent": {
     "id": "agent-sanitized-001",
-    "version": "0.1.0"
+    "version": "0.2.0"
   },
   "host": {
     "id": "host-sanitized-001",
@@ -183,14 +213,19 @@ are deterministic SHA-256-derived identities, not repeated placeholder digits.
 
 ```text
 include/panopticon/officer/   Public agent contracts
+src/collectors/               Independent ETW and Sysmon adapters
 src/core/                     Stable identity implementation
 src/pipeline/                 Normalization and JSON boundary
 schema/                       Versioned Panopticon JSON contract
-tests/                        Sanitized Phase 1 contract tests
+tests/                        Sanitized contract and collector tests
 tools/query/                  Historical Sysmon diagnostic utility
 docs/architecture/            Phase designs and boundaries
 docs/adr/                     Architecture decision records
 ```
+
+See [the complete roadmap](docs/roadmap.md) for queues, additional typed event
+schemas, enrichment, durable spooling, secure delivery, and Windows service
+hardening.
 
 ## Privacy and safety
 

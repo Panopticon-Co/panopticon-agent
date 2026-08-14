@@ -1,0 +1,20 @@
+<Event xmlns="http://schemas.microsoft.com/win/2004/08/events/event">
+  <System>
+    <Provider Name="Microsoft-Windows-Sysmon" />
+    <EventID>1</EventID>
+    <EventRecordID>100</EventRecordID>
+    <Channel>Microsoft-Windows-Sysmon/Operational</Channel>
+    <Computer>OFFICER-LAB</Computer>
+  </System>
+  <EventData>
+    <Data Name="UtcTime">2026-08-14 12:00:00.1234567</Data>
+    <Data Name="ProcessGuid">{SANITIZED-PROCESS-GUID}</Data>
+    <Data Name="ProcessId">4242</Data>
+    <Data Name="Image">C:\Sanitized\officer-demo.exe</Data>
+    <Data Name="CommandLine">&quot;C:\Sanitized\officer-demo.exe&quot; --safe-test</Data>
+    <Data Name="User">LAB\analyst</Data>
+    <Data Name="Hashes">SHA256=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA,MD5=SANITIZED</Data>
+    <Data Name="ParentProcessId">1000</Data>
+    <Data Name="ParentImage">C:\Windows\System32\powershell.exe</Data>
+  </EventData>
+</Event>

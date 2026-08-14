@@ -32,9 +32,12 @@ struct RawProcessEvent {
     UtcTimestamp process_start_time;
     std::uint32_t pid{};
     std::optional<std::uint32_t> parent_pid;
+    std::optional<std::string> parent_executable;
     std::optional<std::string> executable;
     std::optional<std::string> command_line;
     std::optional<std::string> user_sid;
+    std::optional<std::string> user_name;
+    std::optional<std::string> sha256;
 
     bool operator==(const RawProcessEvent&) const = default;
 };

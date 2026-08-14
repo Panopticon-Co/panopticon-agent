@@ -6,8 +6,8 @@
 
 namespace panopticon::officer::telemetry {
 
-inline constexpr char kSchemaVersion[] = "0.1";
-inline constexpr char kAgentVersion[] = "0.1.0";
+inline constexpr char kSchemaVersion[] = "0.2";
+inline constexpr char kAgentVersion[] = "0.2.0";
 
 struct EventMetadata {
     std::string id;
@@ -21,6 +21,14 @@ struct AgentMetadata {
     std::string id;
     std::string version;
     bool operator==(const AgentMetadata&) const = default;
+};
+
+struct SourceMetadata {
+    std::string kind;
+    std::string provider;
+    std::optional<std::string> channel;
+    std::optional<std::uint64_t> record_id;
+    bool operator==(const SourceMetadata&) const = default;
 };
 
 struct OperatingSystemMetadata {
@@ -69,6 +77,7 @@ struct ProcessMetadata {
 struct PanopticonEvent {
     std::string schema_version{kSchemaVersion};
     EventMetadata event;
+    SourceMetadata source;
     AgentMetadata agent;
     HostMetadata host;
     UserMetadata user;

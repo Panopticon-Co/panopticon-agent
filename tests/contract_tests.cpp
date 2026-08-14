@@ -80,11 +80,14 @@ void test_entity_identity_is_stable_and_pid_reuse_safe() {
         "host-sanitized-001", 4242, start, error);
     const auto reused_pid = panopticon::officer::core::derive_process_entity_id(
         "host-sanitized-001", 4242, start + 1ms, error);
+    const auto source_precision = panopticon::officer::core::derive_process_entity_id(
+        "host-sanitized-001", 4242, start + 999us, error);
     const auto different_host = panopticon::officer::core::derive_process_entity_id(
         "host-sanitized-002", 4242, start, error);
 
     expect(first && repeated && *first == *repeated, "identical process facts give a stable entity ID");
     expect(first && reused_pid && *first != *reused_pid, "PID reuse at a new start time changes entity ID");
+    expect(first && source_precision && *first == *source_precision, "sub-millisecond source precision does not split entity identity");
     expect(first && different_host && *first != *different_host, "host identity participates in entity ID");
     expect(first && first->starts_with("proc_") && first->size() == 69, "entity ID has the documented format");
 }
@@ -94,10 +97,11 @@ void test_raw_contract_and_normalization() {
     expect(std::holds_alternative<telemetry::RawProcessEvent>(event), "raw event variant accepts a process event");
 
     const auto normalized = make_normalized_process();
-    expect(normalized.schema_version == "0.1", "normalizer sets the frozen schema version");
+    expect(normalized.schema_version == "0.2", "normalizer sets the current schema version");
     expect(normalized.event.category == "process" && normalized.event.type == "start", "normalizer sets process/start semantics");
     expect(normalized.event.timestamp == "1970-01-01T00:00:00.123Z", "timestamp is UTC with millisecond precision");
     expect(normalized.process.pid == 4242, "normalizer preserves PID");
+    expect(normalized.source.kind == "etw" && normalized.source.provider == "Microsoft-Windows-Kernel-Process", "normalizer preserves source provenance");
     expect(normalized.process.parent.entity_id.has_value(), "known parent start time produces parent entity ID");
     expect(normalized.process.hash.sha256 == std::optional<std::string>{std::string(64, 'a')}, "SHA-256 is canonical lowercase");
     expect(normalized.user.sid == make_raw_process().user_sid, "raw SID is retained when enrichment has no replacement");
@@ -117,7 +121,8 @@ void test_raw_contract_and_normalization() {
 void test_json_round_trip_and_validation() {
     const telemetry::PanopticonEvent original = make_normalized_process();
     const nlohmann::json json = pipeline::event_to_json(original);
-    expect(json.size() == 6, "serialized event has exactly the six top-level contract fields");
+    expect(json.size() == 7, "serialized event has exactly the seven top-level contract fields");
+    expect(json.at("source").at("kind") == "etw", "source kind serializes explicitly");
     expect(json.at("process").at("pid").is_number_unsigned(), "PID serializes as a JSON number");
     expect(json.at("process").at("parent").contains("entity_id"), "parent shape is explicit");
 
@@ -154,7 +159,7 @@ void test_schema_document_is_present_and_sane() {
     const nlohmann::json schema = nlohmann::json::parse(
         std::istreambuf_iterator<char>{file}, std::istreambuf_iterator<char>{});
     expect(schema.at("$schema") == "https://json-schema.org/draft/2020-12/schema", "schema uses JSON Schema 2020-12");
-    expect(schema.at("properties").at("schema_version").at("const") == "0.1", "schema version is frozen at 0.1");
+    expect(schema.at("properties").at("schema_version").at("const") == "0.2", "schema version is current at 0.2");
     expect(schema.at("additionalProperties") == false, "schema rejects unknown top-level fields");
 }
 
@@ -167,7 +172,7 @@ int main() {
     test_schema_document_is_present_and_sane();
 
     if (failures == 0) {
-        std::cout << "All Officer Phase 1 contract tests passed.\n";
+        std::cout << "All Officer contract tests passed.\n";
         return 0;
     }
     return 1;
