@@ -21,6 +21,12 @@
 - Added source provenance schema 0.2.
 - Connected both sources to normalized NDJSON output.
 - Added clean normal shutdown and partial-start failure cleanup.
+- Validated a from-scratch configure/build/test cycle on Windows x64 (MSVC
+  14.44, vcpkg triplet `x64-windows`): all targets build cleanly and all 7
+  CTest cases pass. The build system is triplet-driven and required no source
+  changes to support x64 alongside the existing ARM64 target. Live ETW/Sysmon
+  capture on x64 still needs to be demonstrated on elevated hardware with
+  Sysmon installed; only the build/test path is validated so far.
 
 ## Proposed next phases
 
