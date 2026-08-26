@@ -101,13 +101,38 @@ The build produces:
 - `officer-query.exe` - the historical Sysmon query and diagnostic utility.
 - `officer-tests.exe` - sanitized Sysmon parser tests.
 
+## Build and test on Windows x64
+
+Officer's build system is triplet-driven and contains no ARM64-specific or
+x64-specific source code, so x64 is built the same way as ARM64 with a
+different vcpkg triplet. Run these commands from an **x64 Developer PowerShell
+for Visual Studio** (or any shell with `VCToolsInstallDir` set for the x64
+host/target via `vcvars64.bat`):
+
+```powershell
+cmake -S . -B build-officer-x64 -G Ninja `
+  -DCMAKE_TOOLCHAIN_FILE="<path-to-vcpkg>/scripts/buildsystems/vcpkg.cmake" `
+  -DVCPKG_TARGET_TRIPLET=x64-windows
+
+cmake --build build-officer-x64
+ctest --test-dir build-officer-x64 --output-on-failure
+```
+
+This has been validated end-to-end on real x64 Windows hardware: vcpkg builds
+`nlohmann-json` and `tinyxml2` from source for `x64-windows`, all 6 build
+targets compile and link cleanly under MSVC 14.44 with no warnings, and all 7
+CTest cases pass. Live ETW/Sysmon capture on x64 requires the same elevated
+PowerShell as ARM64 (see below) and has not yet been demonstrated in CI or on
+this particular machine — build/test validation and live-capture validation
+are tracked separately.
+
 ## Run live collection
 
 Open an elevated PowerShell. Start both sources, then launch Notepad from a
 second terminal or the Start menu:
 
 ```powershell
-.\build-officer-arm64\officer-agent.exe --source all
+.\build-officer-arm64\officer-agent.exe --source all   # or build-officer-x64, matching the build you ran
 ```
 
 ```powershell

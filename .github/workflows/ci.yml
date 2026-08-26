@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  windows-x64:
+    name: Build and test (Windows x64)
+    runs-on: windows-latest
+    steps:
+      - name: Check out Officer
+        uses: actions/checkout@v4
+
+      - name: Check out vcpkg
+        uses: actions/checkout@v4
+        with:
+          repository: microsoft/vcpkg
+          path: vcpkg
+          fetch-depth: 0
+
+      - name: Bootstrap vcpkg
+        run: .\vcpkg\bootstrap-vcpkg.bat
+        shell: cmd
+
+      - name: Set up MSVC x64 environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Configure (x64-windows)
+        run: |
+          cmake -S . -B build-officer-x64 -G Ninja `
+            -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET=x64-windows
+        shell: pwsh
+
+      - name: Build
+        run: cmake --build build-officer-x64
+        shell: pwsh
+
+      - name: Test
+        run: ctest --test-dir build-officer-x64 --output-on-failure
+        shell: pwsh
