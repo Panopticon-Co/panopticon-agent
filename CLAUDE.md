@@ -8,7 +8,7 @@ This is **panopticon-agent**, internally named **"Officer"** — the Windows end
 
 ## Build
 
-Requires vcpkg (via Visual Studio's bundled vcpkg or standalone) and Ninja. Currently only built/documented against the **`arm64-windows`** triplet — `x64-windows` has not yet been validated in this repo; do not assume it works without testing.
+Requires vcpkg (via Visual Studio's bundled vcpkg or standalone) and Ninja. Validated against both the **`arm64-windows`** and **`x64-windows`** triplets — the build system is triplet-driven and contains no triplet-specific source code.
 
 ```powershell
 cmake -S . -B build-officer-arm64 -G Ninja `
@@ -19,7 +19,7 @@ cmake --build build-officer-arm64
 ctest --test-dir build-officer-arm64 --output-on-failure
 ```
 
-For an x64 build, swap `-DVCPKG_TARGET_TRIPLET=x64-windows` and use an x64 Developer PowerShell / vcpkg triplet — this is unvalidated territory, expect to debug it. There is no `CMakePresets.json`; triplet/toolchain are always passed explicitly at configure time. `vcpkg.json` declares only `nlohmann-json` and `tinyxml2` as dependencies (no triplet list). Build is MSVC-only (no clang/GCC path in `CMakeLists.txt`).
+For an x64 build, swap `-DVCPKG_TARGET_TRIPLET=x64-windows` and use an x64 Developer PowerShell / vcpkg triplet — this has been validated end-to-end on real Windows x64 hardware (MSVC 14.44): all 6 build targets compile and link cleanly with no warnings, and all 7 CTest cases pass. Live ETW/Sysmon capture on x64 has not yet been demonstrated (tracked separately, matching ARM64's existing live-capture validation status). There is no `CMakePresets.json`; triplet/toolchain are always passed explicitly at configure time. `vcpkg.json` declares only `nlohmann-json` and `tinyxml2` as dependencies (no triplet list). Build is MSVC-only (no clang/GCC path in `CMakeLists.txt`).
 
 Build outputs (in the build dir): `officer-agent.exe` (the live agent — **note the executable is `officer-agent.exe`, not `officer.exe` or `panopticon-agent.exe`**), `officer-core-tests.exe`, `officer-collector-tests.exe`, plus `officer-query.exe` and its own tests from the `tools/query/` subproject.
 
@@ -39,7 +39,7 @@ logman stop Panopticon-Officer-Process -ets
 
 ## Test
 
-No third-party test framework — `tests/contract_tests.cpp` and `tests/collector_tests.cpp` are standalone executables with hand-rolled `main()` assertions, wired into CTest (`officer-core-contract-tests`, `officer-live-collector-decoder-tests`, `officer-agent-cli-help`). `tools/query/` has its own CTest cases (`officer-query-parser-tests`, `officer-query-cli-help`, two `WILL_FAIL` negative-argument tests). Run all via `ctest --test-dir <build-dir> --output-on-failure`. There is no CI configured (`.github/workflows/` does not exist) — tests are currently only run locally/manually.
+No third-party test framework — `tests/contract_tests.cpp` and `tests/collector_tests.cpp` are standalone executables with hand-rolled `main()` assertions, wired into CTest (`officer-core-contract-tests`, `officer-live-collector-decoder-tests`, `officer-agent-cli-help`). `tools/query/` has its own CTest cases (`officer-query-parser-tests`, `officer-query-cli-help`, two `WILL_FAIL` negative-argument tests). Run all via `ctest --test-dir <build-dir> --output-on-failure`. CI (`.github/workflows/ci.yml`) builds and tests the `x64-windows` triplet on `windows-latest` for every push/PR to main; the `arm64-windows` triplet is not currently covered by CI and is only validated locally.
 
 ## Architecture
 

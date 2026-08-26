@@ -19,6 +19,7 @@ jobs:
         with:
           repository: microsoft/vcpkg
           path: vcpkg
+          fetch-depth: 0
 
       - name: Bootstrap vcpkg
         run: .\vcpkg\bootstrap-vcpkg.bat
