@@ -1,21 +1,23 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://panopticon.local/schema/officer/event-0.2.json",
-  "title": "Panopticon Officer process event",
-  "description": "The Phase 2 normalized process-start contract with source provenance.",
+  "$id": "https://panopticon.local/schema/officer/event-0.3.json",
+  "title": "Panopticon Officer telemetry event",
+  "description": "The V3 normalized endpoint telemetry contract. Additive over Schema 0.2: process/start events valid under 0.2 remain valid here, and four optional telemetry families (network, file, registry, image_load) are added. Every event still carries a process context block.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "event", "source", "agent", "host", "user", "process"],
   "properties": {
-    "schema_version": { "const": "0.2" },
+    "schema_version": { "enum": ["0.2", "0.3"] },
     "event": {
       "type": "object",
       "additionalProperties": false,
       "required": ["id", "category", "type", "timestamp"],
       "properties": {
         "id": { "type": "string", "pattern": "^evt_[0-9a-f]{64}$" },
-        "category": { "const": "process" },
-        "type": { "const": "start" },
+        "category": {
+          "enum": ["process", "network", "file", "registry", "image_load"]
+        },
+        "type": { "type": "string", "minLength": 1 },
         "timestamp": {
           "type": "string",
           "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
@@ -108,22 +110,107 @@
             "name": { "$ref": "#/$defs/nullableString" }
           }
         },
-        "hash": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["sha256"],
-          "properties": {
-            "sha256": {
-              "oneOf": [
-                { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-                { "type": "null" }
-              ]
-            }
-          }
-        }
+        "hash": { "$ref": "#/$defs/sha256Hash" }
+      }
+    },
+    "network": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Sysmon EventID 3. Connection metadata only - no payload, no packet capture.",
+      "required": ["direction", "protocol", "source_ip", "source_port", "destination_ip", "destination_port", "destination_hostname"],
+      "properties": {
+        "direction": { "enum": ["inbound", "outbound"] },
+        "protocol": {
+          "oneOf": [
+            { "enum": ["tcp", "udp"] },
+            { "type": "null" }
+          ]
+        },
+        "source_ip": { "$ref": "#/$defs/nullableString" },
+        "source_port": { "$ref": "#/$defs/nullablePort" },
+        "destination_ip": { "$ref": "#/$defs/nullableString" },
+        "destination_port": { "$ref": "#/$defs/nullablePort" },
+        "destination_hostname": { "$ref": "#/$defs/nullableString" }
+      }
+    },
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Sysmon EventID 11 (create), 23/26 (delete). Metadata only - file contents are never read.",
+      "required": ["operation", "path", "target_path", "previous_path", "hash"],
+      "properties": {
+        "operation": { "enum": ["create", "delete", "rename"] },
+        "path": { "$ref": "#/$defs/nullableString" },
+        "target_path": { "$ref": "#/$defs/nullableString" },
+        "previous_path": { "$ref": "#/$defs/nullableString" },
+        "hash": { "$ref": "#/$defs/sha256Hash" }
+      }
+    },
+    "registry": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Sysmon EventID 12 (key add/delete), 13 (value set), 14 (rename). value_data is metadata-only and defaults to null; value contents are not collected unless a rule needs them.",
+      "required": ["operation", "key_path", "value_name", "value_type", "value_data"],
+      "properties": {
+        "operation": { "enum": ["add_key", "delete_key", "set_value", "rename_key"] },
+        "key_path": { "$ref": "#/$defs/nullableString" },
+        "value_name": { "$ref": "#/$defs/nullableString" },
+        "value_type": { "$ref": "#/$defs/nullableString" },
+        "value_data": { "$ref": "#/$defs/nullableString" }
+      }
+    },
+    "image_load": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Sysmon EventID 7. Module/image load metadata; no memory dumping, no PE analysis.",
+      "required": ["path", "is_signed", "signature_status", "hash"],
+      "properties": {
+        "path": { "$ref": "#/$defs/nullableString" },
+        "is_signed": {
+          "oneOf": [
+            { "type": "boolean" },
+            { "type": "null" }
+          ]
+        },
+        "signature_status": { "$ref": "#/$defs/nullableString" },
+        "hash": { "$ref": "#/$defs/sha256Hash" }
       }
     }
   },
+  "allOf": [
+    {
+      "if": { "properties": { "event": { "properties": { "category": { "const": "process" } } } } },
+      "then": { "properties": { "event": { "properties": { "type": { "enum": ["start"] } } } } }
+    },
+    {
+      "if": { "properties": { "event": { "properties": { "category": { "const": "network" } } } } },
+      "then": {
+        "required": ["network"],
+        "properties": { "event": { "properties": { "type": { "enum": ["connect"] } } } }
+      }
+    },
+    {
+      "if": { "properties": { "event": { "properties": { "category": { "const": "file" } } } } },
+      "then": {
+        "required": ["file"],
+        "properties": { "event": { "properties": { "type": { "enum": ["create", "delete", "rename"] } } } }
+      }
+    },
+    {
+      "if": { "properties": { "event": { "properties": { "category": { "const": "registry" } } } } },
+      "then": {
+        "required": ["registry"],
+        "properties": { "event": { "properties": { "type": { "enum": ["add_key", "delete_key", "set_value", "rename_key"] } } } }
+      }
+    },
+    {
+      "if": { "properties": { "event": { "properties": { "category": { "const": "image_load" } } } } },
+      "then": {
+        "required": ["image_load"],
+        "properties": { "event": { "properties": { "type": { "enum": ["load"] } } } }
+      }
+    }
+  ],
   "$defs": {
     "nullableString": {
       "oneOf": [
@@ -136,9 +223,28 @@
       "minimum": 0,
       "maximum": 4294967295
     },
+    "nullablePort": {
+      "oneOf": [
+        { "type": "integer", "minimum": 0, "maximum": 65535 },
+        { "type": "null" }
+      ]
+    },
     "processEntityId": {
       "type": "string",
       "pattern": "^proc_[0-9a-f]{64}$"
+    },
+    "sha256Hash": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sha256"],
+      "properties": {
+        "sha256": {
+          "oneOf": [
+            { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            { "type": "null" }
+          ]
+        }
+      }
     }
   }
 }
