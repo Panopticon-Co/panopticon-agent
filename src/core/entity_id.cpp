@@ -156,4 +156,58 @@ std::optional<std::string> derive_process_event_id(
     return digest ? std::optional<std::string>{"evt_" + *digest} : std::nullopt;
 }
 
+std::optional<std::string> derive_process_context_entity_id(
+    std::string_view host_id,
+    std::uint32_t pid,
+    std::string_view process_guid,
+    std::string& error_message) {
+    if (host_id.empty()) {
+        error_message = "A non-empty host ID is required to derive a process-context entity ID.";
+        return std::nullopt;
+    }
+
+    std::string canonical;
+    append_field(canonical, "process-context-v1");
+    append_field(canonical, host_id);
+    append_field(canonical, std::to_string(pid));
+    append_field(canonical, process_guid);
+
+    const auto digest = sha256_hex(canonical, error_message);
+    return digest ? std::optional<std::string>{"proc_" + *digest} : std::nullopt;
+}
+
+std::optional<std::string> derive_telemetry_event_id(
+    std::string_view host_id,
+    const telemetry::SourceProvenance& source,
+    std::string_view category,
+    std::string_view type,
+    std::uint32_t pid,
+    telemetry::UtcTimestamp timestamp,
+    std::string& error_message) {
+    if (host_id.empty()) {
+        error_message = "A non-empty host ID is required to derive an event ID.";
+        return std::nullopt;
+    }
+    if (source.provider.empty()) {
+        error_message = "A source provider is required to derive an event ID.";
+        return std::nullopt;
+    }
+
+    std::string canonical;
+    append_field(canonical, "telemetry-event-v1");
+    append_field(canonical, host_id);
+    append_field(canonical, source_kind_name(source.kind));
+    append_field(canonical, source.provider);
+    append_field(canonical, source.channel.value_or(""));
+    append_field(
+        canonical, source.record_id ? std::to_string(*source.record_id) : std::string{});
+    append_field(canonical, category);
+    append_field(canonical, type);
+    append_field(canonical, std::to_string(pid));
+    append_field(canonical, timestamp_nanoseconds(timestamp));
+
+    const auto digest = sha256_hex(canonical, error_message);
+    return digest ? std::optional<std::string>{"evt_" + *digest} : std::nullopt;
+}
+
 }  // namespace panopticon::officer::core

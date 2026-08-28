@@ -1,0 +1,23 @@
+<!-- SYNTHETIC Sysmon EventID 7 (image / module load). Hand-authored fixture, not
+     captured from a live host. Field shapes mirror Microsoft-Windows-Sysmon. -->
+<Event xmlns="http://schemas.microsoft.com/win/2004/08/events/event">
+  <System>
+    <Provider Name="Microsoft-Windows-Sysmon" />
+    <EventID>7</EventID>
+    <EventRecordID>205</EventRecordID>
+    <Channel>Microsoft-Windows-Sysmon/Operational</Channel>
+    <Computer>OFFICER-LAB</Computer>
+  </System>
+  <EventData>
+    <Data Name="UtcTime">2026-08-14 12:00:04.750</Data>
+    <Data Name="ProcessGuid">{SANITIZED-IMAGE-GUID}</Data>
+    <Data Name="ProcessId">4242</Data>
+    <Data Name="Image">C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe</Data>
+    <Data Name="User">LAB\analyst</Data>
+    <Data Name="ImageLoaded">C:\Users\analyst\AppData\Local\Temp\payload.dll</Data>
+    <Data Name="Signed">false</Data>
+    <Data Name="Signature">-</Data>
+    <Data Name="SignatureStatus">Unavailable</Data>
+    <Data Name="Hashes">SHA256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef,MD5=SANITIZED</Data>
+  </EventData>
+</Event>

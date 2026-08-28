@@ -280,10 +280,22 @@ int main(int argc, char* argv[]) {
     }
 
     std::mutex output_mutex;
+    const auto emit_normalized =
+        [&](const std::optional<telemetry::PanopticonEvent>& normalized,
+            const std::string& normalization_error) {
+            std::scoped_lock lock{output_mutex};
+            if (!normalized) {
+                std::cerr << "[pipeline] " << normalization_error << '\n';
+                return;
+            }
+            std::cout << pipeline::serialize_event(*normalized) << '\n';
+            std::cout.flush();
+        };
     const collectors::RawEventSink event_sink = [&](telemetry::RawEvent raw_event) {
         std::visit(
             [&](auto&& raw) {
                 using Event = std::decay_t<decltype(raw)>;
+                std::string normalization_error;
                 if constexpr (std::is_same_v<Event, telemetry::RawProcessEvent>) {
                     enrichment::EnrichedProcessEvent enriched;
                     enriched.raw = std::move(raw);
@@ -291,17 +303,25 @@ int main(int argc, char* argv[]) {
                     enriched.parent_name = file_name(enriched.raw.parent_executable);
                     enriched.sha256 = enriched.raw.sha256;
                     populate_user(enriched.raw.user_name, enriched.user);
-
-                    std::string normalization_error;
-                    const auto normalized = pipeline::normalize_process_event(
-                        enriched, *context, normalization_error);
-                    std::scoped_lock lock{output_mutex};
-                    if (!normalized) {
-                        std::cerr << "[pipeline] " << normalization_error << '\n';
-                        return;
-                    }
-                    std::cout << pipeline::serialize_event(*normalized) << '\n';
-                    std::cout.flush();
+                    emit_normalized(
+                        pipeline::normalize_process_event(enriched, *context, normalization_error),
+                        normalization_error);
+                } else if constexpr (std::is_same_v<Event, telemetry::RawNetworkEvent>) {
+                    emit_normalized(
+                        pipeline::normalize_network_event(raw, *context, normalization_error),
+                        normalization_error);
+                } else if constexpr (std::is_same_v<Event, telemetry::RawFileEvent>) {
+                    emit_normalized(
+                        pipeline::normalize_file_event(raw, *context, normalization_error),
+                        normalization_error);
+                } else if constexpr (std::is_same_v<Event, telemetry::RawRegistryEvent>) {
+                    emit_normalized(
+                        pipeline::normalize_registry_event(raw, *context, normalization_error),
+                        normalization_error);
+                } else if constexpr (std::is_same_v<Event, telemetry::RawImageLoadEvent>) {
+                    emit_normalized(
+                        pipeline::normalize_image_load_event(raw, *context, normalization_error),
+                        normalization_error);
                 }
             },
             std::move(raw_event));

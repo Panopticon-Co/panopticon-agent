@@ -23,6 +23,7 @@ add_library(officer-collectors STATIC
     src/collectors/etw_process_collector.cpp
     src/collectors/sysmon_event_collector.cpp
     src/collectors/sysmon_process_decoder.cpp
+    src/collectors/sysmon_telemetry_decoder.cpp
 )
 
 target_include_directories(officer-collectors PUBLIC include)
@@ -65,10 +66,15 @@ if(BUILD_TESTING)
     add_test(NAME officer-core-contract-tests COMMAND officer-core-tests)
 
     add_executable(officer-collector-tests tests/collector_tests.cpp)
-    target_link_libraries(officer-collector-tests PRIVATE officer-collectors)
+    target_link_libraries(officer-collector-tests PRIVATE officer-collectors officer-core)
     target_compile_definitions(
         officer-collector-tests
-        PRIVATE OFFICER_SYSMON_FIXTURE_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/sysmon_process_create.xml"
+        PRIVATE
+            OFFICER_SYSMON_FIXTURE_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/sysmon_process_create.xml"
+            OFFICER_SYSMON_NETWORK_FIXTURE_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/sysmon_network_connect.xml"
+            OFFICER_SYSMON_FILE_FIXTURE_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/sysmon_file_create.xml"
+            OFFICER_SYSMON_REGISTRY_FIXTURE_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/sysmon_registry_set_value.xml"
+            OFFICER_SYSMON_IMAGE_LOAD_FIXTURE_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/sysmon_image_load.xml"
     )
     add_custom_command(
         TARGET officer-collector-tests

@@ -3,6 +3,7 @@
 #include "panopticon/officer/pipeline/serializer.hpp"
 #include "panopticon/officer/telemetry/raw_process_event.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <fstream>
 #include <iostream>
@@ -97,8 +98,9 @@ void test_raw_contract_and_normalization() {
     expect(std::holds_alternative<telemetry::RawProcessEvent>(event), "raw event variant accepts a process event");
 
     const auto normalized = make_normalized_process();
-    expect(normalized.schema_version == "0.2", "normalizer sets the current schema version");
+    expect(normalized.schema_version == "0.3", "normalizer sets the current schema version");
     expect(normalized.event.category == "process" && normalized.event.type == "start", "normalizer sets process/start semantics");
+    expect(!normalized.network && !normalized.file && !normalized.registry && !normalized.image_load, "a process event carries no telemetry-family block");
     expect(normalized.event.timestamp == "1970-01-01T00:00:00.123Z", "timestamp is UTC with millisecond precision");
     expect(normalized.process.pid == 4242, "normalizer preserves PID");
     expect(normalized.source.kind == "etw" && normalized.source.provider == "Microsoft-Windows-Kernel-Process", "normalizer preserves source provenance");
@@ -121,7 +123,7 @@ void test_raw_contract_and_normalization() {
 void test_json_round_trip_and_validation() {
     const telemetry::PanopticonEvent original = make_normalized_process();
     const nlohmann::json json = pipeline::event_to_json(original);
-    expect(json.size() == 7, "serialized event has exactly the seven top-level contract fields");
+    expect(json.size() == 7, "a process event serializes to exactly the seven base contract fields");
     expect(json.at("source").at("kind") == "etw", "source kind serializes explicitly");
     expect(json.at("process").at("pid").is_number_unsigned(), "PID serializes as a JSON number");
     expect(json.at("process").at("parent").contains("entity_id"), "parent shape is explicit");
@@ -147,6 +149,16 @@ void test_json_round_trip_and_validation() {
     auto future_schema = json;
     future_schema["schema_version"] = "9.9";
     expect(!pipeline::deserialize_event(future_schema.dump(), error), "unsupported schema version is rejected");
+
+    auto legacy_schema = json;
+    legacy_schema["schema_version"] = "0.2";
+    expect(pipeline::deserialize_event(legacy_schema.dump(), error).has_value(), "a Schema 0.2 process event still deserializes under 0.3");
+
+    auto stray_family = json;
+    stray_family["network"] = {{"direction", "outbound"}, {"protocol", nullptr}, {"source_ip", nullptr},
+                               {"source_port", nullptr}, {"destination_ip", nullptr},
+                               {"destination_port", nullptr}, {"destination_hostname", nullptr}};
+    expect(!pipeline::deserialize_event(stray_family.dump(), error), "a process event with a family block is rejected");
     expect(!pipeline::deserialize_event("{not-json", error) && !error.empty(), "malformed JSON fails with an error");
 }
 
@@ -159,8 +171,14 @@ void test_schema_document_is_present_and_sane() {
     const nlohmann::json schema = nlohmann::json::parse(
         std::istreambuf_iterator<char>{file}, std::istreambuf_iterator<char>{});
     expect(schema.at("$schema") == "https://json-schema.org/draft/2020-12/schema", "schema uses JSON Schema 2020-12");
-    expect(schema.at("properties").at("schema_version").at("const") == "0.2", "schema version is current at 0.2");
+    const auto& versions = schema.at("properties").at("schema_version").at("enum");
+    expect(
+        std::find(versions.begin(), versions.end(), "0.3") != versions.end() &&
+            std::find(versions.begin(), versions.end(), "0.2") != versions.end(),
+        "schema accepts both 0.2 and 0.3 (additive)");
     expect(schema.at("additionalProperties") == false, "schema rejects unknown top-level fields");
+    const auto& categories = schema.at("properties").at("event").at("properties").at("category").at("enum");
+    expect(categories.size() == 5, "schema declares all five telemetry categories");
 }
 
 }  // namespace

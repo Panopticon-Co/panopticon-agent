@@ -28,6 +28,26 @@
   capture on x64 still needs to be demonstrated on elevated hardware with
   Sysmon installed; only the build/test path is validated so far.
 
+### Phase 4 (partial): typed telemetry expansion — V3
+
+- Added Schema 0.3: additive, versioned. `event.category` widens to
+  `process | network | file | registry | image_load`; one optional family block
+  per non-process family; `process` stays required as process context;
+  `additionalProperties: false` retained; a Schema 0.2 process event stays valid.
+- Added `RawNetworkEvent` / `RawFileEvent` / `RawRegistryEvent` /
+  `RawImageLoadEvent` and per-family normalizers, reusing one shared
+  identity/context scaffold.
+- `SysmonTelemetryDecoder` decodes Sysmon Event IDs 3, 7, 11, 12, 13, 14, 23,
+  26; the live subscription XPath was widened and `deliver()` routes EID 1 to
+  the unchanged process decoder.
+- Metadata only: no packet payloads, no file contents, no registry value
+  contents, no PE analysis.
+- Build + all 7 CTest cases green on x64-windows. **Live Sysmon capture of the
+  new families on an elevated host is not yet demonstrated** (tracked with
+  live process-capture validation). See `docs/V3_TELEMETRY.md`.
+- Still Phase 4/5 work: ETW-based file/registry providers, DNS, process-stop,
+  configurable field selection, a shipped Sysmon reference config.
+
 ## Proposed next phases
 
 ### Phase 3: bounded pipeline and health

@@ -1,0 +1,109 @@
+<!--
+  Panopticon Officer - REFERENCE Sysmon configuration for V3 multi-family telemetry.
+
+  STATUS: REFERENCE / STARTING POINT. This is NOT a mandated production policy and
+  NOT the only configuration Officer supports. It documents the Sysmon *policy*
+  that makes Officer's five telemetry families populate. Officer consumes the
+  Microsoft-Windows-Sysmon/Operational channel via EvtSubscribe; it never reads
+  this file.
+
+  HOW TO USE
+    - If you already run Sysmon with a managed configuration, merge only the
+      Event IDs you are missing (below) into your own config. Do not replace a
+      working deployment with this file wholesale.
+    - Apply on a test host with:  Sysmon64.exe -c officer-reference-config.xml
+    - Inspect the effective config with:  Sysmon64.exe -c
+
+  METADATA-ONLY BOUNDARY (must be preserved)
+    Officer emits path / operation / 5-tuple / hash metadata only. It never emits
+    packet payloads, file contents, registry value data, process memory, or PE
+    contents. To keep Sysmon itself within that boundary this config deliberately:
+      - does NOT set <ArchiveDirectory> (that would persist DELETED FILE CONTENTS
+        to disk),
+      - uses FileDeleteDetected (EID 26), never the archiving FileDelete (EID 23),
+      - does NOT enable clipboard capture, WMI, DNS-query, or pipe events.
+
+  REQUIRED EVENT IDS FOR V3
+      1           Process create        -> event.category=process     / type=start
+      3           Network connection    -> event.category=network      / type=connect
+      7           Image / module load   -> event.category=image_load   / type=load   (HIGH VOLUME - scoped below)
+      11          File create           -> event.category=file         / type=create
+      12,13,14    Registry key/value    -> event.category=registry     / type=add_key|set_value|rename_key
+  OPTIONAL
+      26          File delete (detected)-> event.category=file         / type=delete
+      23          File delete (archive) -> intentionally NOT enabled (would capture file contents)
+-->
+<Sysmon schemaversion="4.90">
+
+  <HashAlgorithms>SHA256</HashAlgorithms>
+  <!-- No <ArchiveDirectory>. No clipboard / WMI / DNS-query / pipe events. -->
+
+  <EventFiltering>
+
+    <!-- EID 1 - process creation. Log everything; this is the V1/V2 baseline. -->
+    <RuleGroup name="process-create" groupRelation="or">
+      <ProcessCreate onmatch="exclude"/>
+    </RuleGroup>
+
+    <!-- EID 3 - TCP/UDP connection metadata (5-tuple + resolved hostname).
+         EID 3 carries no payload. Only loopback is excluded here; scope further
+         to your environment if volume is a concern. -->
+    <RuleGroup name="network-connect" groupRelation="or">
+      <NetworkConnect onmatch="exclude">
+        <DestinationIp condition="is">127.0.0.1</DestinationIp>
+        <DestinationIp condition="is">::1</DestinationIp>
+      </NetworkConnect>
+    </RuleGroup>
+
+    <!-- EID 7 - image / module load. HIGH VOLUME. Scoped to modules loaded from
+         user-writable locations, which is exactly what DET-IMG-001 inspects.
+         Broaden only deliberately and with downstream queue headroom. -->
+    <RuleGroup name="image-load" groupRelation="or">
+      <ImageLoad onmatch="include">
+        <ImageLoaded condition="contains">\AppData\Local\Temp\</ImageLoaded>
+        <ImageLoaded condition="contains">\AppData\Roaming\</ImageLoaded>
+        <ImageLoaded condition="contains">\Downloads\</ImageLoaded>
+        <ImageLoaded condition="contains">\ProgramData\</ImageLoaded>
+        <ImageLoaded condition="contains">\Users\Public\</ImageLoaded>
+      </ImageLoad>
+    </RuleGroup>
+
+    <!-- EID 11 - file create metadata (path + operation + hash when Sysmon hashes).
+         Scoped to autostart and user-writable staging locations. No file contents. -->
+    <RuleGroup name="file-create" groupRelation="or">
+      <FileCreate onmatch="include">
+        <TargetFilename condition="contains">\Start Menu\Programs\Startup\</TargetFilename>
+        <TargetFilename condition="contains">\AppData\Local\Temp\</TargetFilename>
+        <TargetFilename condition="contains">\AppData\Roaming\</TargetFilename>
+        <TargetFilename condition="contains">\Downloads\</TargetFilename>
+        <TargetFilename condition="contains">\ProgramData\</TargetFilename>
+        <TargetFilename condition="contains">\Users\Public\</TargetFilename>
+      </FileCreate>
+    </RuleGroup>
+
+    <!-- EID 26 - file delete DETECTED (no archiving, no contents). Optional. -->
+    <RuleGroup name="file-delete-detected" groupRelation="or">
+      <FileDeleteDetected onmatch="include">
+        <TargetFilename condition="contains">\Start Menu\Programs\Startup\</TargetFilename>
+        <TargetFilename condition="contains">\AppData\Local\Temp\</TargetFilename>
+        <TargetFilename condition="contains">\ProgramData\</TargetFilename>
+      </FileDeleteDetected>
+    </RuleGroup>
+
+    <!-- EID 12/13/14 - registry key add/delete, value set, key rename.
+         Scoped to the classic persistence hives. Sysmon never carries registry
+         value DATA for these events; Officer maps the Details type token to a
+         REG_* name and discards the rest. -->
+    <RuleGroup name="registry" groupRelation="or">
+      <RegistryEvent onmatch="include">
+        <TargetObject condition="contains">\CurrentVersion\Run</TargetObject>
+        <TargetObject condition="contains">\CurrentVersion\RunOnce</TargetObject>
+        <TargetObject condition="contains">\CurrentVersion\Explorer\Shell Folders</TargetObject>
+        <TargetObject condition="contains">\CurrentVersion\Winlogon\</TargetObject>
+        <TargetObject condition="contains">\Image File Execution Options\</TargetObject>
+        <TargetObject condition="contains">\Services\</TargetObject>
+      </RegistryEvent>
+    </RuleGroup>
+
+  </EventFiltering>
+</Sysmon>

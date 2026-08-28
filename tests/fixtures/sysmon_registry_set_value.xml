@@ -1,0 +1,22 @@
+<!-- SYNTHETIC Sysmon EventID 13 (registry value set). Hand-authored fixture, not
+     captured from a live host. Details carries only a type token; the decoder is
+     metadata-only and never retains value contents. -->
+<Event xmlns="http://schemas.microsoft.com/win/2004/08/events/event">
+  <System>
+    <Provider Name="Microsoft-Windows-Sysmon" />
+    <EventID>13</EventID>
+    <EventRecordID>204</EventRecordID>
+    <Channel>Microsoft-Windows-Sysmon/Operational</Channel>
+    <Computer>OFFICER-LAB</Computer>
+  </System>
+  <EventData>
+    <Data Name="UtcTime">2026-08-14 12:00:03.000</Data>
+    <Data Name="ProcessGuid">{SANITIZED-REGISTRY-GUID}</Data>
+    <Data Name="ProcessId">4242</Data>
+    <Data Name="Image">C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe</Data>
+    <Data Name="User">LAB\analyst</Data>
+    <Data Name="EventType">SetValue</Data>
+    <Data Name="TargetObject">HKU\S-1-5-21-0-0-0-1001\Software\Microsoft\Windows\CurrentVersion\Run\Updater</Data>
+    <Data Name="Details">Binary Data</Data>
+  </EventData>
+</Event>

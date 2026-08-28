@@ -1,0 +1,25 @@
+<!-- SYNTHETIC Sysmon EventID 3 (network connection). Hand-authored fixture, not
+     captured from a live host. Field shapes mirror Microsoft-Windows-Sysmon. -->
+<Event xmlns="http://schemas.microsoft.com/win/2004/08/events/event">
+  <System>
+    <Provider Name="Microsoft-Windows-Sysmon" />
+    <EventID>3</EventID>
+    <EventRecordID>202</EventRecordID>
+    <Channel>Microsoft-Windows-Sysmon/Operational</Channel>
+    <Computer>OFFICER-LAB</Computer>
+  </System>
+  <EventData>
+    <Data Name="UtcTime">2026-08-14 12:00:01.500</Data>
+    <Data Name="ProcessGuid">{SANITIZED-NETWORK-GUID}</Data>
+    <Data Name="ProcessId">4242</Data>
+    <Data Name="Image">C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe</Data>
+    <Data Name="User">LAB\analyst</Data>
+    <Data Name="Protocol">tcp</Data>
+    <Data Name="Initiated">true</Data>
+    <Data Name="SourceIp">10.0.0.10</Data>
+    <Data Name="SourcePort">50000</Data>
+    <Data Name="DestinationIp">203.0.113.10</Data>
+    <Data Name="DestinationHostname">example.test</Data>
+    <Data Name="DestinationPort">443</Data>
+  </EventData>
+</Event>

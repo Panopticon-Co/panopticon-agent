@@ -169,4 +169,232 @@ std::optional<telemetry::PanopticonEvent> normalize_process_event(
     return result;
 }
 
+// -- V3 telemetry-family normalization --------------------------------
+namespace {
+
+std::optional<std::string> leaf_name(const std::optional<std::string>& path) {
+    if (!path || path->empty()) {
+        return std::nullopt;
+    }
+    const std::size_t separator = path->find_last_of("\\/");
+    return separator == std::string::npos ? *path : path->substr(separator + 1);
+}
+
+void split_account(
+    const std::optional<std::string>& account,
+    telemetry::UserMetadata& user) {
+    if (!account || account->empty()) {
+        return;
+    }
+    const std::size_t separator = account->find('\\');
+    if (separator == std::string::npos) {
+        user.name = *account;
+        return;
+    }
+    if (separator != 0) {
+        user.domain = account->substr(0, separator);
+    }
+    if (separator + 1 < account->size()) {
+        user.name = account->substr(separator + 1);
+    }
+}
+
+std::optional<std::string> canonical_sha256(
+    const std::optional<std::string>& input, std::string& error_message) {
+    if (!input) {
+        return std::nullopt;
+    }
+    if (input->size() != 64 || !std::all_of(input->begin(), input->end(), is_hexadecimal)) {
+        error_message = "A telemetry SHA-256 value must contain exactly 64 hexadecimal characters.";
+        return std::nullopt;
+    }
+    std::string result = *input;
+    std::transform(result.begin(), result.end(), result.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return result;
+}
+
+// Builds the shared skeleton (identity + process context) for a family event.
+// Returns std::nullopt with error_message set on failure.
+std::optional<telemetry::PanopticonEvent> build_family_base(
+    const telemetry::SourceProvenance& source,
+    const telemetry::RawProcessContext& process,
+    telemetry::UtcTimestamp timestamp,
+    std::string_view category,
+    std::string_view type,
+    const NormalizationContext& context,
+    std::string& error_message) {
+    error_message.clear();
+    if (!context_is_valid(context, error_message)) {
+        return std::nullopt;
+    }
+    if (source.provider.empty()) {
+        error_message = "A raw telemetry event must identify its source provider.";
+        return std::nullopt;
+    }
+
+    const auto entity_id = core::derive_process_context_entity_id(
+        context.host.id, process.pid, process.process_guid.value_or(""), error_message);
+    if (!entity_id) {
+        return std::nullopt;
+    }
+    const auto event_id = core::derive_telemetry_event_id(
+        context.host.id, source, category, type, process.pid, timestamp, error_message);
+    if (!event_id) {
+        return std::nullopt;
+    }
+    const std::string formatted = format_utc_timestamp(timestamp);
+    if (formatted.empty()) {
+        error_message = "The telemetry timestamp could not be formatted as UTC.";
+        return std::nullopt;
+    }
+
+    telemetry::PanopticonEvent result;
+    result.event = {*event_id, std::string{category}, std::string{type}, formatted};
+    result.source = {
+        source_kind_name(source.kind),
+        source.provider,
+        source.channel,
+        source.record_id,
+    };
+    result.agent = context.agent;
+    result.host = context.host;
+    split_account(process.user_name, result.user);
+    if (!result.user.sid) {
+        result.user.sid = process.user_sid;
+    }
+    result.process = {
+        *entity_id,
+        process.pid,
+        process.process_name ? process.process_name : leaf_name(process.executable),
+        process.executable,
+        std::nullopt,
+        {std::nullopt, std::nullopt, std::nullopt},
+        {std::nullopt},
+    };
+    return result;
+}
+
+std::string network_direction_name(telemetry::NetworkDirection d) {
+    return d == telemetry::NetworkDirection::inbound ? "inbound" : "outbound";
+}
+
+std::optional<std::string> network_protocol_name(telemetry::NetworkProtocol p) {
+    switch (p) {
+        case telemetry::NetworkProtocol::tcp: return "tcp";
+        case telemetry::NetworkProtocol::udp: return "udp";
+        case telemetry::NetworkProtocol::other: return std::nullopt;
+    }
+    return std::nullopt;
+}
+
+std::string file_operation_name(telemetry::FileOperation op) {
+    switch (op) {
+        case telemetry::FileOperation::create: return "create";
+        case telemetry::FileOperation::remove: return "delete";
+        case telemetry::FileOperation::rename: return "rename";
+    }
+    return "create";
+}
+
+std::string registry_operation_name(telemetry::RegistryOperation op) {
+    switch (op) {
+        case telemetry::RegistryOperation::add_key: return "add_key";
+        case telemetry::RegistryOperation::delete_key: return "delete_key";
+        case telemetry::RegistryOperation::set_value: return "set_value";
+        case telemetry::RegistryOperation::rename_key: return "rename_key";
+    }
+    return "set_value";
+}
+
+}  // namespace
+
+std::optional<telemetry::PanopticonEvent> normalize_network_event(
+    const telemetry::RawNetworkEvent& event,
+    const NormalizationContext& context,
+    std::string& error_message) {
+    auto base = build_family_base(
+        event.source, event.process, event.timestamp, "network", "connect", context, error_message);
+    if (!base) {
+        return std::nullopt;
+    }
+    base->network = telemetry::NetworkMetadata{
+        network_direction_name(event.direction),
+        network_protocol_name(event.protocol),
+        event.source_ip,
+        event.source_port,
+        event.destination_ip,
+        event.destination_port,
+        event.destination_hostname,
+    };
+    return base;
+}
+
+std::optional<telemetry::PanopticonEvent> normalize_file_event(
+    const telemetry::RawFileEvent& event,
+    const NormalizationContext& context,
+    std::string& error_message) {
+    const std::string operation = file_operation_name(event.operation);
+    auto base = build_family_base(
+        event.source, event.process, event.timestamp, "file", operation, context, error_message);
+    if (!base) {
+        return std::nullopt;
+    }
+    const auto sha256 = canonical_sha256(event.sha256, error_message);
+    if (event.sha256 && !sha256) {
+        return std::nullopt;
+    }
+    base->file = telemetry::FileMetadata{
+        operation,
+        event.path,
+        event.target_path,
+        event.previous_path,
+        {sha256},
+    };
+    return base;
+}
+
+std::optional<telemetry::PanopticonEvent> normalize_registry_event(
+    const telemetry::RawRegistryEvent& event,
+    const NormalizationContext& context,
+    std::string& error_message) {
+    const std::string operation = registry_operation_name(event.operation);
+    auto base = build_family_base(
+        event.source, event.process, event.timestamp, "registry", operation, context, error_message);
+    if (!base) {
+        return std::nullopt;
+    }
+    base->registry = telemetry::RegistryMetadata{
+        operation,
+        event.key_path,
+        event.value_name,
+        event.value_type,
+        event.value_data,  // metadata-only; the decoder leaves this unset by policy
+    };
+    return base;
+}
+
+std::optional<telemetry::PanopticonEvent> normalize_image_load_event(
+    const telemetry::RawImageLoadEvent& event,
+    const NormalizationContext& context,
+    std::string& error_message) {
+    auto base = build_family_base(
+        event.source, event.process, event.timestamp, "image_load", "load", context, error_message);
+    if (!base) {
+        return std::nullopt;
+    }
+    const auto sha256 = canonical_sha256(event.sha256, error_message);
+    if (event.sha256 && !sha256) {
+        return std::nullopt;
+    }
+    base->image_load = telemetry::ImageLoadMetadata{
+        event.path,
+        event.is_signed,
+        event.signature_status,
+        {sha256},
+    };
+    return base;
+}
+
 }  // namespace panopticon::officer::pipeline

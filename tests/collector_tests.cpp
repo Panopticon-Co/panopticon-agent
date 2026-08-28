@@ -1,14 +1,18 @@
 #include "panopticon/officer/collectors/etw_process_collector.hpp"
 #include "panopticon/officer/collectors/sysmon_event_collector.hpp"
 #include "panopticon/officer/collectors/sysmon_process_decoder.hpp"
+#include "panopticon/officer/collectors/sysmon_telemetry_decoder.hpp"
 #include "panopticon/officer/core/entity_id.hpp"
 #include "panopticon/officer/pipeline/normalizer.hpp"
+#include "panopticon/officer/pipeline/serializer.hpp"
 
 #include <chrono>
 #include <fstream>
 #include <iostream>
 #include <iterator>
 #include <string>
+#include <string_view>
+#include <variant>
 
 namespace {
 
@@ -105,6 +109,122 @@ void test_collectors_share_the_generic_interface() {
     expect(!first.running() && !second.running(), "collectors begin stopped");
 }
 
+// -- V3 telemetry-family decode + normalize ---------------------------
+std::string read_named_fixture(const char* path) {
+    std::ifstream file(path);
+    return {std::istreambuf_iterator<char>{file}, std::istreambuf_iterator<char>{}};
+}
+
+pipeline::NormalizationContext family_context() {
+    pipeline::NormalizationContext context;
+    context.agent = {"agent-sanitized-001", telemetry::kAgentVersion};
+    context.host = {"host-sanitized-001", "OFFICER-LAB", {"Windows 11", "26100"}};
+    return context;
+}
+
+void expect_round_trips(const telemetry::PanopticonEvent& event, const char* label) {
+    std::string error;
+    const auto back = pipeline::deserialize_event(pipeline::serialize_event(event), error);
+    if (!back) {
+        std::cerr << "Round-trip parse error for " << label << ": " << error << '\n';
+    }
+    expect(back && *back == event, label);
+}
+
+void test_sysmon_network_family() {
+    std::string error;
+    const auto raw = collectors::SysmonTelemetryDecoder::decode_xml(
+        read_named_fixture(OFFICER_SYSMON_NETWORK_FIXTURE_PATH), error);
+    expect(raw.has_value(), "network fixture decodes to a raw event");
+    if (!raw) { std::cerr << "decode error: " << error << '\n'; return; }
+    expect(std::holds_alternative<telemetry::RawNetworkEvent>(*raw), "EID 3 decodes to RawNetworkEvent");
+    const auto& n = std::get<telemetry::RawNetworkEvent>(*raw);
+    expect(n.direction == telemetry::NetworkDirection::outbound, "Initiated=true -> outbound");
+    expect(n.protocol == telemetry::NetworkProtocol::tcp, "protocol tcp decodes");
+    expect(n.destination_ip == std::optional<std::string>{"203.0.113.10"}, "destination IP decodes");
+    expect(n.destination_port == std::optional<std::uint16_t>{443}, "destination port decodes");
+    expect(n.process.pid == 4242, "process context PID decodes");
+
+    const auto normalized = pipeline::normalize_network_event(n, family_context(), error);
+    expect(normalized.has_value(), "network event normalizes");
+    if (!normalized) { std::cerr << "normalize error: " << error << '\n'; return; }
+    expect(normalized->event.category == "network" && normalized->event.type == "connect", "network category/type");
+    expect(normalized->network && normalized->network->destination_ip == std::optional<std::string>{"203.0.113.10"}, "family block populated");
+    expect(!normalized->file && !normalized->registry && !normalized->image_load, "only the network block is set");
+    expect(normalized->process.entity_id.starts_with("proc_"), "process-context entity ID derived");
+    expect_round_trips(*normalized, "normalized network event round-trips through the 0.3 serializer");
+}
+
+void test_sysmon_file_family() {
+    std::string error;
+    const auto raw = collectors::SysmonTelemetryDecoder::decode_xml(
+        read_named_fixture(OFFICER_SYSMON_FILE_FIXTURE_PATH), error);
+    expect(raw && std::holds_alternative<telemetry::RawFileEvent>(*raw), "EID 11 decodes to RawFileEvent");
+    if (!raw) { std::cerr << "decode error: " << error << '\n'; return; }
+    const auto& f = std::get<telemetry::RawFileEvent>(*raw);
+    expect(f.operation == telemetry::FileOperation::create, "EID 11 -> create");
+    expect(f.path && f.path->ends_with("stage.txt"), "target filename decodes");
+
+    const auto normalized = pipeline::normalize_file_event(f, family_context(), error);
+    expect(normalized.has_value(), "file event normalizes");
+    if (!normalized) { std::cerr << "normalize error: " << error << '\n'; return; }
+    expect(normalized->event.category == "file" && normalized->event.type == "create", "file category/type");
+    expect(normalized->file && normalized->file->operation == "create", "file block populated");
+    expect_round_trips(*normalized, "normalized file event round-trips through the 0.3 serializer");
+}
+
+void test_sysmon_registry_family_is_metadata_only() {
+    std::string error;
+    const auto raw = collectors::SysmonTelemetryDecoder::decode_xml(
+        read_named_fixture(OFFICER_SYSMON_REGISTRY_FIXTURE_PATH), error);
+    expect(raw && std::holds_alternative<telemetry::RawRegistryEvent>(*raw), "EID 13 decodes to RawRegistryEvent");
+    if (!raw) { std::cerr << "decode error: " << error << '\n'; return; }
+    const auto& r = std::get<telemetry::RawRegistryEvent>(*raw);
+    expect(r.operation == telemetry::RegistryOperation::set_value, "EID 13 -> set_value");
+    expect(r.key_path && r.key_path->find("CurrentVersion\\Run") != std::string::npos, "Run key path decodes");
+    expect(r.value_name == std::optional<std::string>{"Updater"}, "value name is the key leaf");
+    expect(r.value_type == std::optional<std::string>{"REG_BINARY"}, "value type derived from Details token");
+    expect(!r.value_data.has_value(), "value_data is never populated (metadata-only)");
+
+    const auto normalized = pipeline::normalize_registry_event(r, family_context(), error);
+    expect(normalized.has_value(), "registry event normalizes");
+    if (!normalized) { std::cerr << "normalize error: " << error << '\n'; return; }
+    expect(normalized->registry && !normalized->registry->value_data.has_value(), "normalized registry stays metadata-only");
+    expect_round_trips(*normalized, "normalized registry event round-trips through the 0.3 serializer");
+}
+
+void test_sysmon_image_load_family() {
+    std::string error;
+    const auto raw = collectors::SysmonTelemetryDecoder::decode_xml(
+        read_named_fixture(OFFICER_SYSMON_IMAGE_LOAD_FIXTURE_PATH), error);
+    expect(raw && std::holds_alternative<telemetry::RawImageLoadEvent>(*raw), "EID 7 decodes to RawImageLoadEvent");
+    if (!raw) { std::cerr << "decode error: " << error << '\n'; return; }
+    const auto& im = std::get<telemetry::RawImageLoadEvent>(*raw);
+    expect(im.path && im.path->ends_with("payload.dll"), "ImageLoaded decodes");
+    expect(im.is_signed == std::optional<bool>{false}, "Signed=false decodes");
+    expect(im.sha256 && im.sha256->size() == 64, "SHA-256 extracted from Hashes");
+
+    const auto normalized = pipeline::normalize_image_load_event(im, family_context(), error);
+    expect(normalized.has_value(), "image load event normalizes");
+    if (!normalized) { std::cerr << "normalize error: " << error << '\n'; return; }
+    expect(normalized->event.category == "image_load" && normalized->event.type == "load", "image_load category/type");
+    expect(normalized->image_load && normalized->image_load->is_signed == std::optional<bool>{false}, "image block populated");
+    expect_round_trips(*normalized, "normalized image load event round-trips through the 0.3 serializer");
+}
+
+void test_sysmon_telemetry_decoder_rejects_process_and_unknown_ids() {
+    std::string error;
+    // Event ID 1 belongs to SysmonProcessDecoder, not this one.
+    std::string xml = read_named_fixture(OFFICER_SYSMON_NETWORK_FIXTURE_PATH);
+    const auto pos = xml.find("<EventID>3</EventID>");
+    xml.replace(pos, 20, "<EventID>1</EventID>");
+    expect(!collectors::SysmonTelemetryDecoder::decode_xml(xml, error), "EID 1 is rejected by the family decoder");
+
+    xml = read_named_fixture(OFFICER_SYSMON_NETWORK_FIXTURE_PATH);
+    xml.replace(xml.find("<EventID>3</EventID>"), 20, "<EventID>99</EventID>");
+    expect(!collectors::SysmonTelemetryDecoder::decode_xml(xml, error), "an unsupported EID is rejected");
+}
+
 }  // namespace
 
 int main() {
@@ -112,6 +232,11 @@ int main() {
     test_sysmon_decoder_rejects_wrong_event_and_bad_numbers();
     test_cross_source_entity_identity();
     test_collectors_share_the_generic_interface();
+    test_sysmon_network_family();
+    test_sysmon_file_family();
+    test_sysmon_registry_family_is_metadata_only();
+    test_sysmon_image_load_family();
+    test_sysmon_telemetry_decoder_rejects_process_and_unknown_ids();
     if (failures == 0) {
         std::cout << "All Officer Phase 2 collector tests passed.\n";
         return 0;
