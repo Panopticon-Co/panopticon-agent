@@ -1,7 +1,7 @@
 # Officer
 
-Officer is the Windows endpoint telemetry agent for **Panopticon**, a capstone
-EDR/XDR platform. Its job is to observe security-relevant activity on a Windows
+Officer is the Windows endpoint telemetry agent for **Panopticon**, an EDR/XDR
+platform. Its job is to observe security-relevant activity on a Windows
 endpoint, turn source-specific records into a stable Panopticon event format,
 and eventually deliver those events reliably to the Panopticon backend.
 
@@ -41,24 +41,30 @@ Detection rules remain configurable on the Panopticon side. Collection code
 does not contain detection logic, and source adapters do not produce JSON or
 communicate with the server directly.
 
-## Current status: Phase 2
+## Current status
 
-Phase 2 connects two independent live Windows sources to the Phase 1 contracts.
-Both publish source-neutral process facts, then the agent normalizes and prints
-one compact JSON object per observation.
+The agent connects independent live Windows sources to the Phase 1 contracts,
+normalizes their records, and prints one compact JSON object per observation.
+Live ETW and Sysmon process-start collection is joined, from the V3 multi-family
+telemetry work, by Sysmon-based network, file, registry, and image-load
+collection, all normalized to Panopticon Schema `0.3`.
 
 Implemented now:
 
 - A source-neutral raw process-start contract with source provenance.
 - A separate enrichment contract so observed facts are not overwritten.
-- Panopticon normalized process event schema `0.2` with source provenance.
+- Panopticon normalized event schema `0.3` with source provenance; Schema 0.2
+  process events remain valid under it (the change is additive).
 - Deterministic event IDs and PID-reuse-safe process entity IDs.
 - Windows CNG SHA-256 identity derivation.
 - Strict JSON serialization, deserialization, and malformed-input rejection.
 - Native Windows ARM64 contract and parser tests.
 - Raw Windows ETW subscription to `Microsoft-Windows-Kernel-Process`.
 - Live Sysmon subscription through Windows Event Log `EvtSubscribe`.
-- Source provenance in Panopticon schema `0.2`.
+- Schema 0.3 multi-family telemetry: network, file, registry, and image-load
+  events decoded from Sysmon Event IDs 3, 7, 11, 12, 13, 14, 23, and 26, each
+  carrying process context. Metadata only, with a scoped reference Sysmon
+  configuration under `docs/sysmon/`.
 - Clean Ctrl+C shutdown for both collector lifecycles.
 - `officer-query`, the preserved EyeTrace v0.1 historical Sysmon reader.
 
@@ -67,7 +73,8 @@ Not implemented yet:
 - The bounded event bus and backpressure handling.
 - Durable SQLite spooling or network delivery.
 - Windows service installation and lifecycle management.
-- Network, file, registry, DNS, image-load, and process-stop payload schemas.
+- DNS and process-stop schemas, and ETW-based (non-Sysmon) file and registry
+  providers.
 
 The next phase moves normalization off acquisition callback threads and onto a
 bounded queue with explicit health and loss counters.
@@ -94,7 +101,7 @@ ctest --test-dir build-officer-arm64 --output-on-failure
 
 The build produces:
 
-- `officer-agent.exe` - the live Phase 2 console agent.
+- `officer-agent.exe` - the live console agent.
 - `officer-collectors.lib` - independent ETW and Sysmon acquisition adapters.
 - `officer-core-tests.exe` - identity, normalization, and JSON contract tests.
 - `officer-collector-tests.exe` - sanitized source-decoder and interface tests.
@@ -183,7 +190,7 @@ compact NDJSON and will reflect the source fields actually available.
 
 ```json
 {
-  "schema_version": "0.2",
+  "schema_version": "0.3",
   "event": {
     "id": "evt_1111111111111111111111111111111111111111111111111111111111111111",
     "category": "process",
@@ -198,7 +205,7 @@ compact NDJSON and will reflect the source fields actually available.
   },
   "agent": {
     "id": "agent-sanitized-001",
-    "version": "0.2.0"
+    "version": "0.3.0"
   },
   "host": {
     "id": "host-sanitized-001",
