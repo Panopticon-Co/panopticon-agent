@@ -1,6 +1,7 @@
 #include "panopticon/officer/collectors/sysmon_event_collector.hpp"
 
 #include "panopticon/officer/collectors/sysmon_process_decoder.hpp"
+#include "panopticon/officer/collectors/sysmon_telemetry_decoder.hpp"
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -22,7 +23,29 @@ namespace panopticon::officer::collectors {
 namespace {
 
 constexpr wchar_t kSysmonChannel[] = L"Microsoft-Windows-Sysmon/Operational";
-constexpr wchar_t kProcessCreateQuery[] = L"*[System[(EventID=1)]]";
+// Process create (1) plus the V3 telemetry families: network (3), image load
+// (7), file create/delete (11, 23, 26) and registry key/value (12, 13, 14).
+constexpr wchar_t kTelemetryQuery[] =
+    L"*[System[(EventID=1 or EventID=3 or EventID=7 or EventID=11 or EventID=12 or "
+    L"EventID=13 or EventID=14 or EventID=23 or EventID=26)]]";
+
+// Cheap EventID sniff from the rendered XML so deliver() can route to the right
+// decoder without a second full parse.
+int sniff_event_id(std::string_view xml) noexcept {
+    const std::size_t open = xml.find("<EventID>");
+    if (open == std::string_view::npos) {
+        return -1;
+    }
+    std::size_t cursor = open + 9;
+    int value = 0;
+    bool any = false;
+    while (cursor < xml.size() && xml[cursor] >= '0' && xml[cursor] <= '9') {
+        value = value * 10 + (xml[cursor] - '0');
+        ++cursor;
+        any = true;
+    }
+    return any ? value : -1;
+}
 
 std::string win32_error_message(DWORD error) {
     char* message = nullptr;
@@ -177,14 +200,23 @@ struct SysmonEventCollector::Impl {
             report_error(std::move(error));
             return;
         }
-        const auto raw = SysmonProcessDecoder::decode_xml(*xml, error);
+
+        std::optional<telemetry::RawEvent> raw;
+        if (sniff_event_id(*xml) == 1) {
+            const auto process_event = SysmonProcessDecoder::decode_xml(*xml, error);
+            if (process_event) {
+                raw = telemetry::RawEvent{*process_event};
+            }
+        } else {
+            raw = SysmonTelemetryDecoder::decode_xml(*xml, error);
+        }
         if (!raw) {
             report_error(std::move(error));
             return;
         }
         try {
             if (event_sink) {
-                event_sink(telemetry::RawEvent{*raw});
+                event_sink(std::move(*raw));
             }
         } catch (const std::exception& exception) {
             report_error("Event sink failed: " + std::string{exception.what()});
@@ -252,7 +284,7 @@ bool SysmonEventCollector::start(
         nullptr,
         nullptr,
         kSysmonChannel,
-        kProcessCreateQuery,
+        kTelemetryQuery,
         nullptr,
         impl_.get(),
         &Impl::callback,

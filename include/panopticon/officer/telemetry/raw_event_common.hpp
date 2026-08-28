@@ -34,6 +34,9 @@ struct RawProcessContext {
     std::optional<std::string> process_name;
     std::optional<std::string> user_name;
     std::optional<std::string> user_sid;
+    // Sysmon ProcessGuid string, when the source provides one. Used to derive a
+    // stable process-context entity ID for non-process telemetry families.
+    std::optional<std::string> process_guid;
 
     bool operator==(const RawProcessContext&) const = default;
 };
