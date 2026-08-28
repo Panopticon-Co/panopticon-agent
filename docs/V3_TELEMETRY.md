@@ -59,7 +59,11 @@ parsing.
   Network (3) and image load (7) are **high volume**; scope them in the Sysmon
   config to security-relevant paths/hosts. Broad EID 7 collection should be
   treated as opt-in. Registry rules should scope EID 12-14 to the Run /
-  Services / IFEO-class hives.
+  Services / IFEO-class hives. A ready-made scoped starting point is in
+  [`docs/sysmon/officer-reference-config.xml`](sysmon/officer-reference-config.xml)
+  (see [`docs/sysmon/README.md`](sysmon/README.md)) — a reference, not a
+  production mandate; merge the Event IDs you are missing into your own managed
+  config rather than replacing it.
 * Sysmon `HashAlgorithms sha256` if you want `file.hash` / `image_load.hash`
   populated.
 
@@ -115,21 +119,57 @@ x64-windows (MSVC 14.44).**
 
 ## 8. Live validation procedure (needs a real elevated Windows host)
 
+Needs an elevated shell, Sysmon installed, and a config that logs EID
+1,3,7,11,12,13,14 (see section 3 and `docs/sysmon/`).
+
+**Step 1 — capture Officer output to a file.** Officer writes one NDJSON line
+per event to stdout; redirect it:
+
 ```powershell
-# elevated PowerShell, Sysmon installed + configured for EID 1,3,7,11,12,13,14
 .\build-officer-x64\officer-agent.exe --source sysmon > officer-v3.ndjson
-# in another shell, generate one event per family, e.g.:
-Invoke-WebRequest https://example.test -UseBasicParsing            # network (EID 3)
-New-Item "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\x.txt"  # file (EID 11)
-New-ItemProperty HKCU:\Software\Microsoft\Windows\CurrentVersion\Run -Name X -Value y  # registry (EID 13)
-# image load (EID 7) fires as processes load DLLs
-# Ctrl+C, then inspect officer-v3.ndjson for one line per category
 ```
 
-**Live-verified status: not yet done in this cycle** — the build/test path is
-validated on x64; live Sysmon capture of the new families requires an elevated
-host with Sysmon and is tracked separately, exactly as ARM64/x64 live process
-capture is.
+**Step 2 — in another shell, generate one benign event per family.** Use a
+dedicated `HKCU` test key, not a real autostart location:
+
+```powershell
+$dir = "$env:TEMP\officer-v3-probe"; New-Item -ItemType Directory -Force $dir | Out-Null
+powershell.exe -NoProfile -EncodedCommand ([Convert]::ToBase64String(
+  [Text.Encoding]::Unicode.GetBytes("Write-Output probe")))                       # process (EID 1)
+(New-Object Net.Sockets.TcpClient).Connect('1.1.1.1', 443)                        # network (EID 3)
+Set-Content "$dir\probe.txt" x                                                    # file    (EID 11)
+New-Item  'HKCU:\Software\OfficerV3Probe' -Force | Out-Null                       # registry(EID 12)
+New-ItemProperty 'HKCU:\Software\OfficerV3Probe' -Name Marker -Value y -Force     # registry(EID 13)
+Copy-Item C:\Windows\System32\version.dll "$dir\probe.dll"
+Add-Type -Name K -Namespace P -MemberDefinition `
+  '[System.Runtime.InteropServices.DllImport("kernel32", CharSet=System.Runtime.InteropServices.CharSet.Unicode)] public static extern System.IntPtr LoadLibrary(string n);'
+[P.K]::LoadLibrary("$dir\probe.dll") | Out-Null                                   # image   (EID 7)
+```
+
+Stop Officer with Ctrl+C. `officer-v3.ndjson` now holds one line per category
+(`process`, `network`, `file`, `registry`, `image_load`), each
+`"schema_version":"0.3"`.
+
+**Step 3 — run it through the detection engine.** The engine has no stdin-pipe
+mode; feed the captured file, or let the engine spawn Officer itself:
+
+```powershell
+# option A: the file captured above
+python src/main.py --rules rules --officer-ndjson officer-v3.ndjson --reliable `
+  --spool-db spool\v3.db --output-file alerts.ndjson --no-auto-remediate
+
+# option B: engine spawns and shuts down Officer as a subprocess
+python src/main.py --rules rules --officer --officer-bin <path>\officer-agent.exe `
+  --officer-source sysmon --reliable --spool-db spool\v3.db --output-file alerts.ndjson `
+  --no-auto-remediate --duration 60
+```
+
+**Live-verified status:** completed on Windows 11 (build 26220, x64, elevated,
+Sysmon v15.21). 385 real Sysmon-derived events, all five families, conformed to
+the 0.3 contract; DET-PROC-011 / DET-NET-001 / DET-FILE-001 / DET-IMG-001 all
+fired on real telemetry through the V2 pipeline (0 failed, 0 dropped, spool
+clean). ARM64 live capture of the new families is still tracked separately, as
+for V1/V2 process capture.
 
 ## 9. Limitations
 
@@ -143,15 +183,39 @@ capture is.
   a process is by PID/name within a time window.
 * `image_load.signature_status` is whatever Sysmon reports (often
   `Unavailable`); `is_signed` may be `null`.
-* No shipped Sysmon config yet (see Known issues).
+* **High-volume process capture.** Officer decodes, normalizes, serializes and
+  flushes each event inline on the acquisition callback thread and has no
+  bounded queue of its own (that work is a later roadmap phase — "move
+  normalization off acquisition callback threads onto a bounded queue"). On a
+  host with a very high background rate of Sysmon EID 1 (observed on a Windows
+  11 Insider build: well over a thousand process creations in three minutes),
+  the callback cannot drain everything and Windows drops delivery to the
+  subscription, **without an Officer-side diagnostic line**. This predates V3 —
+  V3 did not change the process decode path or its threading — and affects V1/V2
+  process capture equally. The wider V3 subscription (9 Event IDs vs 1) adds
+  some callback load; the scoped reference Sysmon config in `docs/sysmon/` keeps
+  the four new families low-volume so the dominant pressure remains raw EID 1.
+  At moderate rates capture was complete (20/20 generated probes) in live
+  validation. Mitigations until the bounded-queue phase: scope the Sysmon
+  config, and treat sustained high-rate hosts as needing the later reliability
+  work.
 
 ## 10 & 11. Known issues / follow-ups
 
-* No reference Sysmon configuration is shipped; broad EID 3/7 subscription can
-  pressure the downstream bounded queue (see `SECURITY_REVIEW_V3.md`, medium
-  finding 1).
-* `render_event_xml` has no explicit event-size cap before parsing (low finding 2).
-* `sniff_event_id` does not bound the digit run (low finding 3).
+* A scoped reference Sysmon configuration is now shipped in `docs/sysmon/`;
+  broadening EID 3/7 beyond it can still pressure the downstream bounded queue
+  and Officer's callback thread (see `SECURITY_REVIEW_V3.md`, medium finding 1,
+  and section 9 above).
+* `render_event_xml` has no explicit event-size cap before parsing (low finding
+  2). **Deferred for the V3 milestone:** the buffer is sized by `EvtRender` to
+  what Windows delivers for one event, the input channel is ACL-protected, and
+  this is pre-V3 code shared with the process path; adding a cap would change
+  drop behaviour with no demonstrated need.
+* `sniff_event_id` does not bound the digit run (low finding 3). **Deferred for
+  the V3 milestone:** reaching the signed-overflow requires write access to the
+  protected Sysmon Operational channel, and the worst case is a mis-route that
+  `SysmonTelemetryDecoder` then rejects as an unsupported Event ID (one dropped
+  event, no memory unsafety).
 * Sysmon-XML helpers are duplicated between the process and telemetry decoders,
   kept separate deliberately to leave the V1/V2 process path untouched
   (informational finding 4); extract a shared header as a follow-up.
