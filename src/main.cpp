@@ -1,5 +1,7 @@
 #include "panopticon/officer/collectors/etw_process_collector.hpp"
 #include "panopticon/officer/collectors/sysmon_event_collector.hpp"
+#include "panopticon/officer/delivery/config.hpp"
+#include "panopticon/officer/delivery/uploader.hpp"
 #include "panopticon/officer/pipeline/normalizer.hpp"
 #include "panopticon/officer/pipeline/serializer.hpp"
 #include "panopticon/officer/telemetry/panopticon_event.hpp"
@@ -24,11 +26,21 @@
 namespace {
 
 namespace collectors = panopticon::officer::collectors;
+namespace delivery = panopticon::officer::delivery;
 namespace enrichment = panopticon::officer::enrichment;
 namespace pipeline = panopticon::officer::pipeline;
 namespace telemetry = panopticon::officer::telemetry;
 
 enum class SourceSelection { all, etw, sysmon };
+
+// Phase 1 tracer bullet: --manager-url is additive, never a replacement for
+// stdout. Omitting it reproduces exactly today's behavior (there is no
+// --stdout flag to omit -- stdout output is unconditional, see main()).
+struct CliOptions {
+    SourceSelection source = SourceSelection::all;
+    std::optional<std::string> manager_url;
+    bool insecure_tls = false;
+};
 
 std::atomic<HANDLE> shutdown_event{nullptr};
 
@@ -190,15 +202,31 @@ bool process_is_elevated() {
            elevation.TokenIsElevated != 0;
 }
 
-std::optional<SourceSelection> parse_arguments(int argc, char* argv[]) {
-    SourceSelection selection = SourceSelection::all;
+std::optional<CliOptions> parse_arguments(int argc, char* argv[]) {
+    CliOptions options;
     for (int index = 1; index < argc; ++index) {
         const std::string_view argument = argv[index];
         if (argument == "--help" || argument == "-h") {
-            std::cout << "Usage: " << argv[0] << " [--source all|etw|sysmon]\n"
-                      << "  --source  Select live collectors (default: all).\n"
+            std::cout << "Usage: " << argv[0]
+                      << " [--source all|etw|sysmon] [--manager-url <https-url>] [--insecure-tls]\n"
+                      << "  --source        Select live collectors (default: all).\n"
+                      << "  --manager-url   Also deliver events to a Panopticon manager over HTTPS.\n"
+                      << "                  Stdout output is unaffected either way.\n"
+                      << "  --insecure-tls  Skip TLS certificate validation (bring-up only).\n"
                       << "Run elevated and press Ctrl+C to stop cleanly.\n";
             return std::nullopt;
+        }
+        if (argument == "--insecure-tls") {
+            options.insecure_tls = true;
+            continue;
+        }
+        if (argument == "--manager-url") {
+            if (index + 1 >= argc) {
+                std::cerr << "--manager-url requires a value. Use --help for usage.\n";
+                return std::nullopt;
+            }
+            options.manager_url = std::string{argv[++index]};
+            continue;
         }
         if (argument != "--source" || index + 1 >= argc) {
             std::cerr << "Invalid argument. Use --help for usage.\n";
@@ -206,17 +234,17 @@ std::optional<SourceSelection> parse_arguments(int argc, char* argv[]) {
         }
         const std::string_view value = argv[++index];
         if (value == "all") {
-            selection = SourceSelection::all;
+            options.source = SourceSelection::all;
         } else if (value == "etw") {
-            selection = SourceSelection::etw;
+            options.source = SourceSelection::etw;
         } else if (value == "sysmon") {
-            selection = SourceSelection::sysmon;
+            options.source = SourceSelection::sysmon;
         } else {
             std::cerr << "Invalid --source value: " << value << '\n';
             return std::nullopt;
         }
     }
-    return selection;
+    return options;
 }
 
 std::optional<std::string> file_name(const std::optional<std::string>& path) {
@@ -252,8 +280,8 @@ int main(int argc, char* argv[]) {
         const std::string_view argument = argv[index];
         help_requested = help_requested || argument == "--help" || argument == "-h";
     }
-    const auto selection = parse_arguments(argc, argv);
-    if (!selection) {
+    const auto options = parse_arguments(argc, argv);
+    if (!options) {
         return help_requested ? 0 : 2;
     }
 
@@ -279,6 +307,21 @@ int main(int argc, char* argv[]) {
         return 3;
     }
 
+    // --manager-url is additive: stdout output (below) is unconditional,
+    // exactly as it is with no flags at all. Constructing Uploader here
+    // starts its background thread; enqueue() from collector callbacks is
+    // just a mutex-protected push, so no network call ever happens on an
+    // ETW/Sysmon callback thread.
+    std::unique_ptr<delivery::Uploader> uploader;
+    if (options->manager_url) {
+        delivery::DeliveryConfig delivery_config;
+        delivery_config.manager_url = *options->manager_url;
+        delivery_config.verify_tls = !options->insecure_tls;
+        uploader = std::make_unique<delivery::Uploader>(delivery_config, context->agent.id);
+        std::cerr << "Delivering events to " << delivery_config.manager_url
+                   << (delivery_config.verify_tls ? "" : " (TLS verification disabled)") << '\n';
+    }
+
     std::mutex output_mutex;
     const auto emit_normalized =
         [&](const std::optional<telemetry::PanopticonEvent>& normalized,
@@ -288,8 +331,12 @@ int main(int argc, char* argv[]) {
                 std::cerr << "[pipeline] " << normalization_error << '\n';
                 return;
             }
-            std::cout << pipeline::serialize_event(*normalized) << '\n';
+            const std::string line = pipeline::serialize_event(*normalized);
+            std::cout << line << '\n';
             std::cout.flush();
+            if (uploader) {
+                uploader->enqueue(line);
+            }
         };
     const collectors::RawEventSink event_sink = [&](telemetry::RawEvent raw_event) {
         std::visit(
@@ -333,10 +380,10 @@ int main(int argc, char* argv[]) {
         };
 
     std::vector<std::unique_ptr<collectors::TelemetryCollector>> all_collectors;
-    if (*selection == SourceSelection::all || *selection == SourceSelection::etw) {
+    if (options->source == SourceSelection::all || options->source == SourceSelection::etw) {
         all_collectors.push_back(std::make_unique<collectors::EtwProcessCollector>());
     }
-    if (*selection == SourceSelection::all || *selection == SourceSelection::sysmon) {
+    if (options->source == SourceSelection::all || options->source == SourceSelection::sysmon) {
         all_collectors.push_back(std::make_unique<collectors::SysmonEventCollector>());
     }
 
@@ -366,6 +413,9 @@ int main(int argc, char* argv[]) {
 
     for (auto iterator = all_collectors.rbegin(); iterator != all_collectors.rend(); ++iterator) {
         (*iterator)->stop();
+    }
+    if (uploader) {
+        uploader->stop();  // flushes whatever is still pending, best-effort
     }
     SetConsoleCtrlHandler(&console_control_handler, FALSE);
     shutdown_event.store(nullptr);

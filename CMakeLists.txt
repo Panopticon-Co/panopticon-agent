@@ -33,11 +33,23 @@ target_link_libraries(officer-collectors
     PRIVATE advapi32 tdh wevtapi tinyxml2::tinyxml2
 )
 
+add_library(officer-delivery STATIC
+    src/delivery/http_client.cpp
+    src/delivery/uploader.cpp
+)
+
+target_include_directories(officer-delivery PUBLIC include)
+target_compile_features(officer-delivery PUBLIC cxx_std_20)
+target_link_libraries(officer-delivery
+    PUBLIC officer-core
+    PRIVATE winhttp bcrypt
+)
+
 add_executable(officer-agent
     src/main.cpp
 )
 
-target_link_libraries(officer-agent PRIVATE officer-core officer-collectors advapi32)
+target_link_libraries(officer-agent PRIVATE officer-core officer-collectors officer-delivery advapi32)
 
 add_custom_command(
     TARGET officer-agent
@@ -50,6 +62,7 @@ add_custom_command(
 if(MSVC)
     target_compile_options(officer-core PRIVATE /W4 /permissive- /EHsc /utf-8)
     target_compile_options(officer-collectors PRIVATE /W4 /permissive- /EHsc /utf-8)
+    target_compile_options(officer-delivery PRIVATE /W4 /permissive- /EHsc /utf-8)
     target_compile_options(officer-agent PRIVATE /W4 /permissive- /EHsc /utf-8)
 endif()
 
@@ -88,6 +101,13 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME officer-live-collector-decoder-tests COMMAND officer-collector-tests)
     add_test(NAME officer-agent-cli-help COMMAND officer-agent --help)
+
+    add_executable(officer-delivery-tests tests/delivery_tests.cpp)
+    target_link_libraries(officer-delivery-tests PRIVATE officer-delivery)
+    if(MSVC)
+        target_compile_options(officer-delivery-tests PRIVATE /W4 /permissive- /EHsc /utf-8)
+    endif()
+    add_test(NAME officer-delivery-tests COMMAND officer-delivery-tests)
 endif()
 
 add_subdirectory(tools/query)
