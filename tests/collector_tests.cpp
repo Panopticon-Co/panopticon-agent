@@ -213,6 +213,32 @@ void test_sysmon_image_load_family() {
     expect_round_trips(*normalized, "normalized image load event round-trips through the 0.3 serializer");
 }
 
+void test_sysmon_eid3_uses_time_created_over_utctime() {
+    // Sysmon EID 3 UtcTime is unreliable; the decoder must take System/TimeCreated
+    // when present. Here they deliberately disagree by hours.
+    const std::string xml =
+        "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\">"
+        "<System><Provider Name=\"Microsoft-Windows-Sysmon\"/><EventID>3</EventID>"
+        "<EventRecordID>7</EventRecordID><Channel>Microsoft-Windows-Sysmon/Operational</Channel>"
+        "<TimeCreated SystemTime=\"2026-08-31T14:29:14.7212345Z\"/></System>"
+        "<EventData>"
+        "<Data Name=\"UtcTime\">2026-09-01 02:59:14.326</Data>"
+        "<Data Name=\"ProcessId\">6892</Data>"
+        "<Data Name=\"Image\">C:\\Windows\\System32\\certutil.exe</Data>"
+        "<Data Name=\"Protocol\">tcp</Data><Data Name=\"Initiated\">true</Data>"
+        "<Data Name=\"DestinationIp\">203.0.113.9</Data><Data Name=\"DestinationPort\">80</Data>"
+        "</EventData></Event>";
+
+    std::string error;
+    const auto raw = collectors::SysmonTelemetryDecoder::decode_xml(xml, error);
+    expect(raw && std::holds_alternative<telemetry::RawNetworkEvent>(*raw), "EID 3 with TimeCreated decodes");
+    if (!raw) { std::cerr << "decode error: " << error << '\n'; return; }
+    const auto& n = std::get<telemetry::RawNetworkEvent>(*raw);
+    expect(
+        pipeline::format_utc_timestamp(n.timestamp) == "2026-08-31T14:29:14.721Z",
+        "EID 3 event time comes from System/TimeCreated, not the bogus UtcTime");
+}
+
 void test_process_image_cache_backfills_unknown_process() {
     collectors::ProcessImageCache cache;
 
@@ -291,6 +317,7 @@ int main() {
     test_sysmon_file_family();
     test_sysmon_registry_family_is_metadata_only();
     test_sysmon_image_load_family();
+    test_sysmon_eid3_uses_time_created_over_utctime();
     test_process_image_cache_backfills_unknown_process();
     test_sysmon_telemetry_decoder_rejects_process_and_unknown_ids();
     if (failures == 0) {

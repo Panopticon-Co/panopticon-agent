@@ -240,14 +240,31 @@ std::optional<telemetry::RawEvent> SysmonTelemetryDecoder::decode_xml(
         }
     }
 
-    const auto utc_text = field(fields, "UtcTime");
-    if (!utc_text) {
-        error_message = "Sysmon telemetry event " + std::to_string(*event_id) + " is missing UtcTime.";
-        return std::nullopt;
+    // Prefer the Event Log's own System/TimeCreated over EventData/UtcTime.
+    // Sysmon's UtcTime for EID 3 (NetworkConnect) is unreliable on some builds
+    // -- it has been observed hours out from the real connection time, which
+    // breaks cross-family time-window correlation -- whereas TimeCreated is
+    // stamped by the Event Log service and is authoritative. UtcTime remains
+    // the fallback (and is all the synthetic test fixtures carry).
+    std::optional<telemetry::UtcTimestamp> timestamp;
+    if (const auto* time_created = system->FirstChildElement("TimeCreated")) {
+        if (const char* system_time = time_created->Attribute("SystemTime")) {
+            std::string ignored;
+            timestamp = parse_sysmon_utc(system_time, ignored);
+        }
     }
-    const auto timestamp = parse_sysmon_utc(*utc_text, error_message);
+    const auto utc_text = field(fields, "UtcTime");
     if (!timestamp) {
-        return std::nullopt;
+        if (!utc_text) {
+            error_message =
+                "Sysmon telemetry event " + std::to_string(*event_id) +
+                " has neither System/TimeCreated nor EventData/UtcTime.";
+            return std::nullopt;
+        }
+        timestamp = parse_sysmon_utc(*utc_text, error_message);
+        if (!timestamp) {
+            return std::nullopt;
+        }
     }
 
     telemetry::SourceProvenance source;
