@@ -1,5 +1,6 @@
 #include "panopticon/officer/collectors/sysmon_event_collector.hpp"
 
+#include "panopticon/officer/collectors/process_image_cache.hpp"
 #include "panopticon/officer/collectors/sysmon_process_decoder.hpp"
 #include "panopticon/officer/collectors/sysmon_telemetry_decoder.hpp"
 
@@ -16,7 +17,9 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace panopticon::officer::collectors {
@@ -165,6 +168,9 @@ struct SysmonEventCollector::Impl {
     CollectorErrorSink error_sink;
     std::size_t active_callbacks{};
     bool accepting_callbacks{};
+    // PID -> image/user, populated from EID 1, used to backfill non-process
+    // events that Sysmon delivered as Image="<unknown process>".
+    ProcessImageCache process_cache;
 
     bool begin_callback() {
         std::scoped_lock lock{mutex};
@@ -205,10 +211,22 @@ struct SysmonEventCollector::Impl {
         if (sniff_event_id(*xml) == 1) {
             const auto process_event = SysmonProcessDecoder::decode_xml(*xml, error);
             if (process_event) {
+                process_cache.remember(*process_event);
                 raw = telemetry::RawEvent{*process_event};
             }
         } else {
             raw = SysmonTelemetryDecoder::decode_xml(*xml, error);
+            if (raw) {
+                std::visit(
+                    [this](auto& decoded) {
+                        if constexpr (!std::is_same_v<
+                                          std::decay_t<decltype(decoded)>,
+                                          telemetry::RawProcessEvent>) {
+                            process_cache.enrich(decoded.process);
+                        }
+                    },
+                    *raw);
+            }
         }
         if (!raw) {
             report_error(std::move(error));
