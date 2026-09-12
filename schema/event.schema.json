@@ -1,13 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://panopticon.local/schema/officer/event-0.3.json",
+  "$id": "https://panopticon.local/schema/officer/event-0.4.json",
   "title": "Panopticon Officer telemetry event",
-  "description": "The V3 normalized endpoint telemetry contract. Additive over Schema 0.2: process/start events valid under 0.2 remain valid here, and four optional telemetry families (network, file, registry, image_load) are added. Every event still carries a process context block.",
+  "description": "The V4 normalized endpoint telemetry contract. Additive over Schema 0.3: all prior event shapes and Windows source kinds remain valid; linux_procfs is added as a source kind for Linux procfs snapshots. Every event still carries a process context block.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "event", "source", "agent", "host", "user", "process"],
   "properties": {
-    "schema_version": { "enum": ["0.2", "0.3"] },
+    "schema_version": { "enum": ["0.2", "0.3", "0.4"] },
     "event": {
       "type": "object",
       "additionalProperties": false,
@@ -31,7 +31,7 @@
       "properties": {
         "kind": {
           "type": "string",
-          "enum": ["etw", "sysmon", "windows_event_log"]
+          "enum": ["etw", "sysmon", "windows_event_log", "linux_procfs"]
         },
         "provider": { "type": "string", "minLength": 1 },
         "channel": { "$ref": "#/$defs/nullableString" },
