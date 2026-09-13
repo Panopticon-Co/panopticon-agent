@@ -36,6 +36,17 @@ public:
         const std::string& body,
         std::string& error_message) const;
 
+    // General verb entry point backing post() above and the response
+    // module's GET (poll) / POST-with-empty-body (accept) calls. A verb
+    // other than "GET" or "POST" is rejected -- there is no arbitrary-
+    // method escape hatch here.
+    [[nodiscard]] std::optional<HttpResponse> request(
+        const std::string& method,
+        const std::string& url,
+        const std::vector<HttpHeader>& headers,
+        const std::string& body,
+        std::string& error_message) const;
+
 private:
     bool verify_tls_;
     unsigned timeout_ms_;

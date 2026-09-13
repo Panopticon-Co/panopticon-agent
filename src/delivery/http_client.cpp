@@ -52,6 +52,20 @@ std::optional<HttpResponse> HttpClient::post(
     const std::vector<HttpHeader>& headers,
     const std::string& body,
     std::string& error_message) const {
+    return request("POST", url, headers, body, error_message);
+}
+
+std::optional<HttpResponse> HttpClient::request(
+    const std::string& method,
+    const std::string& url,
+    const std::vector<HttpHeader>& headers,
+    const std::string& body,
+    std::string& error_message) const {
+    if (method != "GET" && method != "POST") {
+        error_message = "unsupported HTTP method";
+        return std::nullopt;
+    }
+    const std::wstring wide_method = utf8_to_utf16(method);
     const std::wstring wide_url = utf8_to_utf16(url);
 
     std::array<wchar_t, 256> host_buffer{};
@@ -95,7 +109,7 @@ std::optional<HttpResponse> HttpClient::post(
     const DWORD request_flags = use_tls ? WINHTTP_FLAG_SECURE : 0;
     UniqueInternet request{WinHttpOpenRequest(
         connection.get(),
-        L"POST",
+        wide_method.c_str(),
         components.lpszUrlPath,
         nullptr,
         WINHTTP_NO_REFERER,
