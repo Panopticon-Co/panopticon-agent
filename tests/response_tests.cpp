@@ -3,10 +3,14 @@
 #include "panopticon/officer/response/isolation.hpp"
 #include "panopticon/officer/response/replay_ledger.hpp"
 
+#include <nlohmann/json.hpp>
+
+#include <array>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <string_view>
 
 namespace {
 
@@ -221,6 +225,63 @@ void test_file_evidence_rejects_path_traversal() {
     expect(!absolute.has_value(), "an absolute path target is rejected outright");
 }
 
+// Proves this agent's parse_command_json is compatible with
+// Panopticon-Co/panopticon-contracts' golden fixtures, checked out as a
+// workspace sibling in CI (see .github/workflows/ci.yml) -- the same
+// convention panopticon-manager already uses for its own cross-repo schema
+// contract test. Unlike response_engine.contract.Command (Python), this
+// parser decodes the FULL wire envelope including host_id/schema_version/
+// created_at, so fixtures are passed through unmodified rather than
+// stripped. Skips gracefully (does not fail) if the sibling checkout is
+// absent, e.g. a local dev build without panopticon-contracts cloned.
+void test_parses_every_valid_canonical_fixture_and_rejects_the_intended_invalid_ones() {
+#ifdef PANOPTICON_CONTRACTS_DIR
+    const std::filesystem::path contracts_dir{PANOPTICON_CONTRACTS_DIR};
+    const auto valid_path = contracts_dir / "fixtures" / "commands" / "valid.json";
+    const auto invalid_path = contracts_dir / "fixtures" / "commands" / "invalid.json";
+    if (!std::filesystem::exists(valid_path) || !std::filesystem::exists(invalid_path)) {
+        std::cout << "SKIP: panopticon-contracts sibling checkout not found at " << contracts_dir << '\n';
+        return;
+    }
+
+    std::ifstream valid_stream{valid_path};
+    nlohmann::json valid_fixtures;
+    valid_stream >> valid_fixtures;
+    for (const auto& [action, entry] : valid_fixtures.items()) {
+        if (action.starts_with('$')) continue;
+        std::string error;
+        const auto command = response::parse_command_json(entry.at("command").dump(), error);
+        expect(command.has_value(), ("valid fixture for " + action + " must parse: " + error).c_str());
+    }
+
+    // These invalid.json entries are genuine parse/decode-level rejections.
+    // expired_command is intentionally excluded: parse_command_json only
+    // checks created_at < expires_at ordering, not wall-clock "now" -- that
+    // is CommandGate::validate_and_mark's job, already covered by
+    // test_gate_rejects_expired_command above. replay_detected_scenario,
+    // cross_agent_mismatch, and correlation_mismatch describe multi-step or
+    // transport-level scenarios a single parse call cannot exercise.
+    static constexpr std::array<std::string_view, 8> parse_level_invalid_fixtures{
+        "malformed_command",     "missing_required_field", "unknown_action",
+        "invalid_target_types",  "wrong_target_shape",     "smuggled_shell_field",
+        "oversized_correlation_id", "non_utc_timestamp"};
+
+    std::ifstream invalid_stream{invalid_path};
+    nlohmann::json invalid_fixtures;
+    invalid_stream >> invalid_fixtures;
+    for (const auto& name : parse_level_invalid_fixtures) {
+        const auto& entry = invalid_fixtures.at(std::string{name});
+        const std::string payload = entry.contains("raw") ? entry.at("raw").get<std::string>()
+                                                            : entry.at("command").dump();
+        std::string error;
+        const auto command = response::parse_command_json(payload, error);
+        expect(!command.has_value(), ("invalid fixture " + std::string{name} + " must be rejected").c_str());
+    }
+#else
+    std::cout << "SKIP: PANOPTICON_CONTRACTS_DIR not defined by the build\n";
+#endif
+}
+
 void test_file_evidence_collects_hash_for_allowed_file() {
     const auto root = std::filesystem::temp_directory_path() / "officer-response-tests-root";
     std::filesystem::create_directories(root);
@@ -262,6 +323,7 @@ int main() {
     test_isolation_plan_is_deterministic_and_pure();
     test_file_evidence_rejects_path_traversal();
     test_file_evidence_collects_hash_for_allowed_file();
+    test_parses_every_valid_canonical_fixture_and_rejects_the_intended_invalid_ones();
 
     if (failures == 0) {
         std::cout << "All Officer response tests passed.\n";

@@ -130,6 +130,15 @@ if(BUILD_TESTING)
 
     add_executable(officer-response-tests tests/response_tests.cpp)
     target_link_libraries(officer-response-tests PRIVATE officer-response officer-core)
+    # panopticon-contracts is a sibling checkout (see .github/workflows/ci.yml),
+    # the same convention panopticon-manager already uses for cross-repo schema
+    # contract tests. Tests that read fixtures under this path skip gracefully
+    # (not fail) when it does not exist, e.g. a local dev checkout without the
+    # sibling repo cloned.
+    target_compile_definitions(
+        officer-response-tests
+        PRIVATE PANOPTICON_CONTRACTS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../panopticon-contracts"
+    )
     if(MSVC)
         target_compile_options(officer-response-tests PRIVATE /W4 /permissive- /EHsc /utf-8)
     endif()

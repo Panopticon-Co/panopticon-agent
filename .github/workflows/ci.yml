@@ -14,6 +14,16 @@ jobs:
       - name: Check out Officer
         uses: actions/checkout@v4
 
+      - name: Check out panopticon-contracts (for response contract tests)
+        uses: actions/checkout@v4
+        with:
+          repository: Panopticon-Co/panopticon-contracts
+          path: panopticon-contracts-checkout
+
+      - name: Move panopticon-contracts to sibling path
+        run: Move-Item panopticon-contracts-checkout ..\panopticon-contracts
+        shell: pwsh
+
       - name: Check out vcpkg
         uses: actions/checkout@v4
         with:
