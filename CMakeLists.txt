@@ -45,11 +45,29 @@ target_link_libraries(officer-delivery
     PRIVATE winhttp bcrypt
 )
 
+add_library(officer-response STATIC
+    src/response/identity.cpp
+    src/response/replay_ledger.cpp
+    src/response/command.cpp
+    src/response/process_actions.cpp
+    src/response/network_evidence.cpp
+    src/response/file_evidence.cpp
+    src/response/isolation.cpp
+    src/response/transport.cpp
+)
+
+target_include_directories(officer-response PUBLIC include)
+target_compile_features(officer-response PUBLIC cxx_std_20)
+target_link_libraries(officer-response
+    PUBLIC officer-core officer-delivery
+    PRIVATE advapi32 iphlpapi ws2_32 fwpuclnt
+)
+
 add_executable(officer-agent
     src/main.cpp
 )
 
-target_link_libraries(officer-agent PRIVATE officer-core officer-collectors officer-delivery advapi32)
+target_link_libraries(officer-agent PRIVATE officer-core officer-collectors officer-delivery officer-response advapi32)
 
 add_custom_command(
     TARGET officer-agent
@@ -63,6 +81,7 @@ if(MSVC)
     target_compile_options(officer-core PRIVATE /W4 /permissive- /EHsc /utf-8)
     target_compile_options(officer-collectors PRIVATE /W4 /permissive- /EHsc /utf-8)
     target_compile_options(officer-delivery PRIVATE /W4 /permissive- /EHsc /utf-8)
+    target_compile_options(officer-response PRIVATE /W4 /permissive- /EHsc /utf-8)
     target_compile_options(officer-agent PRIVATE /W4 /permissive- /EHsc /utf-8)
 endif()
 
@@ -108,6 +127,13 @@ if(BUILD_TESTING)
         target_compile_options(officer-delivery-tests PRIVATE /W4 /permissive- /EHsc /utf-8)
     endif()
     add_test(NAME officer-delivery-tests COMMAND officer-delivery-tests)
+
+    add_executable(officer-response-tests tests/response_tests.cpp)
+    target_link_libraries(officer-response-tests PRIVATE officer-response officer-core)
+    if(MSVC)
+        target_compile_options(officer-response-tests PRIVATE /W4 /permissive- /EHsc /utf-8)
+    endif()
+    add_test(NAME officer-response-tests COMMAND officer-response-tests)
 endif()
 
 add_subdirectory(tools/query)
