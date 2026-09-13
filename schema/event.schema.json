@@ -90,6 +90,7 @@
         "name": { "$ref": "#/$defs/nullableString" },
         "executable": { "$ref": "#/$defs/nullableString" },
         "command_line": { "$ref": "#/$defs/nullableString" },
+        "start_time_ticks": { "$ref": "#/$defs/nullableStartTimeTicks" },
         "parent": {
           "type": "object",
           "additionalProperties": false,
@@ -226,6 +227,13 @@
     "nullablePort": {
       "oneOf": [
         { "type": "integer", "minimum": 0, "maximum": 65535 },
+        { "type": "null" }
+      ]
+    },
+    "nullableStartTimeTicks": {
+      "description": "Opaque, OS-native process-creation value the producing agent already computes for its own PID-reuse defense (Linux: /proc/[pid]/stat field 22, clock ticks since boot; Windows: GetProcessTimes creation FILETIME). Never interpreted as a duration or wall-clock time by any consumer other than the originating host's own agent -- see panopticon-response-engine/docs/adr/002-terminate-process-start-time-threading.md.",
+      "oneOf": [
+        { "type": "integer", "minimum": 0 },
         { "type": "null" }
       ]
     },
