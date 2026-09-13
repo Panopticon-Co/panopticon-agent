@@ -34,7 +34,7 @@ std::string source_kind_name(telemetry::TelemetrySourceKind kind) {
     return "unknown";
 }
 
-std::optional<std::string> sha256_hex(std::string_view input, std::string& error_message) {
+std::optional<std::string> sha256_hex_impl(std::string_view input, std::string& error_message) {
     error_message.clear();
     if (input.size() > std::numeric_limits<ULONG>::max()) {
         error_message = "Cannot hash an identity larger than the Windows CNG input limit.";
@@ -104,6 +104,10 @@ std::string timestamp_milliseconds(telemetry::UtcTimestamp timestamp) {
 }
 
 }  // namespace
+
+std::optional<std::string> sha256_hex(std::string_view input, std::string& error_message) {
+    return sha256_hex_impl(input, error_message);
+}
 
 std::optional<std::string> derive_process_entity_id(
     std::string_view host_id,

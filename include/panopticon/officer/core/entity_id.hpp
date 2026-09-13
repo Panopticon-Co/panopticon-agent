@@ -33,6 +33,12 @@ namespace panopticon::officer::core {
     std::string_view process_guid,
     std::string& error_message);
 
+// General-purpose SHA-256 over an opaque byte string, exposed so response-
+// action evidence collectors (file hashing) can reuse the same OS-shipped
+// CNG implementation as the entity-id derivations above rather than linking
+// a second crypto dependency. Returns lowercase hex.
+[[nodiscard]] std::optional<std::string> sha256_hex(std::string_view input, std::string& error_message);
+
 [[nodiscard]] std::optional<std::string> derive_telemetry_event_id(
     std::string_view host_id,
     const telemetry::SourceProvenance& source,
