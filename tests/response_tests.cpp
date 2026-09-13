@@ -123,6 +123,35 @@ void test_serialize_command_result_round_trip() {
     }
 }
 
+// Locks this agent's ReceiptCode -> wire outcome collapse against the same
+// three-value vocabulary panopticon-linux-agent uses (see
+// panopticon-contracts/docs/CONTRACT.md section 3's collapse table,
+// independently verified against this file's own serialize_command_result
+// by direct source read during the cross-implementation audit that added
+// this test).
+void test_receipt_code_collapses_to_the_canonical_three_wire_outcomes() {
+    const auto outcome_of = [](response::ReceiptCode code) {
+        std::string error;
+        const response::CommandReceipt receipt{"cmd-1", "corr-1", code, "x"};
+        const auto serialized = response::serialize_command_result(receipt, 4096, error);
+        expect(serialized.has_value(), "every ReceiptCode must still serialize to a bounded receipt");
+        if (!serialized) return std::string{"unknown"};
+        if (serialized->find("\"outcome\":\"succeeded\"") != std::string::npos) return std::string{"succeeded"};
+        if (serialized->find("\"outcome\":\"failed\"") != std::string::npos) return std::string{"failed"};
+        if (serialized->find("\"outcome\":\"rejected\"") != std::string::npos) return std::string{"rejected"};
+        return std::string{"unknown"};
+    };
+    expect(outcome_of(response::ReceiptCode::succeeded) == "succeeded", "succeeded must stay succeeded");
+    expect(outcome_of(response::ReceiptCode::execution_failed) == "failed",
+           "execution_failed is the only code that collapses to failed");
+    expect(outcome_of(response::ReceiptCode::invalid_command) == "rejected", "invalid_command must collapse to rejected");
+    expect(outcome_of(response::ReceiptCode::expired) == "rejected", "expired must collapse to rejected");
+    expect(outcome_of(response::ReceiptCode::replay_detected) == "rejected", "replay_detected must collapse to rejected");
+    expect(outcome_of(response::ReceiptCode::target_mismatch) == "rejected", "target_mismatch must collapse to rejected");
+    expect(outcome_of(response::ReceiptCode::target_protected) == "rejected", "target_protected must collapse to rejected");
+    expect(outcome_of(response::ReceiptCode::unsupported_action) == "rejected", "unsupported_action must collapse to rejected");
+}
+
 response::Command make_command(const std::string& id, response::ActionType action, std::int64_t expires_at) {
     response::Command command;
     command.command_id = id;
@@ -314,6 +343,7 @@ int main() {
     test_rejects_malformed_json();
     test_rejects_oversized_payload();
     test_serialize_command_result_round_trip();
+    test_receipt_code_collapses_to_the_canonical_three_wire_outcomes();
     test_gate_accepts_once_then_replay_detected();
     test_gate_rejects_expired_command();
     test_gate_rejects_kill_process_targeting_protected_pid();
