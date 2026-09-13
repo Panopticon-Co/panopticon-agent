@@ -165,6 +165,7 @@ std::optional<telemetry::PanopticonEvent> normalize_process_event(
         enriched.raw.command_line,
         {parent_entity_id, enriched.raw.parent_pid, enriched.parent_name},
         {sha256},
+        enriched.raw.start_time_ticks,
     };
     return result;
 }

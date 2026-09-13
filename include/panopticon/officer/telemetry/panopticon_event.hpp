@@ -71,6 +71,9 @@ struct ProcessMetadata {
     std::optional<std::string> command_line;
     ParentProcessMetadata parent;
     ProcessHashMetadata hash;
+    // See RawProcessEvent::start_time_ticks (raw_process_event.hpp) -- carried
+    // through normalization unchanged, opaque, and optional.
+    std::optional<std::uint64_t> start_time_ticks;
     bool operator==(const ProcessMetadata&) const = default;
 };
 

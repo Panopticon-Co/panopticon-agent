@@ -22,6 +22,10 @@ Json nullable_uint(const std::optional<std::uint16_t>& value) {
     return value ? Json(*value) : Json(nullptr);
 }
 
+Json nullable_uint64(const std::optional<std::uint64_t>& value) {
+    return value ? Json(*value) : Json(nullptr);
+}
+
 Json nullable_bool(const std::optional<bool>& value) {
     return value ? Json(*value) : Json(nullptr);
 }
@@ -133,6 +137,19 @@ std::optional<std::uint16_t> optional_port(const Json& value, std::string_view p
     return static_cast<std::uint16_t>(port);
 }
 
+std::optional<std::uint64_t> optional_uint64(const Json& value, std::string_view path) {
+    if (value.is_null()) {
+        return std::nullopt;
+    }
+    if (!value.is_number_integer() && !value.is_number_unsigned()) {
+        throw std::runtime_error(std::string{path} + " must be an integer or null.");
+    }
+    if (value.is_number_integer() && value.get<std::int64_t>() < 0) {
+        throw std::runtime_error(std::string{path} + " cannot be negative.");
+    }
+    return value.get<std::uint64_t>();
+}
+
 std::optional<bool> optional_bool(const Json& value, std::string_view path) {
     if (value.is_null()) {
         return std::nullopt;
@@ -211,6 +228,7 @@ nlohmann::json event_to_json(const telemetry::PanopticonEvent& event) {
                   {"name", nullable_string(event.process.parent.name)},
               }},
              {"hash", hash_object(event.process.hash)},
+             {"start_time_ticks", nullable_uint64(event.process.start_time_ticks)},
          }},
     };
 
@@ -375,7 +393,8 @@ std::optional<telemetry::PanopticonEvent> deserialize_event(
         const Json& process = root.at("process");
         require_exact_keys(
             process,
-            {"entity_id", "pid", "name", "executable", "command_line", "parent", "hash"},
+            {"entity_id", "pid", "name", "executable", "command_line", "parent", "hash",
+             "start_time_ticks"},
             "$.process");
         const Json& parent = process.at("parent");
         require_exact_keys(parent, {"entity_id", "pid", "name"}, "$.process.parent");
@@ -391,6 +410,7 @@ std::optional<telemetry::PanopticonEvent> deserialize_event(
                 optional_string(parent, "name", "$.process.parent"),
             },
             parse_hash(process, "$.process.hash"),
+            optional_uint64(process.at("start_time_ticks"), "$.process.start_time_ticks"),
         };
 
         if (has_network) {

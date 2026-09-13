@@ -251,6 +251,14 @@ std::optional<telemetry::RawProcessEvent> SysmonProcessDecoder::decode_xml(
     }
 
     telemetry::RawProcessEvent result;
+    // result.start_time_ticks is deliberately left unset (std::nullopt) here:
+    // Sysmon's Event ID 1 XML exposes only a formatted UtcTime string, never
+    // the raw FILETIME tick count ETW's Microsoft-Windows-Kernel-Process
+    // CreateTime property carries (see etw_process_collector.cpp's
+    // decode_process_start) -- there is no lossless way to recover the
+    // opaque tick value from a formatted timestamp. A Sysmon-sourced
+    // TERMINATE_PROCESS recommendation will correctly fail closed (no
+    // KILL_PROCESS staged) per response_engine.recommendation's design.
     result.source.kind = telemetry::TelemetrySourceKind::sysmon;
     result.source.provider = "Microsoft-Windows-Sysmon";
     if (const auto* provider = system->FirstChildElement("Provider")) {

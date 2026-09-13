@@ -162,6 +162,54 @@ void test_json_round_trip_and_validation() {
     expect(!pipeline::deserialize_event("{not-json", error) && !error.empty(), "malformed JSON fails with an error");
 }
 
+// Priority 5 (panopticon-contracts audit): the opaque process.start_time_ticks
+// value src/collectors/etw_process_collector.cpp now populates from ETW's raw
+// CreateTime FILETIME must survive normalization and serialization unchanged,
+// the same way src/response/process_actions.cpp's independently-recomputed
+// GetProcessTimes() value is meant to correlate with it -- see
+// panopticon-response-engine/docs/adr/002-terminate-process-start-time-threading.md.
+void test_start_time_ticks_flows_through_normalization_and_serialization() {
+    auto raw = make_raw_process();
+    raw.start_time_ticks = 133012345670000000ULL;  // an arbitrary but realistic FILETIME tick count
+    enrichment::EnrichedProcessEvent enriched;
+    enriched.raw = raw;
+    enriched.user.name = "analyst";
+    enriched.process_name = "officer-demo.exe";
+
+    std::string error;
+    const auto normalized = pipeline::normalize_process_event(enriched, make_context(), error);
+    expect(normalized.has_value(), "a process event with start_time_ticks normalizes");
+    if (!normalized) return;
+    expect(normalized->process.start_time_ticks == 133012345670000000ULL,
+           "normalization preserves start_time_ticks unchanged");
+
+    const auto serialized = pipeline::serialize_event(*normalized);
+    const nlohmann::json json = nlohmann::json::parse(serialized);
+    expect(json.at("process").at("start_time_ticks") == 133012345670000000ULL,
+           "start_time_ticks is present and correct on the wire");
+
+    const auto round_trip = pipeline::deserialize_event(serialized, error);
+    expect(round_trip.has_value() && round_trip->process.start_time_ticks == 133012345670000000ULL,
+           "start_time_ticks round-trips through deserialize_event");
+
+    // A Sysmon-sourced event (or any event where the collector could not
+    // supply this value) must still serialize and deserialize cleanly with
+    // start_time_ticks null -- this is the expected, common case today.
+    auto raw_without_ticks = make_raw_process();
+    enrichment::EnrichedProcessEvent enriched_without_ticks;
+    enriched_without_ticks.raw = raw_without_ticks;
+    enriched_without_ticks.user.name = "analyst";
+    enriched_without_ticks.process_name = "officer-demo.exe";
+    const auto normalized_without_ticks =
+        pipeline::normalize_process_event(enriched_without_ticks, make_context(), error);
+    expect(normalized_without_ticks.has_value() && !normalized_without_ticks->process.start_time_ticks,
+           "start_time_ticks stays null when the collector could not supply it");
+    const nlohmann::json json_without_ticks =
+        nlohmann::json::parse(pipeline::serialize_event(*normalized_without_ticks));
+    expect(json_without_ticks.at("process").at("start_time_ticks").is_null(),
+           "start_time_ticks serializes as an explicit null, not an omitted key");
+}
+
 void test_schema_document_is_present_and_sane() {
     std::ifstream file(OFFICER_EVENT_SCHEMA_PATH);
     expect(file.good(), "JSON Schema file is available to the test suite");
@@ -186,6 +234,7 @@ void test_schema_document_is_present_and_sane() {
 int main() {
     test_entity_identity_is_stable_and_pid_reuse_safe();
     test_raw_contract_and_normalization();
+    test_start_time_ticks_flows_through_normalization_and_serialization();
     test_json_round_trip_and_validation();
     test_schema_document_is_present_and_sane();
 

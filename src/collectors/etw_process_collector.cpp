@@ -284,6 +284,7 @@ std::optional<telemetry::RawProcessEvent> decode_process_start(
     result.source.kind = telemetry::TelemetrySourceKind::etw;
     result.source.provider = "Microsoft-Windows-Kernel-Process";
     result.process_start_time = *timestamp;
+    result.start_time_ticks = *create_time;
     result.pid = *pid;
     result.parent_pid = *parent_pid;
     if (!image->empty()) {

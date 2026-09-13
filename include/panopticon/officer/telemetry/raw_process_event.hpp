@@ -16,6 +16,14 @@ struct RawProcessEvent {
     SourceProvenance source;
     UtcTimestamp process_start_time;
     std::uint32_t pid{};
+    // Opaque, OS-native process-creation value (the raw FILETIME the kernel
+    // reports, in 100ns ticks since 1601-01-01) -- the same quantity
+    // GetProcessTimes() returns for the same process and the same quantity
+    // src/response/process_actions.cpp's reobserve_process() independently
+    // recomputes for PID-reuse-safe KILL_PROCESS targeting. Never interpreted
+    // for its magnitude by anything other than this host's own agent; see
+    // panopticon-response-engine/docs/adr/002-terminate-process-start-time-threading.md.
+    std::optional<std::uint64_t> start_time_ticks;
     std::optional<std::uint32_t> parent_pid;
     std::optional<std::string> parent_executable;
     std::optional<std::string> executable;
