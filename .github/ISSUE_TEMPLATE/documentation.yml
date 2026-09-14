@@ -1,0 +1,25 @@
+name: Documentation
+description: Report an issue with the README, docs/, or another Officer document.
+labels: ["documentation"]
+body:
+  - type: textarea
+    id: location
+    attributes:
+      label: Where?
+      description: File and section (e.g. README.md, "Build and test on Windows x64").
+    validations:
+      required: true
+  - type: textarea
+    id: issue
+    attributes:
+      label: What is wrong or missing?
+      description: >
+        Inaccurate, outdated, or missing content. If a command doesn't match
+        what CMakeLists.txt/CI actually does, please say so explicitly.
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested fix
+      required: false

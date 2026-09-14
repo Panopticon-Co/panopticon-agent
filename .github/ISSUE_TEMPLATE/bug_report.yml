@@ -1,0 +1,55 @@
+name: Bug report
+description: Report a problem with Officer (build, collectors, delivery, or response module).
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Please **do not** use this
+        template to report a security vulnerability — see
+        [SECURITY.md](../../SECURITY.md) instead.
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A clear description of the bug and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Commands run, CLI flags used, and what you observed.
+      placeholder: |
+        1. cmake -S . -B build-officer-x64 ...
+        2. cmake --build build-officer-x64
+        3. .\build-officer-x64\officer-agent.exe --source ...
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Target platform
+      options:
+        - x64-windows
+        - arm64-windows
+        - Other / not sure
+    validations:
+      required: true
+  - type: input
+    id: commit
+    attributes:
+      label: Commit or version
+      description: Output of `git rev-parse HEAD`, or a tag/release.
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant output
+      description: >
+        stderr/stdout output, build errors, or ctest failures. Sanitize any
+        real telemetry, hostnames, usernames, or file paths before pasting.
+      render: shell
+    validations:
+      required: false

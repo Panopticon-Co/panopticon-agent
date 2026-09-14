@@ -1,0 +1,44 @@
+name: Feature request
+description: Suggest an improvement or new capability for Officer.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please check the [roadmap](../../docs/roadmap.md) first — this
+        project follows a vertical-slice-first development order, so
+        requests for later-phase capabilities (reliability/queuing,
+        additional telemetry types, new response actions, backend services)
+        may be deliberately deferred rather than declined.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: What is missing or difficult today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What would you like Officer to do instead?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      required: false
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope check
+      options:
+        - label: >
+            This does not require adding a dependency on another
+            Panopticon repository's source tree.
+          required: false
+        - label: >
+            This does not require adding an 8th response action outside the
+            existing closed set of 7 (if it involves the response module).
+          required: false
