@@ -1,6 +1,7 @@
 #pragma once
 
 #include "panopticon/officer/response/identity.hpp"
+#include "panopticon/officer/response/keypair.hpp"
 
 #include <cstddef>
 #include <optional>
@@ -23,12 +24,25 @@ class ResponseTransportClient {
 public:
     explicit ResponseTransportClient(unsigned timeout_ms = 15000, std::size_t maximum_response_bytes = 65536);
 
+    // Phase 13: requests a one-time, short-TTL nonce for enrollment proof
+    // of possession. No authentication required -- a nonce alone proves
+    // and authorizes nothing without a subsequent valid bootstrap token and
+    // a real signature over it. Returns the raw decoded nonce bytes (ready
+    // to hand to keypair.hpp's sign_raw) alongside the base64 form the
+    // enroll() call below must echo back verbatim.
+    [[nodiscard]] std::optional<std::string> request_enrollment_challenge(const std::string& manager_url,
+                                                                            std::string& error_message) const;
+
     // Bootstrap is a separate operation, same as the Linux agent: the
     // bootstrap secret is sent only once, over verified TLS, and is never
-    // itself persisted as the ongoing credential.
+    // itself persisted as the ongoing credential. Phase 13: also proves
+    // possession of `keypair`'s private key by signing `nonce_b64` (as
+    // returned by request_enrollment_challenge, verbatim) -- see
+    // docs/adr/004-agent-enrollment-identity.md in panopticon-manager.
     [[nodiscard]] std::optional<EnrolledIdentity> enroll(const std::string& manager_url, const std::string& agent_id,
                                                           const std::string& host_id,
                                                           const std::string& bootstrap_token,
+                                                          const EcKeyPair& keypair, const std::string& nonce_b64,
                                                           std::string& error_message) const;
     [[nodiscard]] std::optional<std::string> poll_commands(const std::string& manager_url,
                                                              const EnrolledIdentity& identity,

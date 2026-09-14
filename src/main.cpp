@@ -61,6 +61,7 @@ struct CliOptions {
     bool insecure_tls = false;
     bool enable_response = false;
     std::string identity_path = "officer-identity.txt";
+    std::string keypair_path = "officer-identity.key";
     std::string bootstrap_token_path;
     std::string replay_ledger_path = "officer-response-ledger.txt";
     std::string file_collection_root;
@@ -283,6 +284,7 @@ std::optional<CliOptions> parse_arguments(int argc, char* argv[]) {
             }
             const std::string value{argv[++index]};
             if (argument == "--identity-path") options.identity_path = value;
+            else if (argument == "--keypair-path") options.keypair_path = value;
             else if (argument == "--bootstrap-token-path") options.bootstrap_token_path = value;
             else if (argument == "--file-collection-root") options.file_collection_root = value;
             else if (argument == "--quarantine-root") options.quarantine_root = value;
@@ -692,10 +694,36 @@ int main(int argc, char* argv[]) {
                     if (!token_file || !std::getline(token_file, bootstrap_token) || bootstrap_token.empty()) {
                         std::cerr << "[response] cannot read bootstrap token; response is disabled.\n";
                     } else {
+                        // Phase 13: enrollment now proves possession of a
+                        // locally-generated ECDSA P-256 keypair. Reuse a
+                        // previously generated key if one already exists
+                        // (e.g. a prior enrollment attempt failed after key
+                        // generation but before the server accepted it) --
+                        // never silently regenerate over an existing key
+                        // file, since that would be indistinguishable from
+                        // discarding an already-registered identity.
+                        std::string keypair_error;
+                        auto keypair = response::load_ec_keypair(options->keypair_path, keypair_error);
+                        if (!keypair) {
+                            keypair = response::generate_ec_p256_keypair(keypair_error);
+                            if (keypair) {
+                                std::string keypair_store_error;
+                                if (!response::store_ec_keypair(options->keypair_path, *keypair, keypair_store_error)) {
+                                    std::cerr << "[response] could not persist enrollment key pair: "
+                                              << keypair_store_error << '\n';
+                                    keypair.reset();
+                                }
+                            }
+                        }
                         response::ResponseTransportClient client;
+                        std::optional<response::EnrolledIdentity> enrolled;
                         std::string enroll_error;
-                        auto enrolled = client.enroll(*options->manager_url, context->agent.id, context->host.id,
-                                                       bootstrap_token, enroll_error);
+                        if (!keypair) {
+                            enroll_error = "cannot obtain an enrollment key pair: " + keypair_error;
+                        } else if (auto nonce = client.request_enrollment_challenge(*options->manager_url, enroll_error)) {
+                            enrolled = client.enroll(*options->manager_url, context->agent.id, context->host.id,
+                                                      bootstrap_token, *keypair, *nonce, enroll_error);
+                        }
                         if (!enrolled) {
                             std::cerr << "[response] enrollment failed; response is disabled: " << enroll_error << '\n';
                         } else {

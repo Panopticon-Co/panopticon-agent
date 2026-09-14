@@ -49,6 +49,7 @@ target_link_libraries(officer-delivery
 
 add_library(officer-response STATIC
     src/response/identity.cpp
+    src/response/keypair.cpp
     src/response/replay_ledger.cpp
     src/response/command.cpp
     src/response/process_actions.cpp
@@ -62,7 +63,7 @@ target_include_directories(officer-response PUBLIC include)
 target_compile_features(officer-response PUBLIC cxx_std_20)
 target_link_libraries(officer-response
     PUBLIC officer-core officer-delivery
-    PRIVATE advapi32 iphlpapi ws2_32 fwpuclnt
+    PRIVATE advapi32 iphlpapi ws2_32 fwpuclnt crypt32
 )
 
 add_executable(officer-agent
@@ -152,6 +153,13 @@ if(BUILD_TESTING)
         target_compile_options(officer-response-tests PRIVATE /W4 /permissive- /EHsc /utf-8)
     endif()
     add_test(NAME officer-response-tests COMMAND officer-response-tests)
+
+    add_executable(officer-keypair-tests tests/keypair_tests.cpp)
+    target_link_libraries(officer-keypair-tests PRIVATE officer-response officer-core)
+    if(MSVC)
+        target_compile_options(officer-keypair-tests PRIVATE /W4 /permissive- /EHsc /utf-8)
+    endif()
+    add_test(NAME officer-keypair-tests COMMAND officer-keypair-tests)
 endif()
 
 add_subdirectory(tools/query)
