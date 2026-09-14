@@ -1,12 +1,24 @@
 # Officer
 
-Officer is the Windows endpoint telemetry agent for **Panopticon**, an EDR/XDR
-platform. Its job is to observe security-relevant activity on a Windows
+Officer is the Windows endpoint agent for **Panopticon**, an EDR/XDR capstone
+project. Its job is to observe security-relevant activity on a Windows
 endpoint, turn source-specific records into a stable Panopticon event format,
-and eventually deliver those events reliably to the Panopticon backend.
+deliver those events to a Panopticon Manager, and execute a closed set of
+authorized response actions on that same endpoint.
+
+**Status:** active capstone/research project, not a production security
+product. Telemetry collection and normalization are real and validated (see
+"Current status" below). The response module executes real Win32 actions
+(process termination, file quarantine, host isolation) rather than simulating
+them, but end-to-end live verification against a running Manager, on an
+elevated host, has not yet been demonstrated in this environment — see
+[RESPONSE.md](RESPONSE.md#environment-blocked) for exactly what has and has
+not been exercised.
 
 This repository contains the **agent only**. It does not contain Panopticon's
-detection engine, ingestion API, investigation console, or response service.
+detection engine, response-policy engine, orchestration Manager, or
+investigation console — see "Integration with other Panopticon repositories"
+below.
 
 ## Where Officer fits
 
@@ -67,14 +79,29 @@ Implemented now:
   configuration under `docs/sysmon/`.
 - Clean Ctrl+C shutdown for both collector lifecycles.
 - `officer-query`, the preserved EyeTrace v0.1 historical Sysmon reader.
+- HTTPS delivery of normalized events to a Panopticon Manager (`--manager-url`),
+  built on a WinHTTP-based client with certificate verification by default.
+- An opt-in (`--enable-response`, requires `--manager-url`) response module
+  that enrolls with the Manager, polls for typed commands, and dispatches all
+  7 closed-set actions (`KILL_PROCESS`, `COLLECT_PROCESS_INFO`,
+  `COLLECT_NETWORK_CONNECTIONS`, `COLLECT_FILE`, `QUARANTINE_FILE`,
+  `ISOLATE_HOST`, `RELEASE_HOST_ISOLATION`) to real Win32 implementations,
+  gated by agent/host binding, expiry, and durable replay protection before
+  any command executes. See [RESPONSE.md](RESPONSE.md) for the full design,
+  including the PID-reuse defense used by `KILL_PROCESS` and what has and has
+  not been verified end-to-end. Off by default; behavior is byte-identical to
+  the telemetry-only agent unless explicitly enabled.
 
 Not implemented yet:
 
-- The bounded event bus and backpressure handling.
-- Durable SQLite spooling or network delivery.
+- The bounded event bus and backpressure handling for telemetry.
+- Durable SQLite spooling for telemetry delivery.
 - Windows service installation and lifecycle management.
 - DNS and process-stop schemas, and ETW-based (non-Sysmon) file and registry
   providers.
+- A privilege-separated helper process for response actions (isolation and
+  every other response handler currently run inside the already-elevated
+  `officer-agent.exe`, unlike the split used by `panopticon-linux-agent`).
 
 The next phase moves normalization off acquisition callback threads and onto a
 bounded queue with explicit health and loss counters.
@@ -245,25 +272,79 @@ are deterministic SHA-256-derived identities, not repeated placeholder digits.
 
 ```text
 include/panopticon/officer/   Public agent contracts
-src/collectors/               Independent ETW and Sysmon adapters
-src/core/                     Stable identity implementation
-src/pipeline/                 Normalization and JSON boundary
-schema/                       Versioned Panopticon JSON contract
-tests/                        Sanitized contract and collector tests
-tools/query/                  Historical Sysmon diagnostic utility
-docs/architecture/            Phase designs and boundaries
-docs/adr/                     Architecture decision records
+src/collectors/                Independent ETW and Sysmon adapters
+src/core/                      Stable identity implementation
+src/pipeline/                  Normalization and JSON boundary
+src/delivery/                  WinHTTP-based telemetry delivery to a Manager
+src/response/                  Manager command polling and the 7 response actions
+schema/                        Versioned Panopticon JSON contract
+tests/                         Sanitized contract, collector, delivery, and response tests
+tools/query/                   Historical Sysmon diagnostic utility
+docs/architecture/             Phase designs and boundaries
+docs/adr/                      Architecture decision records
 ```
 
 See [the complete roadmap](docs/roadmap.md) for queues, additional typed event
 schemas, enrichment, durable spooling, secure delivery, and Windows service
-hardening.
+hardening, and [RESPONSE.md](RESPONSE.md) for the response module's design and
+open architectural questions.
+
+## Integration with other Panopticon repositories
+
+Officer is one component of the larger Panopticon-Co platform. It never
+imports source from, or depends on, another repository's build — the only
+integration surfaces are its build artifact (`officer-agent.exe`), the
+Panopticon event schema, and the Manager's HTTP command/result contract.
+
+- [panopticon-detection-engine](https://github.com/Panopticon-Co/panopticon-detection-engine) —
+  consumes Officer's Schema 0.3 NDJSON output and produces detections/alerts.
+- [panopticon-manager](https://github.com/Panopticon-Co/panopticon-manager) —
+  the orchestration service Officer enrolls with, polls for response commands,
+  and reports results and audit evidence to, when `--enable-response` is set.
+- [panopticon-contracts](https://github.com/Panopticon-Co/panopticon-contracts) —
+  canonical JSON-schema wire contracts and fixtures shared across repos; this
+  repo's response tests read fixtures from a sibling checkout of it when
+  present (see `CMakeLists.txt` and `.github/workflows/ci.yml`) and skip
+  gracefully otherwise.
+- [Panopticon-Co organization](https://github.com/Panopticon-Co) — all
+  repositories, including the response-policy engine that authorizes the
+  commands Officer executes.
+
+## Security considerations
+
+- **Elevation is required.** ETW subscription and the protected Sysmon
+  channel both need an elevated token; the agent detects and reports this
+  rather than silently degrading (see "Run live collection" above).
+- **PID-reuse protection.** `KILL_PROCESS` re-validates the target process's
+  creation time (`GetProcessTimes`) against the command's
+  `target_start_time_ticks` immediately before termination, so a command
+  issued against one process cannot be redirected onto a different process
+  that the OS later assigns the same PID. This narrows, but — absent an
+  atomic Win32 "terminate iff creation-time == X" primitive — does not fully
+  eliminate, the reopen-to-terminate race; see
+  [RESPONSE.md](RESPONSE.md#current-status) for details.
+- **Closed response action set.** Only the 7 actions listed above exist; the
+  agent rejects unknown actions, unknown fields, and malformed command
+  envelopes outright (see `tests/response_tests.cpp`).
+- **File operations are root-jailed.** `COLLECT_FILE` and `QUARANTINE_FILE`
+  resolve every path against a configured allow-listed root and reject
+  absolute paths or traversal outside it.
+- Response commands are gated by agent/host binding, expiry, and durable
+  (disk-backed) replay protection before they are ever dispatched.
 
 ## Privacy and safety
 
 Endpoint telemetry can contain usernames, command lines, paths, URLs, network
 addresses, and secrets. Never commit raw XML, NDJSON, EVTX files, or captured
 production telemetry. Repository fixtures and examples must remain sanitized.
+
+## Contributing, security reporting, and license
+
+- See [CONTRIBUTING.md](CONTRIBUTING.md) for the build/test/PR workflow.
+- Report suspected vulnerabilities privately per [SECURITY.md](SECURITY.md) —
+  please do not open a public issue for a security report.
+- This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md).
+- Licensed under the [MIT License](LICENSE).
 
 The original EyeTrace Query v0.1 implementation is preserved by the Git tag
 `eyetrace-query-v0.1`.
