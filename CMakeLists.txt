@@ -21,6 +21,7 @@ target_link_libraries(officer-core
 
 add_library(officer-collectors STATIC
     src/collectors/etw_process_collector.cpp
+    src/collectors/process_image_cache.cpp
     src/collectors/sysmon_event_collector.cpp
     src/collectors/sysmon_process_decoder.cpp
     src/collectors/sysmon_telemetry_decoder.cpp

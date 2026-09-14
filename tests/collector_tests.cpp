@@ -1,4 +1,5 @@
 #include "panopticon/officer/collectors/etw_process_collector.hpp"
+#include "panopticon/officer/collectors/process_image_cache.hpp"
 #include "panopticon/officer/collectors/sysmon_event_collector.hpp"
 #include "panopticon/officer/collectors/sysmon_process_decoder.hpp"
 #include "panopticon/officer/collectors/sysmon_telemetry_decoder.hpp"
@@ -212,6 +213,86 @@ void test_sysmon_image_load_family() {
     expect_round_trips(*normalized, "normalized image load event round-trips through the 0.3 serializer");
 }
 
+void test_sysmon_eid3_uses_time_created_over_utctime() {
+    // Sysmon EID 3 UtcTime is unreliable; the decoder must take System/TimeCreated
+    // when present. Here they deliberately disagree by hours.
+    const std::string xml =
+        "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\">"
+        "<System><Provider Name=\"Microsoft-Windows-Sysmon\"/><EventID>3</EventID>"
+        "<EventRecordID>7</EventRecordID><Channel>Microsoft-Windows-Sysmon/Operational</Channel>"
+        "<TimeCreated SystemTime=\"2026-08-31T14:29:14.7212345Z\"/></System>"
+        "<EventData>"
+        "<Data Name=\"UtcTime\">2026-09-01 02:59:14.326</Data>"
+        "<Data Name=\"ProcessId\">6892</Data>"
+        "<Data Name=\"Image\">C:\\Windows\\System32\\certutil.exe</Data>"
+        "<Data Name=\"Protocol\">tcp</Data><Data Name=\"Initiated\">true</Data>"
+        "<Data Name=\"DestinationIp\">203.0.113.9</Data><Data Name=\"DestinationPort\">80</Data>"
+        "</EventData></Event>";
+
+    std::string error;
+    const auto raw = collectors::SysmonTelemetryDecoder::decode_xml(xml, error);
+    expect(raw && std::holds_alternative<telemetry::RawNetworkEvent>(*raw), "EID 3 with TimeCreated decodes");
+    if (!raw) { std::cerr << "decode error: " << error << '\n'; return; }
+    const auto& n = std::get<telemetry::RawNetworkEvent>(*raw);
+    expect(
+        pipeline::format_utc_timestamp(n.timestamp) == "2026-08-31T14:29:14.721Z",
+        "EID 3 event time comes from System/TimeCreated, not the bogus UtcTime");
+}
+
+void test_process_image_cache_backfills_unknown_process() {
+    collectors::ProcessImageCache cache;
+
+    telemetry::RawProcessEvent eid1;
+    eid1.pid = 12516;
+    eid1.executable = "C:\\Windows\\System32\\certutil.exe";
+    eid1.user_name = "PICASSO\\stati";
+    eid1.user_sid = "S-1-5-21-1-2-3-1001";
+    cache.remember(eid1);
+
+    // A Sysmon EID 3 that lost its image ("<unknown process>") is backfilled.
+    telemetry::RawNetworkEvent unresolved;
+    unresolved.process.pid = 12516;
+    unresolved.process.executable = std::string{collectors::ProcessImageCache::kUnknownProcessSentinel};
+    expect(cache.enrich(unresolved.process), "unknown-process context is enriched from a cached EID 1");
+    expect(
+        unresolved.process.executable == std::optional<std::string>{"C:\\Windows\\System32\\certutil.exe"},
+        "cached image path is backfilled");
+    expect(unresolved.process.user_name == std::optional<std::string>{"PICASSO\\stati"}, "cached user backfilled");
+
+    // A context that already has a real image is left untouched.
+    telemetry::RawNetworkEvent resolved;
+    resolved.process.pid = 12516;
+    resolved.process.executable = "C:\\Windows\\explorer.exe";
+    expect(!cache.enrich(resolved.process), "an already-resolved context is not touched");
+    expect(resolved.process.executable == std::optional<std::string>{"C:\\Windows\\explorer.exe"},
+           "resolved image path is preserved");
+
+    // An unknown PID that was never seen as EID 1 cannot be enriched.
+    telemetry::RawFileEvent miss;
+    miss.process.pid = 999999;
+    miss.process.executable = std::nullopt;
+    expect(!cache.enrich(miss.process), "a PID with no remembered EID 1 is left alone");
+
+    // The cold generation still answers after the hot generation rolls over.
+    collectors::ProcessImageCache small{2};
+    telemetry::RawProcessEvent a;
+    a.pid = 1;
+    a.executable = "a.exe";
+    small.remember(a);
+    telemetry::RawProcessEvent b;
+    b.pid = 2;
+    b.executable = "b.exe";
+    small.remember(b);
+    telemetry::RawProcessEvent c;
+    c.pid = 3;
+    c.executable = "c.exe";
+    small.remember(c);  // rolls: {1,2} -> cold, {3} -> hot
+    telemetry::RawNetworkEvent from_cold;
+    from_cold.process.pid = 1;
+    from_cold.process.executable = std::string{collectors::ProcessImageCache::kUnknownProcessSentinel};
+    expect(small.enrich(from_cold.process), "an entry demoted to the cold generation is still found");
+}
+
 void test_sysmon_telemetry_decoder_rejects_process_and_unknown_ids() {
     std::string error;
     // Event ID 1 belongs to SysmonProcessDecoder, not this one.
@@ -236,6 +317,8 @@ int main() {
     test_sysmon_file_family();
     test_sysmon_registry_family_is_metadata_only();
     test_sysmon_image_load_family();
+    test_sysmon_eid3_uses_time_created_over_utctime();
+    test_process_image_cache_backfills_unknown_process();
     test_sysmon_telemetry_decoder_rejects_process_and_unknown_ids();
     if (failures == 0) {
         std::cout << "All Officer Phase 2 collector tests passed.\n";
