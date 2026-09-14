@@ -5,3 +5,4 @@ out/
 *.ndjson
 !tools/query/docs/sample-output.ndjson
 *.evtx
+demo-run/

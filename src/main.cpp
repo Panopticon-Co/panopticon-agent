@@ -275,9 +275,9 @@ std::optional<CliOptions> parse_arguments(int argc, char* argv[]) {
             options.manager_url = std::string{argv[++index]};
             continue;
         }
-        if (argument == "--identity-path" || argument == "--bootstrap-token-path" ||
-            argument == "--file-collection-root" || argument == "--quarantine-root" ||
-            argument == "--manager-exception-host") {
+        if (argument == "--identity-path" || argument == "--keypair-path" ||
+            argument == "--bootstrap-token-path" || argument == "--file-collection-root" ||
+            argument == "--quarantine-root" || argument == "--manager-exception-host") {
             if (index + 1 >= argc) {
                 std::cerr << argument << " requires a value. Use --help for usage.\n";
                 return std::nullopt;
