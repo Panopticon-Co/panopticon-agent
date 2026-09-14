@@ -45,7 +45,10 @@ Officer will eventually own:
 - Source-neutral raw event contracts.
 - Local enrichment such as file hashes and account resolution.
 - Normalization into versioned Panopticon events.
-- Bounded queues, batching, and durable local spooling.
+- Bounded queues and batching. Durable local spooling for telemetry delivery
+  is implemented (`docs/architecture/phase-9-telemetry-durability.md`), with
+  its own component verified in this repository's dev environment; native
+  Windows/MSVC verification of the full delivery path is still pending.
 - Authenticated delivery to Panopticon ingestion.
 - Agent configuration, identity, health, and Windows service lifecycle.
 
@@ -95,7 +98,6 @@ Implemented now:
 Not implemented yet:
 
 - The bounded event bus and backpressure handling for telemetry.
-- Durable SQLite spooling for telemetry delivery.
 - Windows service installation and lifecycle management.
 - DNS and process-stop schemas, and ETW-based (non-Sysmon) file and registry
   providers.

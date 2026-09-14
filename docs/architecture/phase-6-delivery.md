@@ -9,6 +9,13 @@ configuration"), not Phase 3, which is unrelated in-process
 queue/backpressure work. The manager-side project this pairs with numbers its
 own phases 0–8 independently — see `panopticon-manager/docs/ROADMAP.md`.
 
+**This document is a point-in-time record of the Phase 1 tracer-bullet
+increment.** The "no disk spool yet" / drop-on-failure behavior it describes
+below no longer reflects current behavior — the durable flat-file segment
+spool it anticipates has since been implemented; see
+`docs/architecture/phase-9-telemetry-durability.md` for the current design
+and its verification status.
+
 ## Outcome (tracer bullet increment)
 
 Officer gained an optional second sink for its normalized events: an HTTPS
@@ -66,9 +73,12 @@ real certificate pinning is Phase 8 scope.
 
 ## What this does not do yet
 
-No enrollment, no bearer auth, no `X-Panopticon-Batch-Id` idempotency replay
-(nothing retries yet, so nothing needs to replay), no durable spool, no
-backoff/retry, no `429` backpressure handling, no config fetch, no check-in.
+No enrollment, no bearer auth, no `429` backpressure handling, no config
+fetch, no check-in. (Durable spooling and bounded backoff/retry were closed
+in Phase 9 — see `docs/architecture/phase-9-telemetry-durability.md`; the
+manager's own batch-id-level idempotency table remains unimplemented, but
+retries are already safe today via the manager's existing per-event
+`event_id` dedup.)
 See `panopticon-manager/docs/adr/002-wire-protocol-ack-semantics.md` for the
 target design these will fill in.
 
