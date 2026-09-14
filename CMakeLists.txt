@@ -36,6 +36,7 @@ target_link_libraries(officer-collectors
 
 add_library(officer-delivery STATIC
     src/delivery/http_client.cpp
+    src/delivery/spool.cpp
     src/delivery/uploader.cpp
 )
 
@@ -128,6 +129,13 @@ if(BUILD_TESTING)
         target_compile_options(officer-delivery-tests PRIVATE /W4 /permissive- /EHsc /utf-8)
     endif()
     add_test(NAME officer-delivery-tests COMMAND officer-delivery-tests)
+
+    add_executable(officer-spool-tests tests/spool_tests.cpp)
+    target_link_libraries(officer-spool-tests PRIVATE officer-delivery)
+    if(MSVC)
+        target_compile_options(officer-spool-tests PRIVATE /W4 /permissive- /EHsc /utf-8)
+    endif()
+    add_test(NAME officer-spool-tests COMMAND officer-spool-tests)
 
     add_executable(officer-response-tests tests/response_tests.cpp)
     target_link_libraries(officer-response-tests PRIVATE officer-response officer-core)
