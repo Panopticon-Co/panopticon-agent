@@ -398,4 +398,146 @@ std::optional<telemetry::PanopticonEvent> normalize_image_load_event(
     return base;
 }
 
+// -- Schema 0.5 normalization -----------------------------------------
+namespace {
+
+// Entity id for the other process in a cross-process event, derived the same
+// way as a process-context id. Null when the target has no PID.
+telemetry::TargetProcessMetadata build_target(
+    const telemetry::RawTargetProcess& target,
+    const NormalizationContext& context) {
+    telemetry::TargetProcessMetadata out;
+    out.pid = target.pid;
+    out.executable = target.executable;
+    out.user = target.user_name;
+    if (target.pid) {
+        std::string ignored;
+        out.entity_id = core::derive_process_context_entity_id(
+            context.host.id, *target.pid, target.process_guid.value_or(""), ignored);
+    }
+    return out;
+}
+
+// First ``max_bytes`` of ``text`` cut on a UTF-8 character boundary, so a
+// multi-byte character is never split.
+std::string cap_utf8(const std::string& text, std::size_t max_bytes) {
+    if (text.size() <= max_bytes) {
+        return text;
+    }
+    std::size_t cut = max_bytes;
+    while (cut > 0 && (static_cast<unsigned char>(text[cut]) & 0xC0) == 0x80) {
+        --cut;
+    }
+    return text.substr(0, cut);
+}
+
+}  // namespace
+
+std::optional<telemetry::PanopticonEvent> normalize_process_stop_event(
+    const telemetry::RawProcessStopEvent& event,
+    const NormalizationContext& context,
+    std::string& error_message) {
+    auto base = build_family_base(
+        event.source, event.process, event.timestamp, "process", "stop", context, error_message);
+    if (!base) {
+        return std::nullopt;
+    }
+    base->schema_version = telemetry::kSchemaVersion05;
+    return base;
+}
+
+std::optional<telemetry::PanopticonEvent> normalize_dns_event(
+    const telemetry::RawDnsEvent& event,
+    const NormalizationContext& context,
+    std::string& error_message) {
+    auto base = build_family_base(
+        event.source, event.process, event.timestamp, "dns", "query", context, error_message);
+    if (!base) {
+        return std::nullopt;
+    }
+    base->schema_version = telemetry::kSchemaVersion05;
+    base->dns = telemetry::DnsMetadata{
+        event.query_name,
+        event.query_status,
+        event.query_results,
+    };
+    return base;
+}
+
+std::optional<telemetry::PanopticonEvent> normalize_process_access_event(
+    const telemetry::RawProcessAccessEvent& event,
+    const NormalizationContext& context,
+    std::string& error_message) {
+    auto base = build_family_base(
+        event.source, event.process, event.timestamp, "process_access", "access", context,
+        error_message);
+    if (!base) {
+        return std::nullopt;
+    }
+    base->schema_version = telemetry::kSchemaVersion05;
+    base->process_access = telemetry::ProcessAccessMetadata{
+        build_target(event.target, context),
+        event.granted_access,
+        event.call_trace,
+    };
+    return base;
+}
+
+std::optional<telemetry::PanopticonEvent> normalize_remote_thread_event(
+    const telemetry::RawRemoteThreadEvent& event,
+    const NormalizationContext& context,
+    std::string& error_message) {
+    auto base = build_family_base(
+        event.source, event.process, event.timestamp, "remote_thread", "create", context,
+        error_message);
+    if (!base) {
+        return std::nullopt;
+    }
+    base->schema_version = telemetry::kSchemaVersion05;
+    base->remote_thread = telemetry::RemoteThreadMetadata{
+        build_target(event.target, context),
+        event.new_thread_id,
+        event.start_address,
+        event.start_module,
+        event.start_function,
+    };
+    return base;
+}
+
+std::optional<telemetry::PanopticonEvent> normalize_script_block_event(
+    const telemetry::RawScriptBlockEvent& event,
+    const NormalizationContext& context,
+    std::string& error_message) {
+    auto base = build_family_base(
+        event.source, event.process, event.timestamp, "script_block", "execute", context,
+        error_message);
+    if (!base) {
+        return std::nullopt;
+    }
+    base->schema_version = telemetry::kSchemaVersion05;
+
+    telemetry::ScriptBlockMetadata block;
+    block.script_block_id = event.script_block_id;
+    block.message_number = event.message_number;
+    block.message_total = event.message_total;
+    block.path = event.path;
+    if (event.text && !event.text->empty()) {
+        const std::string& full = *event.text;
+        block.text_length = full.size();
+        const std::string capped = cap_utf8(full, telemetry::kScriptBlockTextMaxBytes);
+        block.text_truncated = capped.size() < full.size();
+        block.text = capped.empty() ? std::nullopt : std::optional<std::string>{capped};
+        const auto digest = core::sha256_hex(full, error_message);
+        if (!digest) {
+            return std::nullopt;
+        }
+        block.text_sha256 = digest;
+    } else {
+        block.text_length = 0;
+        block.text_truncated = false;
+    }
+    base->script_block = std::move(block);
+    return base;
+}
+
 }  // namespace panopticon::officer::pipeline

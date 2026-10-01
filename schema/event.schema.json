@@ -1,13 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://panopticon.local/schema/officer/event-0.4.json",
+  "$id": "https://panopticon.local/schema/officer/event-0.5.json",
   "title": "Panopticon Officer telemetry event",
-  "description": "The V4 normalized endpoint telemetry contract. Additive over Schema 0.3: all prior event shapes and Windows source kinds remain valid; linux_procfs is added as a source kind for Linux procfs snapshots. Every event still carries a process context block.",
+  "description": "The V5 normalized endpoint telemetry contract. Additive over Schema 0.4: all prior event shapes, families and source kinds remain valid and byte-identical. 0.5 adds process stop events (Sysmon 5) and four families: dns (Sysmon 22), process_access (Sysmon 10), remote_thread (Sysmon 8) and script_block (PowerShell 4104). An event of a 0.5 family or type declares schema_version 0.5; an event of an older family keeps the version that introduced it. Every event still carries a process context block: for process_access and remote_thread it is the SOURCE process, and the target is in the family block.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "event", "source", "agent", "host", "user", "process"],
   "properties": {
-    "schema_version": { "enum": ["0.2", "0.3", "0.4"] },
+    "schema_version": { "enum": ["0.2", "0.3", "0.4", "0.5"] },
     "event": {
       "type": "object",
       "additionalProperties": false,
@@ -15,7 +15,7 @@
       "properties": {
         "id": { "type": "string", "pattern": "^evt_[0-9a-f]{64}$" },
         "category": {
-          "enum": ["process", "network", "file", "registry", "image_load"]
+          "enum": ["process", "network", "file", "registry", "image_load", "dns", "process_access", "remote_thread", "script_block"]
         },
         "type": { "type": "string", "minLength": 1 },
         "timestamp": {
@@ -176,12 +176,101 @@
         "signature_status": { "$ref": "#/$defs/nullableString" },
         "hash": { "$ref": "#/$defs/sha256Hash" }
       }
+    },
+    "dns": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Sysmon EventID 22 (Schema 0.5). One DNS query made by the process-context process. query_results is the resolver's answer string exactly as Sysmon renders it (e.g. 'type:  5 cdn.example;::ffff:93.184.216.34;'); it is not parsed or reordered here.",
+      "required": ["query_name", "query_status", "query_results"],
+      "properties": {
+        "query_name": { "$ref": "#/$defs/nullableString" },
+        "query_status": { "$ref": "#/$defs/nullableUInt32" },
+        "query_results": { "$ref": "#/$defs/nullableString" }
+      }
+    },
+    "process_access": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Sysmon EventID 10 (Schema 0.5). The process-context process (source) opened a handle to target. granted_access is the access mask as Sysmon renders it (hex string). call_trace is Sysmon's module+offset stack string, unmodified.",
+      "required": ["target", "granted_access", "call_trace"],
+      "properties": {
+        "target": { "$ref": "#/$defs/targetProcess" },
+        "granted_access": { "$ref": "#/$defs/nullableHex" },
+        "call_trace": { "$ref": "#/$defs/nullableString" }
+      }
+    },
+    "remote_thread": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Sysmon EventID 8 (Schema 0.5). The process-context process (source) created a thread in target. start_module and start_function are null when Sysmon reports '-', i.e. the thread starts in memory no loaded module backs.",
+      "required": ["target", "new_thread_id", "start_address", "start_module", "start_function"],
+      "properties": {
+        "target": { "$ref": "#/$defs/targetProcess" },
+        "new_thread_id": { "$ref": "#/$defs/nullableUInt32" },
+        "start_address": { "$ref": "#/$defs/nullableHex" },
+        "start_module": { "$ref": "#/$defs/nullableString" },
+        "start_function": { "$ref": "#/$defs/nullableString" }
+      }
+    },
+    "script_block": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Microsoft-Windows-PowerShell/Operational EventID 4104 (Schema 0.5). One script block (or one part of a multi-part block: message_number of message_total) compiled by the process-context PowerShell host. text carries at most the first 16384 UTF-8 bytes of the block, cut on a character boundary; text_length is the full block's length in UTF-8 bytes, text_truncated says whether text is shorter, and text_sha256 hashes the full block. The event carries no image path; process.executable is filled only from what the agent already observed for that PID.",
+      "required": ["script_block_id", "message_number", "message_total", "path", "text", "text_length", "text_truncated", "text_sha256"],
+      "properties": {
+        "script_block_id": { "$ref": "#/$defs/nullableString" },
+        "message_number": { "$ref": "#/$defs/nullableUInt32" },
+        "message_total": { "$ref": "#/$defs/nullableUInt32" },
+        "path": { "$ref": "#/$defs/nullableString" },
+        "text": {
+          "oneOf": [
+            { "type": "string", "minLength": 1, "maxLength": 16384 },
+            { "type": "null" }
+          ]
+        },
+        "text_length": { "type": "integer", "minimum": 0 },
+        "text_truncated": { "type": "boolean" },
+        "text_sha256": {
+          "oneOf": [
+            { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            { "type": "null" }
+          ]
+        }
+      }
     }
   },
   "allOf": [
     {
       "if": { "properties": { "event": { "properties": { "category": { "const": "process" } } } } },
-      "then": { "properties": { "event": { "properties": { "type": { "enum": ["start"] } } } } }
+      "then": { "properties": { "event": { "properties": { "type": { "enum": ["start", "stop"] } } } } }
+    },
+    {
+      "if": { "properties": { "event": { "properties": { "category": { "const": "dns" } } } } },
+      "then": {
+        "required": ["dns"],
+        "properties": { "event": { "properties": { "type": { "enum": ["query"] } } } }
+      }
+    },
+    {
+      "if": { "properties": { "event": { "properties": { "category": { "const": "process_access" } } } } },
+      "then": {
+        "required": ["process_access"],
+        "properties": { "event": { "properties": { "type": { "enum": ["access"] } } } }
+      }
+    },
+    {
+      "if": { "properties": { "event": { "properties": { "category": { "const": "remote_thread" } } } } },
+      "then": {
+        "required": ["remote_thread"],
+        "properties": { "event": { "properties": { "type": { "enum": ["create"] } } } }
+      }
+    },
+    {
+      "if": { "properties": { "event": { "properties": { "category": { "const": "script_block" } } } } },
+      "then": {
+        "required": ["script_block"],
+        "properties": { "event": { "properties": { "type": { "enum": ["execute"] } } } }
+      }
     },
     {
       "if": { "properties": { "event": { "properties": { "category": { "const": "network" } } } } },
@@ -240,6 +329,40 @@
     "processEntityId": {
       "type": "string",
       "pattern": "^proc_[0-9a-f]{64}$"
+    },
+    "nullableUInt32": {
+      "oneOf": [
+        { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        { "type": "null" }
+      ]
+    },
+    "nullableHex": {
+      "oneOf": [
+        { "type": "string", "pattern": "^0x[0-9a-fA-F]+$" },
+        { "type": "null" }
+      ]
+    },
+    "targetProcess": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The other process in a cross-process event. entity_id is derived the same way as a process-context entity_id (host + pid + the source's process GUID), so it is a traceability id, not a join key across families.",
+      "required": ["entity_id", "pid", "executable", "user"],
+      "properties": {
+        "entity_id": {
+          "oneOf": [
+            { "$ref": "#/$defs/processEntityId" },
+            { "type": "null" }
+          ]
+        },
+        "pid": {
+          "oneOf": [
+            { "$ref": "#/$defs/pid" },
+            { "type": "null" }
+          ]
+        },
+        "executable": { "$ref": "#/$defs/nullableString" },
+        "user": { "$ref": "#/$defs/nullableString" }
+      }
     },
     "sha256Hash": {
       "type": "object",

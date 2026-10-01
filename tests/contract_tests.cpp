@@ -224,9 +224,12 @@ void test_schema_document_is_present_and_sane() {
         std::find(versions.begin(), versions.end(), "0.3") != versions.end() &&
             std::find(versions.begin(), versions.end(), "0.2") != versions.end(),
         "schema accepts both 0.2 and 0.3 (additive)");
+    expect(
+        std::find(versions.begin(), versions.end(), "0.5") != versions.end(),
+        "schema accepts 0.5 (process stop + dns/process_access/remote_thread/script_block)");
     expect(schema.at("additionalProperties") == false, "schema rejects unknown top-level fields");
     const auto& categories = schema.at("properties").at("event").at("properties").at("category").at("enum");
-    expect(categories.size() == 5, "schema declares all five telemetry categories");
+    expect(categories.size() == 9, "schema declares all nine telemetry categories");
 }
 
 }  // namespace

@@ -5,6 +5,7 @@
 #include <charconv>
 #include <chrono>
 #include <cstdint>
+#include <initializer_list>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -203,7 +204,71 @@ telemetry::RawProcessContext make_process_context(const FieldMap& fields) {
     return ctx;
 }
 
+// First present field among `names` (Sysmon spells the GUID fields
+// "SourceProcessGuid" in EID 8 but "SourceProcessGUID" in EID 10).
+std::optional<std::string> first_field(const FieldMap& fields, std::initializer_list<const char*> names) {
+    for (const char* name : names) {
+        if (auto value = field(fields, name)) {
+            return value;
+        }
+    }
+    return std::nullopt;
+}
+
+// Cross-process events (EID 8 / 10) name the acting process with Source*
+// fields; it becomes the process context exactly like ProcessId/Image do for
+// the other families.
+std::optional<telemetry::RawProcessContext> make_source_context(
+    const FieldMap& fields, std::string& error_message) {
+    const auto pid = parse_integer<std::uint32_t>(
+        field(fields, "SourceProcessId"), "SourceProcessId", error_message);
+    if (!pid) {
+        if (error_message.empty()) {
+            error_message = "A Sysmon cross-process event is missing SourceProcessId.";
+        }
+        return std::nullopt;
+    }
+    telemetry::RawProcessContext ctx;
+    ctx.pid = *pid;
+    ctx.executable = field(fields, "SourceImage");
+    ctx.process_guid = first_field(fields, {"SourceProcessGuid", "SourceProcessGUID"});
+    ctx.user_name = field(fields, "SourceUser");
+    return ctx;
+}
+
+telemetry::RawTargetProcess make_target(const FieldMap& fields) {
+    telemetry::RawTargetProcess target;
+    std::string ignored;
+    target.pid = parse_integer<std::uint32_t>(field(fields, "TargetProcessId"), "TargetProcessId", ignored);
+    target.executable = field(fields, "TargetImage");
+    target.process_guid = first_field(fields, {"TargetProcessGuid", "TargetProcessGUID"});
+    target.user_name = field(fields, "TargetUser");
+    return target;
+}
+
+// A hex field ("0x1410") kept as rendered; anything else is not invented.
+std::optional<std::string> hex_field(const FieldMap& fields, const char* name) {
+    auto value = field(fields, name);
+    if (!value || value->size() < 3 || (*value)[0] != '0' || ((*value)[1] != 'x' && (*value)[1] != 'X')) {
+        return std::nullopt;
+    }
+    for (std::size_t index = 2; index < value->size(); ++index) {
+        const char c = (*value)[index];
+        const bool hex = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+        if (!hex) {
+            return std::nullopt;
+        }
+    }
+    return value;
+}
+
 }  // namespace
+
+std::optional<telemetry::UtcTimestamp> parse_event_log_time(
+    std::string_view text,
+    std::string& error_message) {
+    return parse_sysmon_utc(text, error_message);
+}
 
 std::optional<telemetry::RawEvent> SysmonTelemetryDecoder::decode_xml(
     std::string_view xml,
@@ -378,9 +443,61 @@ std::optional<telemetry::RawEvent> SysmonTelemetryDecoder::decode_xml(
             out.key_path = field(fields, "TargetObject");
             return telemetry::RawEvent{std::move(out)};
         }
+        case 5: {
+            telemetry::RawProcessStopEvent out;
+            out.source = source;
+            out.timestamp = *timestamp;
+            out.process = process;
+            return telemetry::RawEvent{std::move(out)};
+        }
+        case 22: {
+            telemetry::RawDnsEvent out;
+            out.source = source;
+            out.timestamp = *timestamp;
+            out.process = process;
+            out.query_name = field(fields, "QueryName");
+            std::string status_error;
+            out.query_status = parse_integer<std::uint32_t>(
+                field(fields, "QueryStatus"), "QueryStatus", status_error);
+            out.query_results = field(fields, "QueryResults");
+            return telemetry::RawEvent{std::move(out)};
+        }
+        case 10: {
+            auto source_process = make_source_context(fields, error_message);
+            if (!source_process) {
+                return std::nullopt;
+            }
+            telemetry::RawProcessAccessEvent out;
+            out.source = source;
+            out.timestamp = *timestamp;
+            out.process = std::move(*source_process);
+            out.target = make_target(fields);
+            out.granted_access = hex_field(fields, "GrantedAccess");
+            out.call_trace = field(fields, "CallTrace");
+            return telemetry::RawEvent{std::move(out)};
+        }
+        case 8: {
+            auto source_process = make_source_context(fields, error_message);
+            if (!source_process) {
+                return std::nullopt;
+            }
+            telemetry::RawRemoteThreadEvent out;
+            out.source = source;
+            out.timestamp = *timestamp;
+            out.process = std::move(*source_process);
+            out.target = make_target(fields);
+            std::string thread_error;
+            out.new_thread_id = parse_integer<std::uint32_t>(
+                field(fields, "NewThreadId"), "NewThreadId", thread_error);
+            out.start_address = hex_field(fields, "StartAddress");
+            out.start_module = field(fields, "StartModule");
+            out.start_function = field(fields, "StartFunction");
+            return telemetry::RawEvent{std::move(out)};
+        }
         default:
             error_message = "Sysmon Event ID " + std::to_string(*event_id) +
-                            " is not a supported telemetry family (expected 3, 7, 11, 12, 13, 14, 23, or 26).";
+                            " is not a supported telemetry family (expected 3, 5, 7, 8, 10, 11, 12, "
+                            "13, 14, 22, 23, or 26).";
             return std::nullopt;
     }
 }

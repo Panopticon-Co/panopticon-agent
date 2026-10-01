@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-This is **panopticon-agent**, internally named **"Officer"** — the Windows endpoint agent for the Panopticon&Co EDR platform (a separate polyrepo project; see `../CLAUDE.md` if present for cross-repo context). It is a C++20 agent that collects Windows process-creation telemetry via ETW and Sysmon, normalizes it, and emits it as **Panopticon Schema 0.2** NDJSON on stdout for consumption by the separate `panopticon-detection-engine` repo. This repo does not depend on that repo, and should not gain such a dependency.
+This is **panopticon-agent**, internally named **"Officer"** — the Windows endpoint agent for the Panopticon&Co EDR platform (a separate polyrepo project; see `../CLAUDE.md` if present for cross-repo context). It is a C++20 agent that collects Windows endpoint telemetry via ETW, Sysmon and the PowerShell Operational log, normalizes it, and emits it as **Panopticon Schema 0.5** NDJSON on stdout for consumption by the separate `panopticon-detection-engine` repo. Schema 0.5 is additive over 0.2/0.3/0.4: process create/network/file/registry/image-load (0.3) plus process stop, dns, process_access, remote_thread and script_block (0.5 — see `docs/V5_TELEMETRY.md`). This repo does not depend on that repo, and should not gain such a dependency.
 
 ## Build
 
@@ -54,7 +54,7 @@ EtwProcessCollector / SysmonEventCollector   (src/collectors/)
         -> one NDJSON line to stdout per event; warnings/errors to stderr
 ```
 
-- `src/collectors/` — `etw_process_collector.cpp`, `sysmon_event_collector.cpp`, `sysmon_process_decoder.cpp`. Real Windows API code: ETW session/consumer setup + TDH property parsing, `EvtSubscribe`-based Sysmon subscription + XML decoding (via tinyxml2). Not stubs.
+- `src/collectors/` — ETW (`etw_process_collector.cpp`), Sysmon (`sysmon_event_collector.cpp` + `sysmon_process_decoder.cpp` for EID 1 and `sysmon_telemetry_decoder.cpp` for EID 3/5/7/8/10/11/12/13/14/22/23/26), and PowerShell 4104 (`powershell_event_collector.cpp` + `powershell_script_block_decoder.cpp`). Real Windows API code: ETW session/consumer setup + TDH property parsing, `EvtSubscribe`-based subscriptions on the Sysmon and PowerShell Operational channels + XML decoding (via tinyxml2). Not stubs. `--source` selects `all` (default), `etw`, `sysmon`, or `powershell`.
 - `src/core/entity_id.cpp` — process entity ID derivation (host + PID + start time; see `docs/adr/003-process-entity-id.md`).
 - `include/panopticon/officer/` mirrors `src/` and additionally holds the wire types: `telemetry/{raw_process_event.hpp, panopticon_event.hpp}`, `enrichment/enriched_process_event.hpp`.
 - `schema/event.schema.json` — the authoritative **Panopticon Schema 0.2** definition (JSON Schema draft 2020-12, `additionalProperties: false`). This is the API boundary with the Detection Engine repo — see the workflow note below before touching it.

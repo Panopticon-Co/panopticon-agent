@@ -1,4 +1,5 @@
 #include "panopticon/officer/collectors/etw_process_collector.hpp"
+#include "panopticon/officer/collectors/powershell_event_collector.hpp"
 #include "panopticon/officer/collectors/sysmon_event_collector.hpp"
 #include "panopticon/officer/delivery/config.hpp"
 #include "panopticon/officer/delivery/uploader.hpp"
@@ -45,7 +46,7 @@ namespace pipeline = panopticon::officer::pipeline;
 namespace response = panopticon::officer::response;
 namespace telemetry = panopticon::officer::telemetry;
 
-enum class SourceSelection { all, etw, sysmon };
+enum class SourceSelection { all, etw, sysmon, powershell };
 
 // Phase 1 tracer bullet: --manager-url is additive, never a replacement for
 // stdout. Omitting it reproduces exactly today's behavior (there is no
@@ -237,7 +238,7 @@ std::optional<CliOptions> parse_arguments(int argc, char* argv[]) {
         const std::string_view argument = argv[index];
         if (argument == "--help" || argument == "-h") {
             std::cout << "Usage: " << argv[0]
-                      << " [--source all|etw|sysmon] [--manager-url <https-url>] [--insecure-tls]\n"
+                      << " [--source all|etw|sysmon|powershell] [--manager-url <https-url>] [--insecure-tls]\n"
                          "       [--enable-response] [--identity-path <path>] [--bootstrap-token-path <path>]\n"
                          "       [--file-collection-root <dir>] [--quarantine-root <dir>]\n"
                          "       [--manager-exception-host <ip>] [--manager-exception-port <port>]\n"
@@ -315,6 +316,8 @@ std::optional<CliOptions> parse_arguments(int argc, char* argv[]) {
             options.source = SourceSelection::etw;
         } else if (value == "sysmon") {
             options.source = SourceSelection::sysmon;
+        } else if (value == "powershell") {
+            options.source = SourceSelection::powershell;
         } else {
             std::cerr << "Invalid --source value: " << value << '\n';
             return std::nullopt;
@@ -634,6 +637,26 @@ int main(int argc, char* argv[]) {
                     emit_normalized(
                         pipeline::normalize_image_load_event(raw, *context, normalization_error),
                         normalization_error);
+                } else if constexpr (std::is_same_v<Event, telemetry::RawProcessStopEvent>) {
+                    emit_normalized(
+                        pipeline::normalize_process_stop_event(raw, *context, normalization_error),
+                        normalization_error);
+                } else if constexpr (std::is_same_v<Event, telemetry::RawDnsEvent>) {
+                    emit_normalized(
+                        pipeline::normalize_dns_event(raw, *context, normalization_error),
+                        normalization_error);
+                } else if constexpr (std::is_same_v<Event, telemetry::RawProcessAccessEvent>) {
+                    emit_normalized(
+                        pipeline::normalize_process_access_event(raw, *context, normalization_error),
+                        normalization_error);
+                } else if constexpr (std::is_same_v<Event, telemetry::RawRemoteThreadEvent>) {
+                    emit_normalized(
+                        pipeline::normalize_remote_thread_event(raw, *context, normalization_error),
+                        normalization_error);
+                } else if constexpr (std::is_same_v<Event, telemetry::RawScriptBlockEvent>) {
+                    emit_normalized(
+                        pipeline::normalize_script_block_event(raw, *context, normalization_error),
+                        normalization_error);
                 }
             },
             std::move(raw_event));
@@ -650,6 +673,9 @@ int main(int argc, char* argv[]) {
     }
     if (options->source == SourceSelection::all || options->source == SourceSelection::sysmon) {
         all_collectors.push_back(std::make_unique<collectors::SysmonEventCollector>());
+    }
+    if (options->source == SourceSelection::all || options->source == SourceSelection::powershell) {
+        all_collectors.push_back(std::make_unique<collectors::PowerShellEventCollector>());
     }
 
     std::size_t started = 0;

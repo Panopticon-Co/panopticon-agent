@@ -34,10 +34,14 @@ Rules:
 
 ## 2. Schema version
 
-`schema/event.schema.json` carries its own `schema_version` (currently `0.3`,
-additive over `0.2`). It is versioned **independently** of the coordinated
-release tag because producers and consumers negotiate it: the detection-engine
-ingestion adapter accepts `0.1`, `0.2`, and `0.3`. A schema change does not
+`schema/event.schema.json` carries its own `schema_version` (currently `0.5`,
+additive over `0.4`/`0.3`/`0.2`). 0.4 added the `linux_procfs` source kind; 0.5
+added process `stop` plus the `dns`, `process_access`, `remote_thread` and
+`script_block` families. An event declares the version that introduced *its*
+family, so older families stay `0.3`/`0.2`. It is versioned **independently** of
+the coordinated release tag because producers and consumers negotiate it: the
+detection-engine ingestion adapter and the manager wire mirror accept `0.1`
+through `0.5`. A schema change does not
 force a coordinated release bump, and vice versa.
 
 ## 3. Component / build identifiers (may lag the release tag)

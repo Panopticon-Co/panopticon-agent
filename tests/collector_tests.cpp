@@ -1,4 +1,5 @@
 #include "panopticon/officer/collectors/etw_process_collector.hpp"
+#include "panopticon/officer/collectors/powershell_script_block_decoder.hpp"
 #include "panopticon/officer/collectors/process_image_cache.hpp"
 #include "panopticon/officer/collectors/sysmon_event_collector.hpp"
 #include "panopticon/officer/collectors/sysmon_process_decoder.hpp"
@@ -213,6 +214,170 @@ void test_sysmon_image_load_family() {
     expect_round_trips(*normalized, "normalized image load event round-trips through the 0.3 serializer");
 }
 
+// -- Schema 0.5 families ----------------------------------------------
+void test_sysmon_process_stop_family() {
+    std::string error;
+    const auto raw = collectors::SysmonTelemetryDecoder::decode_xml(
+        read_named_fixture(OFFICER_SYSMON_PROCESS_STOP_FIXTURE_PATH), error);
+    expect(raw && std::holds_alternative<telemetry::RawProcessStopEvent>(*raw),
+           "EID 5 decodes to RawProcessStopEvent");
+    if (!raw) { std::cerr << "decode error: " << error << '\n'; return; }
+    const auto& s = std::get<telemetry::RawProcessStopEvent>(*raw);
+    expect(s.process.pid == 4300, "process stop PID decodes");
+
+    const auto normalized = pipeline::normalize_process_stop_event(s, family_context(), error);
+    expect(normalized.has_value(), "process stop normalizes");
+    if (!normalized) { std::cerr << "normalize error: " << error << '\n'; return; }
+    expect(normalized->schema_version == "0.5", "process stop declares schema 0.5");
+    expect(normalized->event.category == "process" && normalized->event.type == "stop",
+           "process/stop category/type");
+    expect(!normalized->network && !normalized->dns && !normalized->process_access,
+           "a process stop carries no family block");
+    expect_round_trips(*normalized, "normalized process stop round-trips through the serializer");
+}
+
+void test_sysmon_dns_family() {
+    std::string error;
+    const auto raw = collectors::SysmonTelemetryDecoder::decode_xml(
+        read_named_fixture(OFFICER_SYSMON_DNS_FIXTURE_PATH), error);
+    expect(raw && std::holds_alternative<telemetry::RawDnsEvent>(*raw), "EID 22 decodes to RawDnsEvent");
+    if (!raw) { std::cerr << "decode error: " << error << '\n'; return; }
+    const auto& d = std::get<telemetry::RawDnsEvent>(*raw);
+    expect(d.query_name == std::optional<std::string>{"update-cdn.example.test"}, "QueryName decodes");
+    expect(d.query_status == std::optional<std::uint32_t>{0}, "QueryStatus decodes");
+    expect(d.query_results && d.query_results->find("203.0.113.50") != std::string::npos,
+           "QueryResults kept whole");
+    expect(d.process.pid == 4200, "DNS process context PID decodes");
+
+    const auto normalized = pipeline::normalize_dns_event(d, family_context(), error);
+    expect(normalized.has_value(), "dns event normalizes");
+    if (!normalized) { std::cerr << "normalize error: " << error << '\n'; return; }
+    expect(normalized->schema_version == "0.5", "dns declares schema 0.5");
+    expect(normalized->event.category == "dns" && normalized->event.type == "query", "dns category/type");
+    expect(normalized->dns && normalized->dns->query_name == std::optional<std::string>{"update-cdn.example.test"},
+           "dns block populated");
+    expect_round_trips(*normalized, "normalized dns event round-trips through the serializer");
+}
+
+void test_sysmon_process_access_family() {
+    std::string error;
+    const auto raw = collectors::SysmonTelemetryDecoder::decode_xml(
+        read_named_fixture(OFFICER_SYSMON_PROCESS_ACCESS_FIXTURE_PATH), error);
+    expect(raw && std::holds_alternative<telemetry::RawProcessAccessEvent>(*raw),
+           "EID 10 decodes to RawProcessAccessEvent");
+    if (!raw) { std::cerr << "decode error: " << error << '\n'; return; }
+    const auto& a = std::get<telemetry::RawProcessAccessEvent>(*raw);
+    expect(a.process.pid == 4300 && a.process.executable->ends_with("rundll32.exe"),
+           "source process context is the opener");
+    expect(a.target.pid == std::optional<std::uint32_t>{712} && a.target.executable->ends_with("lsass.exe"),
+           "target is lsass");
+    expect(a.granted_access == std::optional<std::string>{"0x1fffff"}, "granted access decodes");
+    expect(a.call_trace && a.call_trace->find("dbgcore.DLL") != std::string::npos, "call trace decodes");
+
+    const auto normalized = pipeline::normalize_process_access_event(a, family_context(), error);
+    expect(normalized.has_value(), "process access normalizes");
+    if (!normalized) { std::cerr << "normalize error: " << error << '\n'; return; }
+    expect(normalized->schema_version == "0.5", "process access declares schema 0.5");
+    expect(normalized->process_access &&
+               normalized->process_access->target.executable->ends_with("lsass.exe"),
+           "process_access target populated");
+    expect(normalized->process_access->target.entity_id &&
+               normalized->process_access->target.entity_id->starts_with("proc_"),
+           "target entity id derived");
+    expect_round_trips(*normalized, "normalized process access round-trips through the serializer");
+}
+
+void test_sysmon_remote_thread_family() {
+    std::string error;
+    const auto raw = collectors::SysmonTelemetryDecoder::decode_xml(
+        read_named_fixture(OFFICER_SYSMON_REMOTE_THREAD_FIXTURE_PATH), error);
+    expect(raw && std::holds_alternative<telemetry::RawRemoteThreadEvent>(*raw),
+           "EID 8 decodes to RawRemoteThreadEvent");
+    if (!raw) { std::cerr << "decode error: " << error << '\n'; return; }
+    const auto& t = std::get<telemetry::RawRemoteThreadEvent>(*raw);
+    expect(t.process.executable->ends_with("mavinject.exe"), "source is the injector");
+    expect(t.target.executable->ends_with("notepad.exe"), "target is the injectee");
+    expect(t.start_function == std::optional<std::string>{"LoadLibraryW"}, "start function decodes");
+    expect(t.start_module && t.start_module->ends_with("KERNEL32.DLL"), "start module decodes");
+
+    const auto normalized = pipeline::normalize_remote_thread_event(t, family_context(), error);
+    expect(normalized.has_value(), "remote thread normalizes");
+    if (!normalized) { std::cerr << "normalize error: " << error << '\n'; return; }
+    expect(normalized->schema_version == "0.5", "remote thread declares schema 0.5");
+    expect(normalized->remote_thread &&
+               normalized->remote_thread->start_function == std::optional<std::string>{"LoadLibraryW"},
+           "remote_thread block populated");
+    expect_round_trips(*normalized, "normalized remote thread round-trips through the serializer");
+}
+
+void test_powershell_script_block_decoder() {
+    std::string error;
+    const auto raw = collectors::PowerShellScriptBlockDecoder::decode_xml(
+        read_named_fixture(OFFICER_POWERSHELL_SCRIPT_BLOCK_FIXTURE_PATH), error);
+    expect(raw && std::holds_alternative<telemetry::RawScriptBlockEvent>(*raw),
+           "4104 decodes to RawScriptBlockEvent");
+    if (!raw) { std::cerr << "decode error: " << error << '\n'; return; }
+    const auto& sb = std::get<telemetry::RawScriptBlockEvent>(*raw);
+    expect(sb.process.pid == 4200, "Execution ProcessID becomes the process PID");
+    expect(!sb.process.executable.has_value(), "4104 carries no image path (backfilled later)");
+    expect(sb.process.user_sid && sb.process.user_sid->starts_with("S-1-5-21-"), "Security UserID is a SID");
+    expect(sb.script_block_id == std::optional<std::string>{"5d9e2f8a-0b1c-4e6f-9a2d-7c3b1e0f4a55"},
+           "ScriptBlockId decodes");
+    expect(sb.text && sb.text->find("amsiInitF") != std::string::npos, "script text kept whole");
+
+    const auto normalized = pipeline::normalize_script_block_event(sb, family_context(), error);
+    expect(normalized.has_value(), "script block normalizes");
+    if (!normalized) { std::cerr << "normalize error: " << error << '\n'; return; }
+    expect(normalized->schema_version == "0.5", "script block declares schema 0.5");
+    expect(normalized->event.category == "script_block" && normalized->event.type == "execute",
+           "script_block category/type");
+    expect(normalized->script_block.has_value(), "script_block block populated");
+    const auto& block = *normalized->script_block;
+    expect(block.text_length == sb.text->size(), "text_length is the full byte count");
+    expect(!block.text_truncated, "short script is not truncated");
+    expect(block.text_sha256 && block.text_sha256->size() == 64, "full-text SHA-256 recorded");
+    expect(block.text == sb.text, "untruncated text matches the source");
+    expect_round_trips(*normalized, "normalized script block round-trips through the serializer");
+}
+
+void test_powershell_decoder_caps_long_script_text() {
+    // A script longer than the 16384-byte wire cap: the normalizer must cut it on
+    // a character boundary, flag truncation, keep the full length, and hash the
+    // whole thing.
+    const std::string long_script(20000, 'A');
+    const std::string xml =
+        "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\">"
+        "<System><Provider Name=\"Microsoft-Windows-PowerShell\"/><EventID>4104</EventID>"
+        "<Channel>Microsoft-Windows-PowerShell/Operational</Channel>"
+        "<Execution ProcessID=\"4200\"/>"
+        "<TimeCreated SystemTime=\"2026-08-18T13:01:16.327Z\"/></System>"
+        "<EventData><Data Name=\"MessageNumber\">1</Data><Data Name=\"MessageTotal\">1</Data>"
+        "<Data Name=\"ScriptBlockText\">" + long_script + "</Data></EventData></Event>";
+    std::string error;
+    const auto raw = collectors::PowerShellScriptBlockDecoder::decode_xml(xml, error);
+    expect(raw.has_value(), "long 4104 decodes");
+    if (!raw) { std::cerr << "decode error: " << error << '\n'; return; }
+    const auto normalized = pipeline::normalize_script_block_event(
+        std::get<telemetry::RawScriptBlockEvent>(*raw), family_context(), error);
+    expect(normalized.has_value(), "long script normalizes");
+    if (!normalized) { std::cerr << "normalize error: " << error << '\n'; return; }
+    const auto& block = *normalized->script_block;
+    expect(block.text_length == 20000, "full length preserved");
+    expect(block.text_truncated, "over-cap text is flagged truncated");
+    expect(block.text && block.text->size() <= 16384, "stored text is capped at the wire limit");
+    expect_round_trips(*normalized, "truncated script block round-trips through the serializer");
+}
+
+void test_powershell_decoder_rejects_non_4104() {
+    std::string error;
+    const std::string xml =
+        "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\">"
+        "<System><EventID>4103</EventID><Execution ProcessID=\"1\"/>"
+        "<TimeCreated SystemTime=\"2026-08-18T13:01:16.327Z\"/></System><EventData/></Event>";
+    expect(!collectors::PowerShellScriptBlockDecoder::decode_xml(xml, error),
+           "a non-4104 PowerShell event is rejected");
+}
+
 void test_sysmon_eid3_uses_time_created_over_utctime() {
     // Sysmon EID 3 UtcTime is unreliable; the decoder must take System/TimeCreated
     // when present. Here they deliberately disagree by hours.
@@ -317,6 +482,13 @@ int main() {
     test_sysmon_file_family();
     test_sysmon_registry_family_is_metadata_only();
     test_sysmon_image_load_family();
+    test_sysmon_process_stop_family();
+    test_sysmon_dns_family();
+    test_sysmon_process_access_family();
+    test_sysmon_remote_thread_family();
+    test_powershell_script_block_decoder();
+    test_powershell_decoder_caps_long_script_text();
+    test_powershell_decoder_rejects_non_4104();
     test_sysmon_eid3_uses_time_created_over_utctime();
     test_process_image_cache_backfills_unknown_process();
     test_sysmon_telemetry_decoder_rejects_process_and_unknown_ids();

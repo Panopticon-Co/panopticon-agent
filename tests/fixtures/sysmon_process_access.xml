@@ -1,0 +1,26 @@
+<!-- SYNTHETIC Sysmon EventID 10 (process access), Schema 0.5. Hand-authored
+     fixture, not captured from a live host. Models rundll32 opening lsass with
+     a MiniDump call stack (dbgcore). Field shapes mirror Microsoft-Windows-Sysmon. -->
+<Event xmlns="http://schemas.microsoft.com/win/2004/08/events/event">
+  <System>
+    <Provider Name="Microsoft-Windows-Sysmon" />
+    <EventID>10</EventID>
+    <EventRecordID>655</EventRecordID>
+    <Channel>Microsoft-Windows-Sysmon/Operational</Channel>
+    <Computer>OFFICER-LAB</Computer>
+    <TimeCreated SystemTime="2026-08-18T13:05:08.260Z" />
+  </System>
+  <EventData>
+    <Data Name="RuleName">-</Data>
+    <Data Name="UtcTime">2026-08-18 13:05:08.255</Data>
+    <Data Name="SourceProcessGUID">{SANITIZED-SOURCE-GUID}</Data>
+    <Data Name="SourceProcessId">4300</Data>
+    <Data Name="SourceThreadId">5120</Data>
+    <Data Name="SourceImage">C:\Windows\System32\rundll32.exe</Data>
+    <Data Name="TargetProcessGUID">{SANITIZED-TARGET-GUID}</Data>
+    <Data Name="TargetProcessId">712</Data>
+    <Data Name="TargetImage">C:\Windows\System32\lsass.exe</Data>
+    <Data Name="GrantedAccess">0x1fffff</Data>
+    <Data Name="CallTrace">C:\Windows\SYSTEM32\ntdll.dll+9c584|C:\Windows\System32\KERNELBASE.dll+305fe|C:\Windows\SYSTEM32\dbgcore.DLL+9447|C:\Windows\System32\comsvcs.dll+3c56f|C:\Windows\System32\rundll32.exe+3bcf</Data>
+  </EventData>
+</Event>

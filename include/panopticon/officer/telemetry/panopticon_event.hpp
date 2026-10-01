@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -8,6 +9,12 @@ namespace panopticon::officer::telemetry {
 
 inline constexpr char kSchemaVersion[] = "0.3";
 inline constexpr char kAgentVersion[] = "0.3.0";
+// Events of a family or type introduced by Schema 0.5 (process stop, dns,
+// process_access, remote_thread, script_block) declare 0.5. Older families keep
+// kSchemaVersion, so consumers that predate 0.5 still accept them unchanged.
+inline constexpr char kSchemaVersion05[] = "0.5";
+// script_block.text carries at most this many UTF-8 bytes (event.schema.json).
+inline constexpr std::size_t kScriptBlockTextMaxBytes = 16384;
 
 struct EventMetadata {
     std::string id;
@@ -118,6 +125,51 @@ struct ImageLoadMetadata {
     bool operator==(const ImageLoadMetadata&) const = default;
 };
 
+// -- Schema 0.5 family blocks -------------------------------------------
+
+struct DnsMetadata {
+    std::optional<std::string> query_name;
+    std::optional<std::uint32_t> query_status;
+    std::optional<std::string> query_results;
+    bool operator==(const DnsMetadata&) const = default;
+};
+
+struct TargetProcessMetadata {
+    std::optional<std::string> entity_id;
+    std::optional<std::uint32_t> pid;
+    std::optional<std::string> executable;
+    std::optional<std::string> user;
+    bool operator==(const TargetProcessMetadata&) const = default;
+};
+
+struct ProcessAccessMetadata {
+    TargetProcessMetadata target;
+    std::optional<std::string> granted_access;
+    std::optional<std::string> call_trace;
+    bool operator==(const ProcessAccessMetadata&) const = default;
+};
+
+struct RemoteThreadMetadata {
+    TargetProcessMetadata target;
+    std::optional<std::uint32_t> new_thread_id;
+    std::optional<std::string> start_address;
+    std::optional<std::string> start_module;
+    std::optional<std::string> start_function;
+    bool operator==(const RemoteThreadMetadata&) const = default;
+};
+
+struct ScriptBlockMetadata {
+    std::optional<std::string> script_block_id;
+    std::optional<std::uint32_t> message_number;
+    std::optional<std::uint32_t> message_total;
+    std::optional<std::string> path;
+    std::optional<std::string> text;          // first kScriptBlockTextMaxBytes UTF-8 bytes
+    std::uint64_t text_length{};              // full block, UTF-8 bytes
+    bool text_truncated{};
+    std::optional<std::string> text_sha256;   // of the full block
+    bool operator==(const ScriptBlockMetadata&) const = default;
+};
+
 struct PanopticonEvent {
     std::string schema_version{kSchemaVersion};
     EventMetadata event;
@@ -127,11 +179,15 @@ struct PanopticonEvent {
     UserMetadata user;
     ProcessMetadata process;
     // Exactly one of these is set, matching event.category; all unset for a
-    // plain process event (Schema 0.2 shape).
+    // plain process event (Schema 0.2 shape) and a process stop.
     std::optional<NetworkMetadata> network;
     std::optional<FileMetadata> file;
     std::optional<RegistryMetadata> registry;
     std::optional<ImageLoadMetadata> image_load;
+    std::optional<DnsMetadata> dns;
+    std::optional<ProcessAccessMetadata> process_access;
+    std::optional<RemoteThreadMetadata> remote_thread;
+    std::optional<ScriptBlockMetadata> script_block;
     bool operator==(const PanopticonEvent&) const = default;
 };
 

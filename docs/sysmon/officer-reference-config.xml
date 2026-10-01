@@ -15,20 +15,32 @@
     - Inspect the effective config with:  Sysmon64.exe -c
 
   METADATA-ONLY BOUNDARY (must be preserved)
-    Officer emits path / operation / 5-tuple / hash metadata only. It never emits
-    packet payloads, file contents, registry value data, process memory, or PE
-    contents. To keep Sysmon itself within that boundary this config deliberately:
+    Officer emits path / operation / 5-tuple / hash / call-stack-module metadata
+    only. It never emits packet payloads, file contents, registry value data,
+    process memory, or PE contents. Script-block text IS collected (that is the
+    point of 4104) but is capped and hashed by the agent. To keep Sysmon itself
+    within that boundary this config deliberately:
       - does NOT set <ArchiveDirectory> (that would persist DELETED FILE CONTENTS
         to disk),
       - uses FileDeleteDetected (EID 26), never the archiving FileDelete (EID 23),
-      - does NOT enable clipboard capture, WMI, DNS-query, or pipe events.
+      - does NOT enable clipboard capture, WMI, or pipe events.
 
-  REQUIRED EVENT IDS FOR V3
+  REQUIRED EVENT IDS FOR V3 (Schema 0.3)
       1           Process create        -> event.category=process     / type=start
       3           Network connection    -> event.category=network      / type=connect
       7           Image / module load   -> event.category=image_load   / type=load   (HIGH VOLUME - scoped below)
       11          File create           -> event.category=file         / type=create
       12,13,14    Registry key/value    -> event.category=registry     / type=add_key|set_value|rename_key
+  ADDED FOR SCHEMA 0.5
+      5           Process terminate     -> event.category=process        / type=stop
+      22          DNS query             -> event.category=dns            / type=query    (MODERATE/HIGH VOLUME)
+      10          Process access        -> event.category=process_access / type=access   (HIGH VOLUME - scoped to LSASS below)
+      8           CreateRemoteThread    -> event.category=remote_thread  / type=create
+    PowerShell 4104 (script_block) is NOT a Sysmon event: it comes from the
+    Microsoft-Windows-PowerShell/Operational channel. Enable it separately with
+    Script Block Logging (Group Policy: Windows Components > Windows PowerShell >
+    Turn on PowerShell Script Block Logging). Officer's --source powershell / all
+    subscribes to it.
   OPTIONAL
       26          File delete (detected)-> event.category=file         / type=delete
       23          File delete (archive) -> intentionally NOT enabled (would capture file contents)
@@ -103,6 +115,36 @@
         <TargetObject condition="contains">\Image File Execution Options\</TargetObject>
         <TargetObject condition="contains">\Services\</TargetObject>
       </RegistryEvent>
+    </RuleGroup>
+
+    <!-- EID 5 - process terminate. Low volume; log everything so the engine can
+         measure true process lifetimes (process.lifetime_seconds). -->
+    <RuleGroup name="process-terminate" groupRelation="or">
+      <ProcessTerminate onmatch="exclude"/>
+    </RuleGroup>
+
+    <!-- EID 22 - DNS query (process -> domain). MODERATE/HIGH VOLUME. Loopback
+         and the local resolver's own lookups are excluded; scope further to your
+         environment if volume is a concern. Carries no payload. -->
+    <RuleGroup name="dns-query" groupRelation="or">
+      <DnsQuery onmatch="exclude">
+        <QueryName condition="is">localhost</QueryName>
+      </DnsQuery>
+    </RuleGroup>
+
+    <!-- EID 10 - process access. VERY HIGH VOLUME if unscoped. Scoped to handles
+         opened against LSASS, which is what DET-CRED-010/011 inspect. Broaden only
+         with downstream queue headroom. GrantedAccess + CallTrace are metadata. -->
+    <RuleGroup name="process-access" groupRelation="or">
+      <ProcessAccess onmatch="include">
+        <TargetImage condition="image">lsass.exe</TargetImage>
+      </ProcessAccess>
+    </RuleGroup>
+
+    <!-- EID 8 - CreateRemoteThread (cross-process thread injection). Low volume.
+         Log all; DET-INJ-010/011 key on the start module/function, not the target. -->
+    <RuleGroup name="create-remote-thread" groupRelation="or">
+      <CreateRemoteThread onmatch="exclude"/>
     </RuleGroup>
 
   </EventFiltering>

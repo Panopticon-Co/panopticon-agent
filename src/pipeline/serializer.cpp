@@ -34,6 +34,19 @@ Json hash_object(const telemetry::ProcessHashMetadata& hash) {
     return Json{{"sha256", nullable_string(hash.sha256)}};
 }
 
+Json nullable_uint32(const std::optional<std::uint32_t>& value) {
+    return value ? Json(*value) : Json(nullptr);
+}
+
+Json target_object(const telemetry::TargetProcessMetadata& target) {
+    return Json{
+        {"entity_id", nullable_string(target.entity_id)},
+        {"pid", nullable_uint32(target.pid)},
+        {"executable", nullable_string(target.executable)},
+        {"user", nullable_string(target.user)},
+    };
+}
+
 void require_only_keys(
     const Json& object,
     std::initializer_list<std::string_view> required,
@@ -180,6 +193,34 @@ bool is_registry_type(const std::string& t) {
 }
 bool is_image_load_type(const std::string& t) { return t == "load"; }
 
+std::optional<std::uint32_t> optional_uint32(const Json& value, std::string_view path) {
+    if (value.is_null()) {
+        return std::nullopt;
+    }
+    if (!value.is_number_integer() && !value.is_number_unsigned()) {
+        throw std::runtime_error(std::string{path} + " must be an integer or null.");
+    }
+    if (value.is_number_integer() && value.get<std::int64_t>() < 0) {
+        throw std::runtime_error(std::string{path} + " cannot be negative.");
+    }
+    const std::uint64_t number = value.get<std::uint64_t>();
+    if (number > std::numeric_limits<std::uint32_t>::max()) {
+        throw std::runtime_error(std::string{path} + " exceeds the 32-bit range.");
+    }
+    return static_cast<std::uint32_t>(number);
+}
+
+telemetry::TargetProcessMetadata parse_target(const Json& parent, std::string_view path) {
+    const Json& target = parent.at("target");
+    require_exact_keys(target, {"entity_id", "pid", "executable", "user"}, path);
+    return {
+        optional_string(target, "entity_id", path),
+        optional_pid(target.at("pid"), std::string{path} + ".pid"),
+        optional_string(target, "executable", path),
+        optional_string(target, "user", path),
+    };
+}
+
 }  // namespace
 
 nlohmann::json event_to_json(const telemetry::PanopticonEvent& event) {
@@ -269,6 +310,41 @@ nlohmann::json event_to_json(const telemetry::PanopticonEvent& event) {
             {"hash", hash_object(event.image_load->hash)},
         };
     }
+    if (event.dns) {
+        out["dns"] = {
+            {"query_name", nullable_string(event.dns->query_name)},
+            {"query_status", nullable_uint32(event.dns->query_status)},
+            {"query_results", nullable_string(event.dns->query_results)},
+        };
+    }
+    if (event.process_access) {
+        out["process_access"] = {
+            {"target", target_object(event.process_access->target)},
+            {"granted_access", nullable_string(event.process_access->granted_access)},
+            {"call_trace", nullable_string(event.process_access->call_trace)},
+        };
+    }
+    if (event.remote_thread) {
+        out["remote_thread"] = {
+            {"target", target_object(event.remote_thread->target)},
+            {"new_thread_id", nullable_uint32(event.remote_thread->new_thread_id)},
+            {"start_address", nullable_string(event.remote_thread->start_address)},
+            {"start_module", nullable_string(event.remote_thread->start_module)},
+            {"start_function", nullable_string(event.remote_thread->start_function)},
+        };
+    }
+    if (event.script_block) {
+        out["script_block"] = {
+            {"script_block_id", nullable_string(event.script_block->script_block_id)},
+            {"message_number", nullable_uint32(event.script_block->message_number)},
+            {"message_total", nullable_uint32(event.script_block->message_total)},
+            {"path", nullable_string(event.script_block->path)},
+            {"text", nullable_string(event.script_block->text)},
+            {"text_length", event.script_block->text_length},
+            {"text_truncated", event.script_block->text_truncated},
+            {"text_sha256", nullable_string(event.script_block->text_sha256)},
+        };
+    }
     return out;
 }
 
@@ -285,12 +361,14 @@ std::optional<telemetry::PanopticonEvent> deserialize_event(
         require_only_keys(
             root,
             {"schema_version", "event", "source", "agent", "host", "user", "process"},
-            {"network", "file", "registry", "image_load"},
+            {"network", "file", "registry", "image_load", "dns", "process_access",
+             "remote_thread", "script_block"},
             "$");
 
         telemetry::PanopticonEvent result;
         result.schema_version = required_string(root, "schema_version", "$");
-        if (result.schema_version != "0.2" && result.schema_version != "0.3") {
+        if (result.schema_version != "0.2" && result.schema_version != "0.3" &&
+            result.schema_version != "0.4" && result.schema_version != "0.5") {
             throw std::runtime_error("$.schema_version is not supported by this agent.");
         }
 
@@ -309,12 +387,20 @@ std::optional<telemetry::PanopticonEvent> deserialize_event(
         const bool has_file = root.contains("file");
         const bool has_registry = root.contains("registry");
         const bool has_image_load = root.contains("image_load");
+        const bool has_dns = root.contains("dns");
+        const bool has_process_access = root.contains("process_access");
+        const bool has_remote_thread = root.contains("remote_thread");
+        const bool has_script_block = root.contains("script_block");
         const int family_blocks = static_cast<int>(has_network) + static_cast<int>(has_file) +
-                                  static_cast<int>(has_registry) + static_cast<int>(has_image_load);
+                                  static_cast<int>(has_registry) + static_cast<int>(has_image_load) +
+                                  static_cast<int>(has_dns) + static_cast<int>(has_process_access) +
+                                  static_cast<int>(has_remote_thread) +
+                                  static_cast<int>(has_script_block);
 
         if (category == "process") {
-            if (type != "start") {
-                throw std::runtime_error("A process event must be of type 'start'.");
+            // Schema 0.5 added process 'stop'; 'start' remains the 0.2 shape.
+            if (type != "start" && type != "stop") {
+                throw std::runtime_error("A process event must be of type 'start' or 'stop'.");
             }
             if (family_blocks != 0) {
                 throw std::runtime_error("A process event must not carry a telemetry-family block.");
@@ -338,6 +424,26 @@ std::optional<telemetry::PanopticonEvent> deserialize_event(
             if (!is_image_load_type(type)) throw std::runtime_error("Unsupported image_load event type.");
             if (!has_image_load || family_blocks != 1) {
                 throw std::runtime_error("An image_load event must carry exactly the image_load block.");
+            }
+        } else if (category == "dns") {
+            if (type != "query") throw std::runtime_error("Unsupported dns event type.");
+            if (!has_dns || family_blocks != 1) {
+                throw std::runtime_error("A dns event must carry exactly the dns block.");
+            }
+        } else if (category == "process_access") {
+            if (type != "access") throw std::runtime_error("Unsupported process_access event type.");
+            if (!has_process_access || family_blocks != 1) {
+                throw std::runtime_error("A process_access event must carry exactly the process_access block.");
+            }
+        } else if (category == "remote_thread") {
+            if (type != "create") throw std::runtime_error("Unsupported remote_thread event type.");
+            if (!has_remote_thread || family_blocks != 1) {
+                throw std::runtime_error("A remote_thread event must carry exactly the remote_thread block.");
+            }
+        } else if (category == "script_block") {
+            if (type != "execute") throw std::runtime_error("Unsupported script_block event type.");
+            if (!has_script_block || family_blocks != 1) {
+                throw std::runtime_error("A script_block event must carry exactly the script_block block.");
             }
         } else {
             throw std::runtime_error("$.event.category is not a supported telemetry category.");
@@ -481,6 +587,65 @@ std::optional<telemetry::PanopticonEvent> deserialize_event(
                 parse_hash(im, "$.image_load.hash"),
             };
         }
+        if (has_dns) {
+            const Json& d = root.at("dns");
+            require_exact_keys(d, {"query_name", "query_status", "query_results"}, "$.dns");
+            result.dns = telemetry::DnsMetadata{
+                optional_string(d, "query_name", "$.dns"),
+                optional_uint32(d.at("query_status"), "$.dns.query_status"),
+                optional_string(d, "query_results", "$.dns"),
+            };
+        }
+        if (has_process_access) {
+            const Json& pa = root.at("process_access");
+            require_exact_keys(pa, {"target", "granted_access", "call_trace"}, "$.process_access");
+            result.process_access = telemetry::ProcessAccessMetadata{
+                parse_target(pa, "$.process_access.target"),
+                optional_string(pa, "granted_access", "$.process_access"),
+                optional_string(pa, "call_trace", "$.process_access"),
+            };
+        }
+        if (has_remote_thread) {
+            const Json& rt = root.at("remote_thread");
+            require_exact_keys(
+                rt,
+                {"target", "new_thread_id", "start_address", "start_module", "start_function"},
+                "$.remote_thread");
+            result.remote_thread = telemetry::RemoteThreadMetadata{
+                parse_target(rt, "$.remote_thread.target"),
+                optional_uint32(rt.at("new_thread_id"), "$.remote_thread.new_thread_id"),
+                optional_string(rt, "start_address", "$.remote_thread"),
+                optional_string(rt, "start_module", "$.remote_thread"),
+                optional_string(rt, "start_function", "$.remote_thread"),
+            };
+        }
+        if (has_script_block) {
+            const Json& sb = root.at("script_block");
+            require_exact_keys(
+                sb,
+                {"script_block_id", "message_number", "message_total", "path", "text",
+                 "text_length", "text_truncated", "text_sha256"},
+                "$.script_block");
+            const Json& length = sb.at("text_length");
+            if (!length.is_number_unsigned() &&
+                !(length.is_number_integer() && length.get<std::int64_t>() >= 0)) {
+                throw std::runtime_error("$.script_block.text_length must be a non-negative integer.");
+            }
+            const Json& truncated = sb.at("text_truncated");
+            if (!truncated.is_boolean()) {
+                throw std::runtime_error("$.script_block.text_truncated must be a boolean.");
+            }
+            telemetry::ScriptBlockMetadata block;
+            block.script_block_id = optional_string(sb, "script_block_id", "$.script_block");
+            block.message_number = optional_uint32(sb.at("message_number"), "$.script_block.message_number");
+            block.message_total = optional_uint32(sb.at("message_total"), "$.script_block.message_total");
+            block.path = optional_string(sb, "path", "$.script_block");
+            block.text = optional_string(sb, "text", "$.script_block");
+            block.text_length = length.get<std::uint64_t>();
+            block.text_truncated = truncated.get<bool>();
+            block.text_sha256 = optional_string(sb, "text_sha256", "$.script_block");
+            result.script_block = std::move(block);
+        }
 
         static const std::regex event_id_pattern{R"(^evt_[0-9a-f]{64}$)"};
         static const std::regex entity_id_pattern{R"(^proc_[0-9a-f]{64}$)"};
@@ -502,6 +667,20 @@ std::optional<telemetry::PanopticonEvent> deserialize_event(
         }
         if (result.image_load && result.image_load->hash.sha256) {
             require_pattern(*result.image_load->hash.sha256, sha256_pattern, "$.image_load.hash.sha256");
+        }
+        if (result.script_block && result.script_block->text_sha256) {
+            require_pattern(
+                *result.script_block->text_sha256, sha256_pattern, "$.script_block.text_sha256");
+        }
+        if (result.process_access && result.process_access->target.entity_id) {
+            require_pattern(
+                *result.process_access->target.entity_id, entity_id_pattern,
+                "$.process_access.target.entity_id");
+        }
+        if (result.remote_thread && result.remote_thread->target.entity_id) {
+            require_pattern(
+                *result.remote_thread->target.entity_id, entity_id_pattern,
+                "$.remote_thread.target.entity_id");
         }
         return result;
     } catch (const std::exception& exception) {

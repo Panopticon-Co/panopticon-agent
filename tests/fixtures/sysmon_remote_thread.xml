@@ -1,0 +1,28 @@
+<!-- SYNTHETIC Sysmon EventID 8 (CreateRemoteThread), Schema 0.5. Hand-authored
+     fixture, not captured from a live host. Models mavinject creating a thread
+     in notepad at LoadLibraryW. Field shapes mirror Microsoft-Windows-Sysmon. -->
+<Event xmlns="http://schemas.microsoft.com/win/2004/08/events/event">
+  <System>
+    <Provider Name="Microsoft-Windows-Sysmon" />
+    <EventID>8</EventID>
+    <EventRecordID>661</EventRecordID>
+    <Channel>Microsoft-Windows-Sysmon/Operational</Channel>
+    <Computer>OFFICER-LAB</Computer>
+    <TimeCreated SystemTime="2026-08-18T13:06:01.470Z" />
+  </System>
+  <EventData>
+    <Data Name="RuleName">-</Data>
+    <Data Name="UtcTime">2026-08-18 13:06:01.458</Data>
+    <Data Name="SourceProcessGuid">{SANITIZED-SOURCE-GUID}</Data>
+    <Data Name="SourceProcessId">3224</Data>
+    <Data Name="SourceImage">C:\Windows\System32\mavinject.exe</Data>
+    <Data Name="TargetProcessGuid">{SANITIZED-TARGET-GUID}</Data>
+    <Data Name="TargetProcessId">3440</Data>
+    <Data Name="TargetImage">C:\Windows\System32\notepad.exe</Data>
+    <Data Name="NewThreadId">10204</Data>
+    <Data Name="StartAddress">0x00007FFB9285E540</Data>
+    <Data Name="StartModule">C:\Windows\System32\KERNEL32.DLL</Data>
+    <Data Name="StartFunction">LoadLibraryW</Data>
+    <Data Name="SourceUser">LAB\analyst</Data>
+  </EventData>
+</Event>

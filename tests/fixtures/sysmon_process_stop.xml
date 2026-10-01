@@ -1,0 +1,20 @@
+<!-- SYNTHETIC Sysmon EventID 5 (process terminated), Schema 0.5. Hand-authored
+     fixture, not captured from a live host. Field shapes mirror Microsoft-Windows-Sysmon. -->
+<Event xmlns="http://schemas.microsoft.com/win/2004/08/events/event">
+  <System>
+    <Provider Name="Microsoft-Windows-Sysmon" />
+    <EventID>5</EventID>
+    <EventRecordID>515</EventRecordID>
+    <Channel>Microsoft-Windows-Sysmon/Operational</Channel>
+    <Computer>OFFICER-LAB</Computer>
+    <TimeCreated SystemTime="2026-08-18T13:05:09.880Z" />
+  </System>
+  <EventData>
+    <Data Name="RuleName">-</Data>
+    <Data Name="UtcTime">2026-08-18 13:05:09.875</Data>
+    <Data Name="ProcessGuid">{SANITIZED-STOP-GUID}</Data>
+    <Data Name="ProcessId">4300</Data>
+    <Data Name="Image">C:\Windows\System32\rundll32.exe</Data>
+    <Data Name="User">LAB\analyst</Data>
+  </EventData>
+</Event>

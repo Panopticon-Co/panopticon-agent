@@ -1,0 +1,23 @@
+<!-- SYNTHETIC Sysmon EventID 22 (DNS query), Schema 0.5. Hand-authored fixture,
+     not captured from a live host. Field shapes mirror Microsoft-Windows-Sysmon. -->
+<Event xmlns="http://schemas.microsoft.com/win/2004/08/events/event">
+  <System>
+    <Provider Name="Microsoft-Windows-Sysmon" />
+    <EventID>22</EventID>
+    <EventRecordID>640</EventRecordID>
+    <Channel>Microsoft-Windows-Sysmon/Operational</Channel>
+    <Computer>OFFICER-LAB</Computer>
+    <TimeCreated SystemTime="2026-08-18T13:02:42.510Z" />
+  </System>
+  <EventData>
+    <Data Name="RuleName">-</Data>
+    <Data Name="UtcTime">2026-08-18 13:02:42.509</Data>
+    <Data Name="ProcessGuid">{SANITIZED-DNS-GUID}</Data>
+    <Data Name="ProcessId">4200</Data>
+    <Data Name="QueryName">update-cdn.example.test</Data>
+    <Data Name="QueryStatus">0</Data>
+    <Data Name="QueryResults">type:  5 edge.update-cdn.example.test;::ffff:203.0.113.50;</Data>
+    <Data Name="Image">C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe</Data>
+    <Data Name="User">LAB\analyst</Data>
+  </EventData>
+</Event>

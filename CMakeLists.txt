@@ -21,6 +21,8 @@ target_link_libraries(officer-core
 
 add_library(officer-collectors STATIC
     src/collectors/etw_process_collector.cpp
+    src/collectors/powershell_event_collector.cpp
+    src/collectors/powershell_script_block_decoder.cpp
     src/collectors/process_image_cache.cpp
     src/collectors/sysmon_event_collector.cpp
     src/collectors/sysmon_process_decoder.cpp
@@ -110,6 +112,11 @@ if(BUILD_TESTING)
             OFFICER_SYSMON_FILE_FIXTURE_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/sysmon_file_create.xml"
             OFFICER_SYSMON_REGISTRY_FIXTURE_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/sysmon_registry_set_value.xml"
             OFFICER_SYSMON_IMAGE_LOAD_FIXTURE_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/sysmon_image_load.xml"
+            OFFICER_SYSMON_PROCESS_STOP_FIXTURE_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/sysmon_process_stop.xml"
+            OFFICER_SYSMON_DNS_FIXTURE_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/sysmon_dns_query.xml"
+            OFFICER_SYSMON_PROCESS_ACCESS_FIXTURE_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/sysmon_process_access.xml"
+            OFFICER_SYSMON_REMOTE_THREAD_FIXTURE_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/sysmon_remote_thread.xml"
+            OFFICER_POWERSHELL_SCRIPT_BLOCK_FIXTURE_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/powershell_script_block.xml"
     )
     add_custom_command(
         TARGET officer-collector-tests

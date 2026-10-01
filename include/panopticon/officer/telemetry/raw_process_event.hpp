@@ -102,6 +102,83 @@ struct RawImageLoadEvent {
     bool operator==(const RawImageLoadEvent&) const = default;
 };
 
+// -- Schema 0.5 telemetry families ------------------------------------------
+
+// Sysmon EID 5: the process in `process` exited.
+struct RawProcessStopEvent {
+    SourceProvenance source;
+    UtcTimestamp timestamp;
+    RawProcessContext process;
+
+    bool operator==(const RawProcessStopEvent&) const = default;
+};
+
+// Sysmon EID 22: `process` resolved query_name.
+struct RawDnsEvent {
+    SourceProvenance source;
+    UtcTimestamp timestamp;
+    RawProcessContext process;
+    std::optional<std::string> query_name;
+    std::optional<std::uint32_t> query_status;
+    // The resolver answer exactly as Sysmon renders it; never parsed here.
+    std::optional<std::string> query_results;
+
+    bool operator==(const RawDnsEvent&) const = default;
+};
+
+// The other process in a cross-process event (Sysmon EID 8 / 10).
+struct RawTargetProcess {
+    std::optional<std::uint32_t> pid;
+    std::optional<std::string> executable;
+    std::optional<std::string> process_guid;
+    std::optional<std::string> user_name;
+
+    bool operator==(const RawTargetProcess&) const = default;
+};
+
+// Sysmon EID 10: `process` (the source) opened a handle to `target`.
+struct RawProcessAccessEvent {
+    SourceProvenance source;
+    UtcTimestamp timestamp;
+    RawProcessContext process;
+    RawTargetProcess target;
+    std::optional<std::string> granted_access;  // "0x1410", as Sysmon renders it
+    std::optional<std::string> call_trace;
+
+    bool operator==(const RawProcessAccessEvent&) const = default;
+};
+
+// Sysmon EID 8: `process` (the source) created a thread in `target`.
+struct RawRemoteThreadEvent {
+    SourceProvenance source;
+    UtcTimestamp timestamp;
+    RawProcessContext process;
+    RawTargetProcess target;
+    std::optional<std::uint32_t> new_thread_id;
+    std::optional<std::string> start_address;
+    // Unset when Sysmon reports "-": the thread starts in unbacked memory.
+    std::optional<std::string> start_module;
+    std::optional<std::string> start_function;
+
+    bool operator==(const RawRemoteThreadEvent&) const = default;
+};
+
+// PowerShell Operational EID 4104: `process` (a PowerShell host, identified
+// only by PID -- the event carries no image) compiled a script block. `text` is
+// the full block as logged; the normalizer applies the wire cap.
+struct RawScriptBlockEvent {
+    SourceProvenance source;
+    UtcTimestamp timestamp;
+    RawProcessContext process;
+    std::optional<std::string> script_block_id;
+    std::optional<std::uint32_t> message_number;
+    std::optional<std::uint32_t> message_total;
+    std::optional<std::string> path;
+    std::optional<std::string> text;
+
+    bool operator==(const RawScriptBlockEvent&) const = default;
+};
+
 // New raw event types are added to this variant without changing collector
 // ownership or downstream sink interfaces.
 using RawEvent = std::variant<
@@ -109,6 +186,11 @@ using RawEvent = std::variant<
     RawNetworkEvent,
     RawFileEvent,
     RawRegistryEvent,
-    RawImageLoadEvent>;
+    RawImageLoadEvent,
+    RawProcessStopEvent,
+    RawDnsEvent,
+    RawProcessAccessEvent,
+    RawRemoteThreadEvent,
+    RawScriptBlockEvent>;
 
 }  // namespace panopticon::officer::telemetry
