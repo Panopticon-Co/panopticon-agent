@@ -2,6 +2,7 @@
 #include "panopticon/officer/response/file_evidence.hpp"
 #include "panopticon/officer/response/isolation.hpp"
 #include "panopticon/officer/response/replay_ledger.hpp"
+#include "panopticon/officer/response/result_outbox.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -104,6 +105,60 @@ void test_rejects_malformed_json() {
     expect(!empty.has_value(), "empty payload is rejected");
 }
 
+void test_boot_bound_process_command_v2() {
+    std::string error;
+    auto payload = nlohmann::json::parse(valid_command_json("cmd-v2", "KILL_PROCESS", "{}"));
+    payload["schema_version"] = "2";
+    const std::string boot = "boot_" + std::string(64, 'a');
+    payload["target"] = {{"pid", 4242}, {"start_time_ticks", "18446744073709551615"}, {"boot_id", boot}};
+    auto command = response::parse_command_json(payload.dump(), error);
+    expect(command && command->schema_version == "2" && command->process_target.boot_id == boot &&
+           command->process_target.start_time_ticks == UINT64_MAX, "schema-2 preserves exact full uint64 token and boot scope");
+    payload["created_at"] = "2999-01-01T00:00:00.000001+00:00";
+    payload["expires_at"] = "2999-01-01T00:00:00.000002Z";
+    expect(response::parse_command_json(payload.dump(), error).has_value(), "fractional UTC order is exact within one second");
+    payload["created_at"] = "2999-01-01T00:00:00.000003Z";
+    expect(!response::parse_command_json(payload.dump(), error), "reverse fractional ordering is rejected");
+    for (const auto* invalid : {"2999-01-01T00:00:00.Z", "2999-01-01T00:00:00.1234567890Z", "2999-01-01T00:00:00.xZ"}) {
+        payload["created_at"] = invalid;
+        expect(!response::parse_command_json(payload.dump(), error), "invalid or excessive UTC fractions are rejected");
+    }
+    payload["created_at"] = "2020-01-01T00:00:00.123456+00:00";
+    response::CommandGate gate{"agent-1", "host-1", [] { return 0; }};
+    if (command) expect(gate.validate_and_mark(*command).code == response::ReceiptCode::succeeded, "schema-2 retains authenticated host/agent gate");
+    for (const auto* invalid : {"0", "01", "+1", "-1", "1.0", "18446744073709551616", " 1"}) {
+        payload["target"]["start_time_ticks"] = invalid;
+        expect(!response::parse_command_json(payload.dump(), error), "schema-2 rejects noncanonical or overflowing uint64");
+    }
+    payload["target"]["start_time_ticks"] = 123;
+    expect(!response::parse_command_json(payload.dump(), error), "schema-2 rejects numeric creation tokens");
+    payload["target"]["start_time_ticks"] = "123";
+    payload["target"].erase("boot_id");
+    expect(!response::parse_command_json(payload.dump(), error), "schema-2 requires explicit boot scope");
+    payload["target"]["boot_id"] = "boot_other";
+    expect(!response::parse_command_json(payload.dump(), error), "schema-2 requires canonical Windows boot digest");
+}
+
+void test_rejects_ambiguous_command_and_poll_json() {
+    std::string error;
+    auto command = valid_command_json("cmd-duplicate", "KILL_PROCESS", R"({"pid":4242,"start_time_ticks":123456789})");
+    auto duplicate_action = command;
+    duplicate_action.insert(duplicate_action.size() - 1, R"(,"action":"ISOLATE_HOST")");
+    expect(!response::parse_command_json(duplicate_action, error), "duplicate action is rejected before DOM replacement");
+    auto duplicate_target = valid_command_json("cmd-duplicate", "KILL_PROCESS", R"({"pid":4242,"\u0070id":9999,"start_time_ticks":123456789})");
+    expect(!response::parse_command_json(duplicate_target, error), "escaped duplicate target key is rejected");
+    expect(!response::parse_command_poll_response("{\"commands\":[" + duplicate_target + "]}", 10, error),
+           "poll parsing preserves duplicate-key rejection within command entries");
+    expect(!response::parse_command_poll_response(R"({"commands":[],"commands":[]})", 10, error),
+           "duplicate poll commands field is rejected");
+    expect(!response::parse_command_poll_response(R"({"commands":[],"ignored":true})", 10, error),
+           "unknown poll envelope field is rejected");
+    const auto valid_poll = response::parse_command_poll_response("{\"commands\":[" + command + "," + command + "]}", 10, error);
+    expect(valid_poll && valid_poll->size() == 2, "same key names in separate command objects are allowed (replay gate remains separate)");
+    const std::string deep = "{\"commands\":" + std::string(40, '[') + "0" + std::string(40, ']') + "}";
+    expect(!response::parse_command_poll_response(deep, 10, error), "excessive JSON nesting is bounded before semantic validation");
+}
+
 void test_rejects_oversized_payload() {
     std::string error;
     std::string huge = valid_command_json("cmd-8", "ISOLATE_HOST", "{}");
@@ -121,6 +176,37 @@ void test_serialize_command_result_round_trip() {
         expect(serialized->find("\"outcome\":\"succeeded\"") != std::string::npos, "outcome field is present");
         expect(serialized->find("\"command_id\":\"cmd-1\"") != std::string::npos, "command_id field is present");
     }
+}
+
+void test_durable_result_outbox_and_ack_contract() {
+    const auto path = std::filesystem::temp_directory_path() / ("officer-outcomes-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    std::string error;
+    const auto result = response::serialize_command_result({"cmd-outbox", "corr-1", response::ReceiptCode::indeterminate, "completion unknown"}, 4096, error);
+    expect(result.has_value(), "indeterminate result serializes with version 2");
+    if (!result) return;
+    const auto id = nlohmann::json::parse(*result).at("result_id");
+    expect(!response::valid_result_ack(*result, "{}"), "HTTP 200 without retention acknowledgment cannot drop result");
+    expect(!response::valid_result_ack(*result, "{\"result_id\":" + id.dump() + ",\"accepted\":true,\"retained\":false,\"retained\":true}"), "ambiguous receipt cannot dispose durable result");
+    expect(!response::valid_result_ack(*result, nlohmann::json{{"result_id", id}, {"accepted", true}}.dump()), "legacy acknowledgment lacks immutable retention proof");
+    expect(response::valid_result_ack(*result, nlohmann::json{{"result_id", id}, {"accepted", true}, {"retained", true}}.dump()), "matching retained result acknowledgment validates");
+    {
+        response::ResultOutbox box{{path}, "agent-1", "host-1"};
+        box.save(*result);
+        box.flush([](const std::string&) { return response::TransportOutcome::retryable; });
+        expect(box.pending() == 1, "transport failure retains encrypted committed result");
+    }
+    {
+        response::ResultOutbox box{{path}, "agent-1", "host-1"};
+        box.flush([&](const std::string& received) {
+            expect(received == *result, "restart replays exact committed result bytes");
+            return response::TransportOutcome::acknowledged;
+        });
+        expect(box.pending() == 0, "only validated sender acknowledgment disposes result");
+    }
+    const bool owned = std::filesystem::equivalent(path.parent_path(), std::filesystem::temp_directory_path()) && path.filename().string().starts_with("officer-outcomes-");
+    expect(owned, "cleanup remains within owned temporary outbox");
+    if (owned)
+        std::filesystem::remove_all(path);
 }
 
 // Locks this agent's ReceiptCode -> wire outcome collapse against the same
@@ -332,17 +418,31 @@ void test_file_evidence_collects_hash_for_allowed_file() {
 
 }  // namespace
 
-int main() {
+int main(int argc, char** argv) {
+    if (argc == 2 && std::string_view{argv[1]} == "--decode-command-stdin") {
+        std::array<char, 8193> buffer{};
+        std::cin.read(buffer.data(), buffer.size());
+        std::string error;
+        const auto command = response::parse_command_json(std::string_view{buffer.data(), static_cast<std::size_t>(std::cin.gcount())}, error);
+        if (!command) { std::cerr << error << '\n'; return 2; }
+        std::cout << nlohmann::json{{"schema_version", command->schema_version}, {"pid", command->process_target.pid},
+            {"start_time_ticks", std::to_string(command->process_target.start_time_ticks)},
+            {"boot_id", command->process_target.boot_id.value_or("")}}.dump() << '\n';
+        return 0;
+    }
     test_parse_kill_process_command_round_trip();
     test_parse_collect_file_command_round_trip();
+    test_boot_bound_process_command_v2();
     test_rejects_unknown_action();
     test_rejects_unexpected_top_level_field();
     test_rejects_process_target_missing_start_time();
     test_rejects_wrong_target_shape_for_action();
     test_rejects_non_utc_timestamp();
     test_rejects_malformed_json();
+    test_rejects_ambiguous_command_and_poll_json();
     test_rejects_oversized_payload();
     test_serialize_command_result_round_trip();
+    test_durable_result_outbox_and_ack_contract();
     test_receipt_code_collapses_to_the_canonical_three_wire_outcomes();
     test_gate_accepts_once_then_replay_detected();
     test_gate_rejects_expired_command();

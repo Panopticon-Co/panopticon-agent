@@ -38,11 +38,31 @@ struct ProcessObservation {
 // wire format.
 [[nodiscard]] telemetry::RawProcessEvent to_raw_process_event(const ProcessObservation& observation);
 
-// KILL_PROCESS: re-observes the PID/creation-time tuple (defeats PID
-// reuse), refuses PID 0/4 and the hardcoded critical-process image list
-// (see command.hpp's is_protected_process), and only then calls
-// TerminateProcess. Returns true on success, std::nullopt (with
-// error_message) on any refusal or Win32 failure.
-[[nodiscard]] std::optional<bool> terminate_process(const ProcessTarget& target, std::string& error_message);
+// KILL_PROCESS: one held query/terminate/synchronize handle binds creation-token,
+// required image and native critical/protection checks to the same kernel object.
+// Refuses protected/self targets and unknown safety facts. Succeeded means observed
+// exit, not merely TerminateProcess acceptance. A five-second wait timeout is
+// indeterminate and does not prove the process survived. Current native boot
+// must match the explicit target boot; missing boot refuses both process actions.
+enum class ProcessTerminationState { refused, failed, succeeded, indeterminate };
+enum class ProcessTerminationStage { preflight, boot, open, identity, image, critical, protection, liveness, initiate, completion };
+struct ProcessTerminationResult {
+    ProcessTerminationState state = ProcessTerminationState::refused;
+    ProcessTerminationStage stage = ProcessTerminationStage::preflight;
+    bool action_initiated = false;
+    bool completion_observed = false;
+    std::optional<std::uint32_t> native_error;
+    std::string summary;
+};
+[[nodiscard]] ProcessTerminationResult terminate_process(const ProcessTarget& target);
+[[nodiscard]] CommandReceipt termination_receipt(const ProcessTerminationResult& result,
+    const std::string& command_id, const std::string& correlation_id);
+
+namespace detail {
+// Classifies only the completion wait AFTER a successful TerminateProcess call.
+// Kept separate to exercise timeout/error paths without harming real targets.
+[[nodiscard]] ProcessTerminationResult termination_completion(std::uint32_t wait_status,
+    std::optional<std::uint32_t> native_error = std::nullopt);
+}
 
 }  // namespace panopticon::officer::response

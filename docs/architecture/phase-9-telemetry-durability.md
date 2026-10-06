@@ -1,5 +1,10 @@
 # Phase 9 (telemetry durability): `SegmentSpool`
 
+**Historical design.** Live Uploader now uses the per-observation SQLite journal;
+see [implementation and limits](../windows-endpoint/DURABLE_JOURNAL.md).
+SegmentSpool remains for migration/compatibility tests. Its retry disposal and
+quota eviction are not the current live-delivery policy.
+
 ## Outcome
 
 Closes the gap `docs/architecture/phase-6-delivery.md` documented and

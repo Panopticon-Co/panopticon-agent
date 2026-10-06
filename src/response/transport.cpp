@@ -7,6 +7,7 @@
 #include <wincrypt.h>
 
 #include <nlohmann/json.hpp>
+#include <set>
 
 #pragma comment(lib, "crypt32.lib")
 
@@ -166,7 +167,7 @@ std::optional<std::string> ResponseTransportClient::poll_commands(const std::str
     const delivery::HttpClient client{/*verify_tls=*/true, timeout_ms_};
     const std::vector<delivery::HttpHeader> headers = {{"Authorization", "Bearer " + identity.bearer_token}};
     const auto endpoint =
-        without_trailing_slash(manager_url) + "/api/v1/agents/" + identity.agent_id + "/commands";
+        without_trailing_slash(manager_url) + "/api/v1/agents/" + identity.agent_id + "/commands?delivery_mode=durable";
     std::string transport_error;
     const auto response = client.request("GET", endpoint, headers, "", transport_error);
     if (!response) {
@@ -222,7 +223,24 @@ TransportOutcome ResponseTransportClient::submit_command_result(const std::strin
     if (!response) return TransportOutcome::retryable;
     if (response->status_code == 401 || response->status_code == 403) return TransportOutcome::authentication_failed;
     if (response->status_code != 200) return TransportOutcome::rejected;
-    return TransportOutcome::acknowledged;
+    return valid_result_ack(payload, response->body) ? TransportOutcome::acknowledged : TransportOutcome::retryable;
+}
+
+bool valid_result_ack(const std::string& payload, const std::string& receipt) {
+    try {
+        const auto sent = json::parse(payload);
+        std::set<std::string> keys;
+        bool ambiguous = false;
+        const auto ack = json::parse(receipt, [&](int depth, json::parse_event_t event, json& value) {
+            if (depth > 1) ambiguous = true;
+            if (event == json::parse_event_t::key && !keys.insert(value.get<std::string>()).second) ambiguous = true;
+            return true;
+        });
+        return !ambiguous && ack.is_object() && ack.size() == 3 &&
+            ack.contains("accepted") && ack["accepted"].is_boolean() && ack["accepted"] == true &&
+            ack.contains("retained") && ack["retained"].is_boolean() && ack["retained"] == true && ack.contains("result_id") &&
+            ack["result_id"].is_string() && ack["result_id"] == sent.at("result_id");
+    } catch (const json::exception&) { return false; }
 }
 
 }  // namespace panopticon::officer::response

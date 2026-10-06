@@ -10,6 +10,7 @@
 #include <winevt.h>
 
 #include <condition_variable>
+#include <atomic>
 #include <cstdint>
 #include <exception>
 #include <limits>
@@ -168,8 +169,11 @@ struct SysmonEventCollector::Impl {
     CollectorErrorSink error_sink;
     std::size_t active_callbacks{};
     bool accepting_callbacks{};
-    // PID -> image/user, populated from EID 1, used to backfill non-process
-    // events that Sysmon delivered as Image="<unknown process>".
+    std::atomic_uint64_t decode_failures{0};
+    std::atomic_uint64_t sink_failures{0};
+    std::atomic_uint64_t subscription_errors{0};
+    // Source GUID/PID -> separate EID 1 cache evidence for non-process events
+    // whose observed image is unresolved. Never overwrite decoded fields.
     ProcessImageCache process_cache;
 
     bool begin_callback() {
@@ -203,6 +207,7 @@ struct SysmonEventCollector::Impl {
         std::string error;
         const auto xml = render_event_xml(event, error);
         if (!xml) {
+            ++decode_failures;
             report_error(std::move(error));
             return;
         }
@@ -229,6 +234,7 @@ struct SysmonEventCollector::Impl {
             }
         }
         if (!raw) {
+            ++decode_failures;
             report_error(std::move(error));
             return;
         }
@@ -237,8 +243,10 @@ struct SysmonEventCollector::Impl {
                 event_sink(std::move(*raw));
             }
         } catch (const std::exception& exception) {
+            ++sink_failures;
             report_error("Event sink failed: " + std::string{exception.what()});
         } catch (...) {
+            ++sink_failures;
             report_error("Event sink failed with an unknown exception.");
         }
     }
@@ -259,6 +267,7 @@ struct SysmonEventCollector::Impl {
         if (action == EvtSubscribeActionDeliver) {
             self->deliver(event);
         } else if (action == EvtSubscribeActionError) {
+            ++self->subscription_errors;
             const auto error = static_cast<DWORD>(reinterpret_cast<std::uintptr_t>(event));
             self->report_error("Subscription reported missing or unavailable events: " +
                                win32_error_message(error));
@@ -344,6 +353,19 @@ void SysmonEventCollector::stop() noexcept {
 bool SysmonEventCollector::running() const noexcept {
     std::scoped_lock lock{impl_->mutex};
     return impl_->subscription != nullptr && impl_->accepting_callbacks;
+}
+
+CollectorStatus SysmonEventCollector::status() {
+    CollectorStatus result;
+    result.running = running();
+    result.decode_failures = impl_->decode_failures.load();
+    result.sink_failures = impl_->sink_failures.load();
+    result.subscription_errors = impl_->subscription_errors.load();
+    // Receiving later events cannot repair missing history or establish that
+    // the provider's configuration covers our requested security surface.
+    result.continuity_fault = result.subscription_errors != 0;
+    result.statistics_error = "Event Log does not expose an exact subscription loss count; bookmarks and reconciliation pending";
+    return result;
 }
 
 }  // namespace panopticon::officer::collectors

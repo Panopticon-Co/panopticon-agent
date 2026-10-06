@@ -21,6 +21,7 @@ public:
         std::string& error_message) override;
     void stop() noexcept override;
     [[nodiscard]] bool running() const noexcept override;
+    [[nodiscard]] CollectorStatus status() override;
 
 private:
     struct Impl;

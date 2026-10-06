@@ -49,6 +49,7 @@ void test_sysmon_process_decoder() {
     expect(event->source.channel == "Microsoft-Windows-Sysmon/Operational", "channel is preserved");
     expect(event->source.record_id == 100, "record ID is preserved");
     expect(event->pid == 4242 && event->parent_pid == 1000, "process identifiers decode");
+    expect(event->process_guid == "{SANITIZED-PROCESS-GUID}", "Sysmon process-instance GUID is retained");
     expect(event->executable && event->executable->ends_with("officer-demo.exe"), "image path decodes");
     expect(event->parent_executable && event->parent_executable->ends_with("powershell.exe"), "parent image decodes");
     expect(event->command_line && event->command_line->find("--safe-test") != std::string::npos, "command line decodes");
@@ -244,6 +245,7 @@ void test_process_image_cache_backfills_unknown_process() {
 
     telemetry::RawProcessEvent eid1;
     eid1.pid = 12516;
+    eid1.process_guid = "instance-1";
     eid1.executable = "C:\\Windows\\System32\\certutil.exe";
     eid1.user_name = "PICASSO\\stati";
     eid1.user_sid = "S-1-5-21-1-2-3-1001";
@@ -252,12 +254,23 @@ void test_process_image_cache_backfills_unknown_process() {
     // A Sysmon EID 3 that lost its image ("<unknown process>") is backfilled.
     telemetry::RawNetworkEvent unresolved;
     unresolved.process.pid = 12516;
+    unresolved.process.process_guid = "instance-1";
     unresolved.process.executable = std::string{collectors::ProcessImageCache::kUnknownProcessSentinel};
     expect(cache.enrich(unresolved.process), "unknown-process context is enriched from a cached EID 1");
     expect(
-        unresolved.process.executable == std::optional<std::string>{"C:\\Windows\\System32\\certutil.exe"},
-        "cached image path is backfilled");
-    expect(unresolved.process.user_name == std::optional<std::string>{"PICASSO\\stati"}, "cached user backfilled");
+        unresolved.process.executable == std::optional<std::string>{"<unknown process>"} && unresolved.process.cached_context &&
+        unresolved.process.cached_context->executable == std::optional<std::string>{"C:\\Windows\\System32\\certutil.exe"},
+        "cached image is separate from unchanged source image");
+    expect(!unresolved.process.user_name && unresolved.process.cached_context->user_name == std::optional<std::string>{"PICASSO\\stati"}, "cached user is separate from source fields");
+    telemetry::RawProcessContext reused;
+    reused.pid = eid1.pid;
+    reused.process_guid = "instance-2";
+    expect(!cache.enrich(reused), "PID reuse with a different GUID cannot inherit another process image or user");
+    reused.process_guid.reset();
+    expect(!cache.enrich(reused), "PID alone never authorizes enrichment");
+    reused.process_guid = "instance-1";
+    reused.pid = 7;
+    expect(!cache.enrich(reused), "GUID/PID disagreement cannot inherit process context");
 
     // A context that already has a real image is left untouched.
     telemetry::RawNetworkEvent resolved;
@@ -277,18 +290,22 @@ void test_process_image_cache_backfills_unknown_process() {
     collectors::ProcessImageCache small{2};
     telemetry::RawProcessEvent a;
     a.pid = 1;
+    a.process_guid = "instance-a";
     a.executable = "a.exe";
     small.remember(a);
     telemetry::RawProcessEvent b;
     b.pid = 2;
+    b.process_guid = "instance-b";
     b.executable = "b.exe";
     small.remember(b);
     telemetry::RawProcessEvent c;
     c.pid = 3;
+    c.process_guid = "instance-c";
     c.executable = "c.exe";
     small.remember(c);  // rolls: {1,2} -> cold, {3} -> hot
     telemetry::RawNetworkEvent from_cold;
     from_cold.process.pid = 1;
+    from_cold.process.process_guid = "instance-a";
     from_cold.process.executable = std::string{collectors::ProcessImageCache::kUnknownProcessSentinel};
     expect(small.enrich(from_cold.process), "an entry demoted to the cold generation is still found");
 }

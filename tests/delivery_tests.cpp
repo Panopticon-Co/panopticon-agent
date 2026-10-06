@@ -50,7 +50,7 @@ void test_config_defaults() {
     expect(!config.spool_directory.empty(), "spool_directory has a non-empty default (durability is not silently off)");
     expect(config.spool_max_total_bytes >= config.spool_max_segment_bytes,
            "default quota is never smaller than one segment");
-    expect(config.spool_max_delivery_attempts > 0, "retry is bounded but never zero (never even try once)");
+    expect(config.spool_max_delivery_attempts == 0, "retry-count disposal is disabled");
 }
 
 // No fake manager available in this environment -- this asserts the
@@ -64,6 +64,8 @@ void test_post_to_unreachable_host_fails_cleanly() {
         client.post("https://127.0.0.1:1/api/v1/ingest", {}, "{}", error);
     expect(!response.has_value(), "connecting to a closed port is a transport failure, not a response");
     expect(!error.empty(), "a transport failure sets an error message");
+    expect(!client.post("http://127.0.0.1:1/api/v1/ingest", {}, "{}", error), "plaintext HTTP is rejected even with development certificate verification disabled");
+    expect(error.find("HTTPS") != std::string::npos, "plaintext rejection explains required transport");
 }
 
 void test_uploader_construct_enqueue_stop_does_not_hang() {
@@ -76,10 +78,11 @@ void test_uploader_construct_enqueue_stop_does_not_hang() {
     config.spool_directory = spool_dir.path().string();
 
     delivery::Uploader uploader{config, "test-agent"};
-    uploader.enqueue(R"({"schema_version":"0.3"})");
-    uploader.enqueue(R"({"schema_version":"0.3"})");
+    expect(uploader.enqueue(R"({"schema_version":"0.3"})"), "enqueue commits before returning");
+    expect(uploader.enqueue(R"({"schema_version":"0.3"})"), "duplicate enqueue is safe");
     std::this_thread::sleep_for(200ms);
     uploader.stop();  // must return promptly, not hang, even though every send fails
+    expect(!uploader.enqueue("{}"), "stopped uploader explicitly refuses new acceptance");
     expect(true, "uploader constructed, enqueued, and stopped without hanging or crashing");
 }
 
@@ -97,20 +100,13 @@ void test_failed_batch_is_persisted_to_the_spool_not_dropped() {
 
     {
         delivery::Uploader uploader{config, "test-agent"};
-        uploader.enqueue(R"({"schema_version":"0.3","event_id":"evt_spool_test"})");
+        expect(uploader.enqueue(R"({"schema_version":"0.3","event_id":"evt_spool_test"})"), "outage does not prevent durable acceptance");
         std::this_thread::sleep_for(300ms);
         uploader.stop();
     }
 
-    bool found_segment = false;
-    if (fs::exists(spool_dir.path())) {
-        for (const auto& entry : fs::directory_iterator(spool_dir.path())) {
-            if (entry.path().filename().string().rfind("segment-", 0) == 0) {
-                found_segment = true;
-            }
-        }
-    }
-    expect(found_segment, "a batch that can never be delivered is durably persisted to a spool segment file, not dropped");
+    delivery::DurableJournal recovered{{spool_dir.path()}};
+    expect(recovered.stats().pending_events == 1, "failed delivery survives shutdown and reopen in the durable journal");
 }
 
 }  // namespace

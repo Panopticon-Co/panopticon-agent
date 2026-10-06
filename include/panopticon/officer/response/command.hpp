@@ -37,6 +37,7 @@ struct ProcessTarget {
     std::string host_id;
     std::uint32_t pid = 0;
     std::uint64_t start_time_ticks = 0;
+    std::optional<std::string> boot_id;
 
     [[nodiscard]] bool operator==(const ProcessTarget&) const = default;
 };
@@ -52,6 +53,7 @@ struct Command {
     ProcessTarget process_target;
     // Populated only for collect_file / quarantine_file; empty otherwise.
     std::string file_target_path;
+    std::string canonical_wire_json;
 };
 
 enum class ReceiptCode : std::uint8_t {
@@ -63,16 +65,24 @@ enum class ReceiptCode : std::uint8_t {
     target_protected,
     unsupported_action,
     execution_failed,
+    indeterminate,
 };
 
+struct ProcessExecutionEvidence {
+    std::string stage;
+    bool action_initiated = false;
+    bool completion_observed = false;
+    std::optional<std::uint32_t> native_error;
+};
 struct CommandReceipt {
     std::string command_id;
     std::string correlation_id;
     ReceiptCode code = ReceiptCode::invalid_command;
     std::string summary;
+    std::optional<ProcessExecutionEvidence> execution;
 };
 
-// Decodes only the Manager's closed schema-1 command envelope: an exact,
+// Decodes Manager's closed schema-1 and Windows process schema-2 envelopes: an exact,
 // known top-level key set (command_id, agent_id, host_id, schema_version,
 // action, expires_at, created_at, correlation_id, target); a `target` whose
 // shape is fully determined by `action` (process actions: exactly {pid,
@@ -82,6 +92,13 @@ struct CommandReceipt {
 // naive local time, is rejected); and created_at strictly before expires_at.
 // Unknown actions, unknown top-level fields, or a target shape that doesn't
 // match the action are all rejected rather than tolerated.
+// Duplicate keys (including escaped names) and nesting beyond 32 are rejected
+// during JSON parsing, before DOM construction can replace a member.
+// Schema-2 process targets require {pid, start_time_ticks, boot_id}, with native
+// uint64 ticks represented as canonical decimal text and a native boot digest.
+// UTC fractions of 1-9 digits are accepted and ordered exactly. The existing
+// expiry gate uses whole seconds conservatively (may refuse <1 second early).
+// Windows process handlers refuse schema-1 targets without boot scope.
 [[nodiscard]] std::optional<Command> parse_command_json(std::string_view payload, std::string& error_message);
 
 // Decodes the `{"commands": [...]}` poll response, bounded to
@@ -92,9 +109,10 @@ struct CommandReceipt {
 [[nodiscard]] std::optional<std::string> serialize_command_result(
     const CommandReceipt& receipt, std::size_t maximum_bytes, std::string& error_message);
 
-// Enforces idempotency/replay/expiry/target-protection exactly once per
-// command, backed by an optional durable ReplayLedger so a restart cannot
-// re-execute a command a prior process crash interrupted mid-handler.
+// Validates scope/expiry and suppresses repeated admission in this process.
+// Optional legacy ReplayLedger users retain the old acceptance marker. The live
+// worker uses committed inbox intent/outcomes for durable recovery; this gate
+// alone does not prove exactly-once execution or action completion.
 class CommandGate {
 public:
     CommandGate(std::string agent_id, std::string host_id, std::function<std::int64_t()> clock_epoch_seconds,
@@ -113,7 +131,7 @@ private:
 
 // True for PID 0/4 and for any process whose current image name (re-checked
 // live, never trusted from the command) matches a hardcoded critical-system
-// list: System, csrss.exe, wininit.exe, services.exe, lsass.exe, smss.exe.
+// list: System, csrss.exe, wininit.exe, winlogon.exe, services.exe, lsass.exe, smss.exe.
 // image_name may be empty (e.g. access denied) -- in that case only the PID
 // check applies, so a protected image is never accidentally treated as safe
 // just because it couldn't be re-observed; callers must separately fail

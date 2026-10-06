@@ -1,0 +1,159 @@
+# Windows endpoint capability matrix
+
+Living execution ledger for the approved Full Surface Engineering Plan, updated 2026-10-06. **The endpoint is incomplete. No domain is qualified as complete.** The approved plan's mechanism, fallback, cost, reliability, compatibility and testing assessment remains the target. This ledger preserves its full scope.
+
+Runtime states are `healthy`, `degraded`, `unavailable`, `disabled`, `unsupported` and `blind`, each with scope, reason, observation time and failure count. Healthy applies only to a precisely named verified capability. Blind means expected visibility has lost continuity. Unsupported requires an explicit platform/technical justification; missing implementation is unavailable. A running collector never establishes complete domain coverage.
+
+| ID | Domain | Current implementation | Required gap closure |
+|---|---|---|---|
+| A | Host identity and inventory | Separate enrollment/device/install/native boot; durable native snapshots and committed field health: names, OS/version/revision, architecture, memory, firmware/BIOS, native join/default Entra, compatible TPM/version, IPv4/IPv6 adapters, volume/mount/filesystem/quota-aware capacity and Secure Boot registry report; capture continues without event-source access | Device clone/replacement lifecycle; TPM/attestation and complete Entra/disk/encryption/removable/virtualization/hardware detail; state deltas/watchers/reconciliation; API deadlines and crash-safe pending state; compatibility/resource/fleet qualification |
+| B | Processes | Canonical exact boot/PID/native-token and source-scoped GUID references; explicit unresolved/null references; bounded resident instances and tombstone API; durable paged Toolhelp descriptors separate from held-handle identity/image/critical-process/raw protection-level/WOW64 process/native-machine and selected primary-token SID/integrity/elevation/session/statistics queries; begin/ordered manifest, record-bound query health with unattempted/open/field counts and scoped immutable Manager capture/page verification | Full lifecycle/state and incomplete-capture reconciliation; large-host/resource and resumable verification qualification; verified descriptor-instance and cross-source aliases; stops, ancestry, creator vs requested parent, full tokens/groups/privileges/effective access/signatures/protection semantics/ABI and live architecture qualification, context changes; resident admission recovery and OS/churn/deadline qualification |
+| C | Threads/handles/interactions | Missing | Qualified selective native callbacks and fallback; LSASS/process access, cost and limitations |
+| D | Users/groups/sessions | Selected event user context; scoped native primary-token SID, integrity/elevation, raw session/LUID identifiers and group/privilege counts, with explicit query refusal and degraded coverage | Complete account/group/privilege/logon/session state, defensible entity correlation and changes; thread impersonation/effective access; native privilege/OS/fault qualification |
+| E | Authentication/security events | Missing | Security channel, bookmarks, NTLM/Kerberos/logon/account/policy events; audit-policy state |
+| F | PowerShell | Process image/command line | Operational/module/script-block logs, assembly, attribution, policy and privacy limits |
+| G | Scripting/LOLBins | Process image/command line | Script/proxy-execution evidence, executable identity and artifacts |
+| H | Filesystem | Selected Sysmon create/delete events; bounded native volume/mount/filesystem state with per-query uncertainty | Minifilter/native fallback, write/rename/open/ADS/execute identities; USN reconciliation, full volume/disk/encryption state and ransomware evidence |
+| I | Registry | Sysmon EIDs 12–14 | Native callbacks, typed/redacted values, attribution, state |
+| J | Persistence | Incidental events | Explicit registry/service/task/WMI/COM/startup/logon inventory, changes, relationships and remediation |
+| K | Services/drivers | Bounded caller-visible SCM status, basic/nine optional configuration levels and selected owner/group/DACL evidence; independent native loaded-driver address slots and later names with explicit NULL-only blindness; durable pages/manifests and scoped query health | Hidden-service reconciliation, verified service/process/file/module instances, remaining configuration and security/SACL/label/effective-access/aggregate-trigger semantics, continuous lifecycle, non-null driver/native privilege qualification, signers/code integrity, native faults/deadlines and OS/resource qualification. See [service state](SERVICE_STATE.md) and [loaded drivers](LOADED_DRIVER_STATE.md) |
+| L | Scheduled tasks | Missing | Definitions, users, triggers, actions, lifecycle/execution and controlled remediation |
+| M | WMI | Missing | Execution/provider events, permanent subscriptions, attribution and remediation |
+| N | Network | Sysmon EID 3 subset; independent bounded TCP/UDP IPv4/IPv6 caller-visible tables and separate native IPv4/IPv6 route fields with reported LUID/index, prefixes/next hops, raw lifetimes/metric offset and bounded later family/interface management queries with metric, MTU, forwarding/weak-host/default-route posture plus independent caller-context IP interface census; unresolved lifetime references, durable pages/manifests and per-table record-bound health | Continuous flow/connect/failure/byte and route-change evidence; verified process/socket/route/interface lifetime and loopback attribution; reconciliation, compartment/effective-route relationships and complete link-layer/physical interface state and change coverage, deadlines/native-allocation/fault/crash/loss/resource/OS qualification; proxy/state and analyst capture assembly. See [socket state](SOCKET_STATE.md) [route state](ROUTE_STATE.md) and [IP interface census](IP_INTERFACE_STATE.md) |
+| O | DNS | Adapter-reported DNS servers and suffixes in native host snapshots; request/result collection missing | Requests/results, defensible per-source process attribution and confidence, full resolver/NRPT/encrypted-DNS/global configuration and cache, changes/reconciliation/fallback and native qualification |
+| P | Firewall | Existing isolation actions plus independent durable domain/private/public selected INetFwPolicy2 profile getter snapshots, bounded exclusion-array evidence and durable paged caller-visible INetFwRule/2/3 properties with independent extension availability, exact HRESULT/output uncertainty and record-bound health | Rule/filter provenance/lifetime/effective-policy coverage, remaining exclusion semantics/lifetime mapping, verified package/principal authorization, service-hardening/Group Policy provenance and effective interface/packet enforcement, third-party coexistence, changes/reconciliation, deadlines/COM/getter resource faults and OS/resource/analyst qualification. See [firewall state](FIREWALL_STATE.md) and [rule inventory](FIREWALL_RULES.md) |
+| Q | Security products | Independent durable six-category WSC health reports with individual masks, exact HRESULT/raw output, S_FALSE service-unavailable semantics, optional System32 API loading, native version/contract eligibility with explicit unsupported versus unknown evidence, record-bound health and capture freshness; separate read-only Defender WMI base status with exact typed/raw 36-property evidence including optional reported running mode, tamper Boolean and descriptive source, per-property quality and independent durable/freshness path | Individual products/identity/signers/version/state, effective Defender passive/tamper enforcement and ASR/SmartScreen/exclusion/preferences policy, native changes/reconciliation, live Server qualification, coexistence and loader/getter/deadline/OS/resource/analyst qualification. See [Security Center state](SECURITY_CENTER.md) and [Defender status](DEFENDER_STATUS.md) |
+| R | Memory/injection/fileless | Image-load subset | Selective access/thread/memory evidence, bounded scans, protected-target limitations and simulations |
+| S | Browser | Incidental events | Bounded profiles/extensions/download/artifact inventory and privacy controls |
+| T | Office | Incidental process events | Macro/add-in/template context, artifacts and process relationships |
+| U | Remote access | Incidental events | RDP/WinRM/SMB/remote-service/session/authentication evidence and state |
+| V | IPC | Missing | Selected named-pipe/COM/RPC telemetry, attribution and measured scope |
+| W | Enterprise identity | Native domain/workgroup and scoped default Entra join query; explicit HRESULT/unknown/collector-user scope; committed field health | Complete tenant/user/domain identity, enterprise policy, service-account/OS qualification and change continuity |
+| X | Virtualization | Missing | Hypervisor/WSL/container inventory, boundaries and visibility limitations |
+| Y | Security posture | OS name/build; Secure Boot registry report; native compatible TPM/version and system advanced audit policy queries with explicit status, raw masks/GUIDs and unknown facts | Secure Boot/TPM readiness/attestation, VBS/HVCI/WDAC, per-user/effective-token audit/options and system-control state/deltas; source/deadline/privilege/OS qualification |
+| Z | Software | Missing | MSI/registry/package inventory, versions/signers and reconciliation |
+| AA | Windows logs | Sysmon future-only subscription | Security/operational channels, durable bookmarks, rollover/clear detection and source versions |
+| AB | Forensics | Metadata/hash and process/socket JSON | Actual content, encrypted resumable evidence/chunks, isolated bounded workers, chain of custody |
+| AC | Response | Verified canonical targets; retained-handle guards; typed process termination and structured state/stage/initiation/completion/native error evidence with command binding; encrypted live inbox/intent/outcome/outbox, conservative interrupted recovery and local owner lock; coordinated pre-acceptance redelivery; typed indeterminate results/immutable retention receipts | Leases/fencing/cancellation, action-specific reconciliation, mixed-version/Console/full native HTTPS, full execution target/provenance and typed other-action outcomes, admission/budget/fault/OS qualification, complete target verification/timeouts/rollback |
+| AD | Isolation | Existing IPv4 WFP path | IPv6, correct exceptions/ports, transactions, persistent/reboot recovery and signed offline release |
+| AE | Self-protection | Journal DACL and user-scoped DPAPI | Broker/Engine split, secure IPC/services/files/keys, tamper monitoring and qualified driver/PPL/ELAM where justified |
+| AF | Loss/health/coverage | Six-state registry; committed generation/epoch/sequence; durable health; sampled owned-session ETW loss counters, decode/sink/subscription counters, stopped/blind sources and journaled source gaps; clock-independent projection ordering; one-use authenticated capture-age facts; record-bound monotonic freshness and overdue/unknown age coverage for eleven periodic state captures, bounded ordered transition history with immutable journal retries, verified payload-quota refusal/reopen and explicit omitted-report accounting; legacy gaps | Live privileged source/fault, state-history disk/crash faults and collector-stall qualification, durable bookmarks/replay and reconciliation, stage loss accounting, crash-safe fault intent/emergency reserve, remaining native event/field coverage freshness, distributed/restart/suspend proof and policy budgets, Console stale/blind health, priority/immediate delivery and controlled installation replacement. See [state freshness](STATE_FRESHNESS.md) |
+| AG | Durability/offline | Per-observation FULL/WAL, encrypted bodies/rejections, strict receipts, immutable legacy import; sampled DB/WAL/SHM and caller-available headroom admission with observable refusal and evidence preservation | Hard physical/aggregate disk limit and reserve, durable full-disk loss accounting, starvation/fairness, corrupt-record quarantine, migration manifest, evidence lanes, disk fault and 24-hour offline qualification |
+| AH | Secure transport/provenance | Canonical protocol 2 plus legacy protocol 1; enrolled identity/host binding; exact tokens/epoch/sequence; original decoded source facts and separate cache enrichment; journaled normalization-failure evidence; real WinHTTP HTTPS fixture E2E | Original native bytes/decode-failure retention and complete provenance/headers, enlarged-record and stage-loss qualification, record signing, rotation/revocation, enrollment decoupling, latency/priority, live sensor E2E and fleet qualification |
+| AI | Configuration | CLI validation | Signed/versioned desired/effective policy, monotonic activation, limits, rollback/audit |
+| AJ | Deployment/update | Console executable | SCM/MSI, signing, protected staged updater, migration/rollback/reboot qualification |
+| AK | Performance | Component runtime and short journal measurements; bounded decoded-event worker handoff with count/in-flight/string-capacity admission, observable refusal and completion; bounded stdout/stderr diagnostic workers after durable acceptance with native failure/cancellation accounting | Approved CPU/RSS/I/O/latency budgets, native decode and startup/library logging isolation, allocation/worker memory bounds, source fairness, normal/storm throughput and soak qualification |
+| AL | Compatibility | Current Windows x64 development build | Windows 11 x64/ARM64, Server 2019/2022/2025 Desktop/Core, explicit legacy support and security-configuration matrix |
+| AM | Validation | Native contract/component tests and journal fault regressions | VM/E2E, benign attacker simulation, disk/source faults, reboot/power-loss equivalents, stress/chaos and 7-day soak |
+| AN | Detection context/local prevention | Canonical durable Detection queue, exact/source entity index separate from legacy PID/time; trigger provenance in SHA-256-scoped alerts; native HTTPS fixture reaches a fleet rule | Full domain state/rules, graph persistence/admission budgets, Response/Console investigation, Entity/State/Evidence contracts and bounded local prevention |
+
+## Execution status and sequence
+
+Native process architecture now reports IsWow64Process2's separate process and
+host machine codes from the retained process handle. Unknown values are raw and
+degraded; absent native API is explicitly unsupported without stopping other
+collection. Lookup resolution retries each capture, and manifest-bound health
+counts scoped success/refusal/unsupported/unknown reports. Image/module ABI,
+ARM64EC hybrid meaning and actual x86/ARM64/Server/OS/fault/resource compatibility
+remain unqualified. See [process architecture scope](PROCESS_STATE.md).
+
+One primary token is now opened with TOKEN_QUERY from the same held process
+object. Six independently reported native classes preserve SID/integrity,
+elevation/type, session and exact token/logon LUID/statistics facts. Bounded
+structure-first queries, pointer/length/SID validation and raw enum decoding
+prevent unknown attributes from becoming guessed identities or permissions.
+Manifest-bound health reports token opens/refusals and field success/failure/
+uninterpreted counts, while selected token coverage stays degraded. Full token
+contents, thread impersonation, effective access, changes and native fault/
+privilege/OS/resource qualification remain open. See [token scope](PROCESS_TOKEN.md).
+
+Held process queries now include native critical-process Boolean and documented
+raw protection level. Unknown and documented unimplemented levels retain their
+values without inferred protection semantics. Manifest-bound health separately
+counts successful/failed/uninterpreted queries and descriptors whose security
+queries could not be attempted; partial aggregate visibility stays degraded.
+Token/signature/full protection state, context changes and privileged/protected/
+OS/race qualification remain open. See [process query scope](PROCESS_STATE.md).
+
+Process inventory now streams bounded pages from a pinned Toolhelp process-list
+snapshot, committing each page before advancing, with a durable begin and ordered
+manifest. Manager verifies retained page assembly independently of native process
+coverage. Total/page/row bounds and consumer refusal remain explicitly incomplete;
+inventory and event continuity are never inferred from complete page assembly.
+Manager also discovers unfinished retained captures through a transactional,
+backfilled index and paginated original-record readback, without inferring crashes
+from absent manifests. Large-host budgets, query deadlines, endpoint incomplete-
+capture reconciliation, resumable
+verification and persistent lifecycle remain open. See [process state](PROCESS_STATE.md).
+
+Native system advanced audit policy now preserves GUIDs/raw masks, bounded
+enumeration and exact query-stage errors. Snapshot-bound audit query coverage
+distinguishes unavailable access from disabled auditing and ambiguous flags.
+Per-user/token policy, options, event-delivery proof, changes and privileged/OS
+qualification remain open; full posture and Windows log coverage are incomplete.
+See [host state query scope](HOST_STATE.md).
+
+Decoded ETW/Sysmon event delivery now uses a preallocated ring and bounded worker handoff before normalization,
+journal and stdout I/O. In-flight ownership remains charged; volatile admission,
+durable completion, refusal and worker failure have separate observable counters.
+Spare-capacity mutex contention no longer refuses observations; four-producer
+and ring wrap/reuse regressions cover admission, completion and FIFO. Fixed ring
+storage is observed separately from owned string capacity and total process RSS.
+Canonical gap metadata retries stable bytes until acceptance. Full native callback
+isolation, allocator/RSS and source fairness budgets, crash-safe handoff intent,
+emergency loss capacity and storm/soak qualification remain open. See
+[callback handoff scope](CALLBACK_HANDOFF.md).
+
+Phase 1, trustworthy core, is in progress. Live collector output now uses canonical record 1.0 and overrides the legacy normalizer's unsafe entity formulas. Exact native identity requires native boot scope and full creation ticks; source-scoped GUIDs join families from the same source; missing identity stays null. Native and source identities are never joined by PID/time proximity. The legacy serializer/formulas remain for old compatibility and existing response evidence, which still require migration. The resident store is bounded and counts failed admissions while preserving observation identity; it is not yet a durable full host process graph. Kernel process termination and verified cross-source aliases remain missing.
+
+Uploader uses DurableJournal, not SegmentSpool. SegmentSpool remains for migration/compatibility tests. Live delivery never discards an observation after a retry count or evicts retained evidence for quota. See [journal implementation and limits](DURABLE_JOURNAL.md).
+
+Health is structured JSON on stderr and durably journaled as canonical records every 30 seconds and on collector/normalization error notifications. Manager authenticates and preserves it, with endpoint-authenticated latest state/health readback. Manager migration 14 orders projections by committed installation generation and sequence, detects epoch forks and labels old domain projections superseded. Migration 15 provides boot/stream-scoped authenticated capture-age facts with bounded one-use challenges and suspend-aware elapsed clocks. Capture can be fresh, stale or unverified; duplicates never renew age and Manager restarts invalidate it. Observation/source freshness remains explicitly unverified: recent capture does not prove truthful native coverage. Console integration, source heartbeat/loss, distributed/restart proof and backlog priority remain unfinished. See [state ordering](STATE_ORDERING.md) and [capture freshness](CAPTURE_FRESHNESS.md). Runtime failure counters reset on restart. No complete source-loss/health qualification claim is made. Manager migration 13 adds durable Detection disposition to canonical records, including upgrade backfill. Exact/source references reach fleet rules without legacy PID/time joining; unresolved activity stays unassigned. Alerts retain the canonical triggering context. Both protocols receive bounded claim capacity and canonical poison/backlog counts are observable. Native HTTPS fixture ingestion reaches the actual Detection worker/rule and verifies capture-age metadata. This is integration evidence, not complete live-sensor, state/rule, graph persistence, Response or Console qualification.
+
+Live supervision now samples owned ETW session statistics and callback/subscription failure counters, journals startup/changed gaps, and marks stopped or unreconciled Sysmon sources blind. Gap retries retain their record identity and advance the baseline only after journal acceptance. Exact source-event ranges, provider configuration checks, raw decode-failure retention, stage accounting, bookmarks/replay, crash-safe fault intent and successful privileged source/fault qualification remain open. See [source supervision](SOURCE_SUPERVISION.md). Earlier source-heartbeat/loss references describe these remaining qualification gaps.
+
+Successful canonical observations now retain all currently decoded RawEvent fields separately from normalized aliases. Normalization/serialization refusal produces first-class failure evidence with exact original facts, lossless malformed-text bytes and process identity when available. Sysmon cache hints no longer overwrite observed executable/user facts; provenance and applicability remain separate. Commit refusal reaches source sink failure accounting. Native original bytes, failed decoding, reserve/large-record capture, complete stage checkpoints and enlarged-payload performance remain unqualified. See [source facts](SOURCE_FACTS.md).
+
+First-class native host inventory now runs on a separate worker and is journaled as versioned, explicitly non-atomic/incomplete snapshots. Independent inventory and health remain active when event subscriptions fail; process visibility stays blind. A real non-elevated runtime/crash-reopen check preserves exact committed inventory and health. Manager projects the complete domain payload and Detection retains it without a guessed process. TPM/Entra/storage/virtualization, deltas/watchers, additional host/security state, query deadlines and full qualification remain open. See [host state](HOST_STATE.md).
+
+Continue the approved sequence: (1) canonical contracts, identity/provenance, loss/coverage, journal hardening, response verification and Manager integration; (2) first-class host/security/persistence state and reconciliation, subscribe before snapshots; (3) progressive native sensors and accurate degraded fallback while drivers qualify; (4) selective memory evidence and bounded offline prevention; (5) safe durable response, forensic acquisition and isolation/recovery; (6) service split, installation/configuration/upgrades and fleet integration; (7) compatibility, simulation, stress/chaos/soak, performance, independent capability/industry audit and repeated gap closure. Fleet-wide detection/correlation stays in Detection Engine. Local prevention does not expand into a complete antivirus product.
+
+Process response now retains one verified kernel handle through termination and
+observed exit, refuses unknown critical/protection/image state and self/system
+targets, and preserves native creation ticks in read-only evidence. Command/poll
+JSON rejects ambiguous duplicate keys before DOM replacement. These are partial
+safety fixes: Windows now requires schema-2 native boot scope and decimal uint64
+ticks, Manager preserves it and native handlers verify current boot. Legacy
+unscoped process actions refuse execution. Canonical recommendations preserve verified
+native scope and recheck enrollment at authorization; Console/full live response
+remain open. Version-2 indeterminate results now use an encrypted durable outbox
+and immutable retention receipts. The live inbox now commits execution intent and
+recovers uncertainty without repeating OS actions; durable-mode polls redeliver
+before acceptance. Leases and action-specific reconciliation remain open. See
+[command inbox](COMMAND_INBOX.md), [result outbox](RESULT_OUTBOX.md) and
+[process response](PROCESS_RESPONSE.md).
+
+The native response HTTPS refusal fixture preserves strict certificate validation,
+reports WinHTTP secure failure 12175 and retains exact outcomes across retry/reopen.
+Successful response delivery over trusted TLS is still unqualified. OS dispatch
+also rechecks command expiry after network acceptance; deadline enforcement throughout
+handlers and signed monotonic leases remain open. See [validation](VALIDATION.md).
+
+## Definition of Done
+
+Every capability must have verified implementation or an individually justified deliberate exclusion. No unexplained major gaps. Evidence must prove exact process identity, preserved relationships/provenance, source continuity/fallbacks, current host state, observable loss, offline recovery, secure transport/configuration/update, real safe response/forensics/isolation and practical self-protection. Evaluate the complete approved OS/security-configuration and workload matrices. Verify Manager/Detection/Response/Console integration and E2E investigation/response. Documentation must match deployment. The final independent audit must examine invisible behavior, PID reuse, persistence/authentication/network/posture gaps, unavailable sources, tampering, storms, restart/reboot and at least 24-hour offline operation. Passing compilation, component tests or a demo satisfies none of these broad gates by itself.
+
+Diagnostic output increment: production main-loop journal acceptance precedes
+stdout records, response evidence and structured health display. Owned unread
+stdout/stderr pipes cannot stall the tested seven durable state domains;
+volatile display refusal is separate from telemetry loss. Limits and remaining
+qualification are recorded in [diagnostic output](DIAGNOSTIC_OUTPUT.md). Full
+endpoint completion remains unqualified.
+
+Source-loss supervision now retains bounded consecutive-sample history behind
+immutable canonical retry bytes. Statistics outages and consumer stop/resume
+transitions observed during journal refusal survive in order; restored counter
+deltas remain unknown. Overflow preserves explicit omitted-report summaries,
+never invented native loss counts. Pending history remains volatile and emergency
+reserve, durable checkpoints, crash reconciliation and full continuity
+qualification remain open. See [source supervision](SOURCE_SUPERVISION.md).

@@ -270,6 +270,8 @@ std::optional<telemetry::RawProcessEvent> SysmonProcessDecoder::decode_xml(
     result.source.record_id = record_id;
     result.process_start_time = *timestamp;
     result.pid = *pid;
+    result.process_guid = field(fields, "ProcessGuid");
+    result.parent_process_guid = field(fields, "ParentProcessGuid");
     result.parent_pid = parent_pid;
     result.parent_executable = field(fields, "ParentImage");
     result.executable = field(fields, "Image");

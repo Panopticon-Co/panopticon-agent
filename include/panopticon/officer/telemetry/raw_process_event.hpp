@@ -24,6 +24,10 @@ struct RawProcessEvent {
     // for its magnitude by anything other than this host's own agent; see
     // panopticon-response-engine/docs/adr/002-terminate-process-start-time-threading.md.
     std::optional<std::uint64_t> start_time_ticks;
+    // Native source aliases are retained exactly; never resolve an instance
+    // by PID or by proximity of formatted timestamps.
+    std::optional<std::string> process_guid;
+    std::optional<std::string> parent_process_guid;
     std::optional<std::uint32_t> parent_pid;
     std::optional<std::string> parent_executable;
     std::optional<std::string> executable;

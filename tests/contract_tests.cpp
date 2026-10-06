@@ -1,4 +1,5 @@
 #include "panopticon/officer/core/entity_id.hpp"
+#include "panopticon/officer/health/coverage.hpp"
 #include "panopticon/officer/pipeline/normalizer.hpp"
 #include "panopticon/officer/pipeline/serializer.hpp"
 #include "panopticon/officer/telemetry/raw_process_event.hpp"
@@ -73,6 +74,14 @@ telemetry::PanopticonEvent make_normalized_process() {
 }
 
 void test_entity_identity_is_stable_and_pid_reuse_safe() {
+    panopticon::officer::health::CoverageRegistry coverage;
+    auto health = coverage.snapshot("agent-1", "host-1");
+    expect(health.at("capabilities").size() == 40, "coverage registry includes all approved security domains");
+    coverage.set("sensor.fixture", panopticon::officer::health::CapabilityState::blind,
+        "provider stopped with unknown continuity", "fixture sensor", true);
+    health = coverage.snapshot("agent-1", "host-1");
+    expect(health.at("capabilities").back().at("state") == "blind" && health.at("capabilities").back().at("failure_count") == 1,
+        "coverage distinguishes blind state and counts failures");
     std::string error;
     const auto start = telemetry::UtcTimestamp{123ms};
     const auto first = panopticon::officer::core::derive_process_entity_id(

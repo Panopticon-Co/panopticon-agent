@@ -5,9 +5,8 @@
 
 namespace panopticon::officer::delivery {
 
-// Phase 1 minimum plus Phase 5's durable spool (see
-// docs/architecture/phase-9-telemetry-durability.md). Identity
-// (agent_id/agent_key) and enrollment remain Phase 4 scope.
+// Legacy segment options remain for configuration compatibility; new delivery
+// never evicts unacknowledged data or abandons it after a retry count.
 struct DeliveryConfig {
     std::string manager_url;         // e.g. https://192.168.1.50:8443
     bool verify_tls = true;          // false only when --insecure-tls is passed
@@ -21,10 +20,12 @@ struct DeliveryConfig {
     // relative paths (e.g. --rules-dir).
     std::string spool_directory = "spool";
     std::uint64_t spool_max_segment_bytes = 8ull * 1024 * 1024;
-    std::uint64_t spool_max_total_bytes = 64ull * 1024 * 1024;
-    unsigned spool_max_delivery_attempts = 8;
+    std::uint64_t spool_max_total_bytes = 16ull * 1024 * 1024 * 1024;
+    unsigned spool_max_delivery_attempts = 0; // deprecated: retries are indefinite
     unsigned spool_base_backoff_ms = 1000;
     unsigned spool_max_backoff_ms = 60000;
+    unsigned request_timeout_ms = 5000;
+    std::string bearer_token;
 };
 
 }  // namespace panopticon::officer::delivery

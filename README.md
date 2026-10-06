@@ -1,5 +1,11 @@
 # Officer
 
+The approved Windows full-surface engineering program is in progress. Track
+verified coverage and remaining requirements in the living
+[capability matrix](docs/windows-endpoint/CAPABILITY_MATRIX.md). Live delivery
+now uses the [durable encrypted journal](docs/windows-endpoint/DURABLE_JOURNAL.md).
+Historical phase notes below do not establish completion or production qualification.
+
 Officer is the Windows endpoint agent for **Panopticon**, an EDR/XDR capstone
 project. Its job is to observe security-relevant activity on a Windows
 endpoint, turn source-specific records into a stable Panopticon event format,

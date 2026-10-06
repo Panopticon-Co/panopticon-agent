@@ -2,7 +2,7 @@
 
 #include "panopticon/officer/delivery/config.hpp"
 #include "panopticon/officer/delivery/http_client.hpp"
-#include "panopticon/officer/delivery/spool.hpp"
+#include "panopticon/officer/delivery/journal.hpp"
 
 #include <atomic>
 #include <condition_variable>
@@ -10,17 +10,22 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <nlohmann/json.hpp>
 
 namespace panopticon::officer::delivery {
 
-// An in-memory batcher with its own background thread, so collector
-// callback threads never make a network call directly -- see "Threading" in
-// docs/architecture/phase-6-delivery.md. Every batch is durably persisted to
-// a SegmentSpool BEFORE an HTTP attempt is made (Phase 5,
-// docs/architecture/phase-9-telemetry-durability.md): a batch that fails to
-// POST is retried from the spool with bounded backoff across restarts, not
-// dropped. Only a record that exhausts spool_max_delivery_attempts is ever
-// given up on.
+struct DeliveryHealth {
+    std::uint64_t commit_failures = 0;
+    std::uint64_t transport_failures = 0;
+    std::uint64_t invalid_receipts = 0;
+    std::uint64_t freshness_challenge_failures = 0;
+    std::string capture_age_state = "unavailable";
+    std::string durability_state = "healthy";
+    std::string transport_state = "unavailable";
+    std::string last_error;
+};
+
+// Durable per-observation acceptance with a separate network worker.
 class Uploader {
 public:
     Uploader(DeliveryConfig config, std::string agent_id);
@@ -29,28 +34,34 @@ public:
     Uploader(const Uploader&) = delete;
     Uploader& operator=(const Uploader&) = delete;
 
-    // Called from collector callback threads. Cheap: appends under a mutex
-    // and returns; the network call happens later, on this class's own
-    // background thread.
-    void enqueue(std::string ndjson_line);
+    // True only after FULL/WAL commit. Disk work is synchronous in this stage;
+    // collector isolation and durable source-loss records remain roadmap work.
+    // No network operation occurs on the caller's thread.
+    [[nodiscard]] bool enqueue(const std::string& ndjson_line);
 
     void stop();
 
-    [[nodiscard]] SpoolStats spool_stats() const { return spool_.stats(); }
+    [[nodiscard]] JournalStats journal_stats() const { return journal_.stats(); }
+    [[nodiscard]] DeliveryHealth health() const;
+    [[nodiscard]] std::string installation_id() { return journal_.persistent_identifier("installation"); }
+    [[nodiscard]] std::uint64_t next_collector_generation() { return journal_.next_collector_generation(); }
+    void set_bearer_token(const std::string& agent_id, std::string token);
+    void set_capture_scope(nlohmann::json scope);
 
 private:
-    void run();
-    void persist_batch(std::vector<std::string>&& lines);
-    void drain_spool(std::size_t max_records);
+    void run() noexcept;
+    int deliver_one(); // 1 acknowledged, 0 empty, -1 retry
 
     DeliveryConfig config_;
     std::string agent_id_;
     HttpClient http_client_;
-    SegmentSpool spool_;
+    DurableJournal journal_;
 
-    std::mutex mutex_;
+    mutable std::mutex mutex_;
     std::condition_variable cv_;
-    std::vector<std::string> pending_;
+    DeliveryHealth health_;
+    nlohmann::json capture_scope_;
+    bool wake_ = false;
     std::atomic<bool> stop_requested_{false};
     std::thread worker_;
 };

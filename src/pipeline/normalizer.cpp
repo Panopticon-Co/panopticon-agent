@@ -1,6 +1,7 @@
 #include "panopticon/officer/pipeline/normalizer.hpp"
 
 #include "panopticon/officer/core/entity_id.hpp"
+#include "panopticon/officer/pipeline/source_facts.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -220,7 +221,7 @@ std::optional<std::string> canonical_sha256(
 // Returns std::nullopt with error_message set on failure.
 std::optional<telemetry::PanopticonEvent> build_family_base(
     const telemetry::SourceProvenance& source,
-    const telemetry::RawProcessContext& process,
+    const telemetry::RawProcessContext& observed_process,
     telemetry::UtcTimestamp timestamp,
     std::string_view category,
     std::string_view type,
@@ -233,6 +234,14 @@ std::optional<telemetry::PanopticonEvent> build_family_base(
     if (source.provider.empty()) {
         error_message = "A raw telemetry event must identify its source provider.";
         return std::nullopt;
+    }
+
+    auto process = observed_process;
+    if (cached_context_applicable(source, process)) {
+        const auto& cached = *process.cached_context;
+        process.executable = cached.executable;
+        if (!process.user_name) process.user_name = cached.user_name;
+        if (!process.user_sid) process.user_sid = cached.user_sid;
     }
 
     const auto entity_id = core::derive_process_context_entity_id(

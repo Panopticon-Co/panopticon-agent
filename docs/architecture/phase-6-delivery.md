@@ -1,5 +1,9 @@
 # Phase 6/7 (network delivery): the `officer-delivery` library
 
+**Historical increment.** Current live delivery uses the per-observation journal;
+see [implementation and limits](../windows-endpoint/DURABLE_JOURNAL.md) and
+the [full-surface capability ledger](../windows-endpoint/CAPABILITY_MATRIX.md).
+
 ## Note on numbering
 
 This work spans `docs/roadmap.md`'s Phase 6 ("durable spool" — this document

@@ -8,15 +8,39 @@ find_package(tinyxml2 CONFIG REQUIRED)
 
 add_library(officer-core STATIC
     src/core/entity_id.cpp
+    src/core/process_instance.cpp
+    src/health/coverage.cpp
+    src/health/state_freshness.cpp
+    src/health/source_supervisor.cpp
     src/pipeline/normalizer.cpp
+    src/pipeline/endpoint_record.cpp
+    src/pipeline/source_facts.cpp
+    src/pipeline/raw_handoff.cpp
+    src/pipeline/diagnostic_output.cpp
     src/pipeline/serializer.cpp
+    src/state/host_inventory.cpp
+    src/state/process_inventory.cpp
+    src/state/process_token.cpp
+    src/state/service_inventory.cpp
+    src/state/service_triggers.cpp
+    src/state/service_security.cpp
+    src/state/driver_inventory.cpp
+    src/state/socket_inventory.cpp
+    src/state/route_inventory.cpp
+    src/state/ip_interface.cpp
+    src/state/ip_interface_inventory.cpp
+    src/state/firewall_profiles.cpp
+    src/state/firewall_exclusions.cpp
+    src/state/firewall_rules.cpp
+    src/state/security_center.cpp
+    src/state/defender_status.cpp
 )
 
 target_include_directories(officer-core PUBLIC include)
 target_compile_features(officer-core PUBLIC cxx_std_20)
 target_link_libraries(officer-core
     PUBLIC nlohmann_json::nlohmann_json
-    PRIVATE bcrypt
+    PRIVATE bcrypt advapi32 iphlpapi ws2_32 netapi32 ole32 oleaut32 wbemuuid
 )
 
 add_library(officer-collectors STATIC
@@ -36,6 +60,7 @@ target_link_libraries(officer-collectors
 
 add_library(officer-delivery STATIC
     src/delivery/http_client.cpp
+    src/delivery/journal.cpp
     src/delivery/spool.cpp
     src/delivery/uploader.cpp
 )
@@ -44,7 +69,7 @@ target_include_directories(officer-delivery PUBLIC include)
 target_compile_features(officer-delivery PUBLIC cxx_std_20)
 target_link_libraries(officer-delivery
     PUBLIC officer-core
-    PRIVATE winhttp bcrypt
+    PRIVATE winhttp bcrypt winsqlite3 crypt32 advapi32
 )
 
 add_library(officer-response STATIC
@@ -89,6 +114,63 @@ if(MSVC)
 endif()
 
 if(BUILD_TESTING)
+    add_executable(officer-ip-interface-inventory-tests tests/ip_interface_inventory_tests.cpp)
+    target_link_libraries(officer-ip-interface-inventory-tests PRIVATE officer-core)
+    add_test(NAME officer-ip-interface-inventory-tests COMMAND officer-ip-interface-inventory-tests)
+    add_executable(officer-route-inventory-tests tests/route_inventory_tests.cpp)
+    target_link_libraries(officer-route-inventory-tests PRIVATE officer-core)
+    add_test(NAME officer-route-inventory-tests COMMAND officer-route-inventory-tests)
+    add_executable(officer-socket-inventory-tests tests/socket_inventory_tests.cpp)
+    target_link_libraries(officer-socket-inventory-tests PRIVATE officer-core)
+    add_test(NAME officer-socket-inventory-tests COMMAND officer-socket-inventory-tests)
+    add_executable(officer-driver-inventory-tests tests/driver_inventory_tests.cpp)
+    target_link_libraries(officer-driver-inventory-tests PRIVATE officer-core)
+    add_test(NAME officer-driver-inventory-tests COMMAND officer-driver-inventory-tests)
+    add_executable(officer-service-inventory-tests tests/service_inventory_tests.cpp)
+    target_link_libraries(officer-service-inventory-tests PRIVATE officer-core)
+    add_test(NAME officer-service-inventory-tests COMMAND officer-service-inventory-tests)
+    add_executable(officer-process-inventory-tests tests/process_inventory_tests.cpp)
+    target_link_libraries(officer-process-inventory-tests PRIVATE officer-core)
+    add_test(NAME officer-process-inventory-tests COMMAND officer-process-inventory-tests)
+    add_executable(officer-raw-handoff-tests tests/raw_handoff_tests.cpp)
+    target_link_libraries(officer-raw-handoff-tests PRIVATE officer-core officer-delivery)
+    add_test(NAME officer-raw-handoff-tests COMMAND officer-raw-handoff-tests)
+    set_tests_properties(officer-raw-handoff-tests PROPERTIES TIMEOUT 15)
+    add_executable(officer-response-runtime-tests tests/response_runtime_tests.cpp)
+    target_link_libraries(officer-response-runtime-tests PRIVATE officer-core officer-collectors officer-delivery officer-response advapi32)
+    if(MSVC)
+        target_compile_options(officer-response-runtime-tests PRIVATE /W4 /permissive- /EHsc /utf-8)
+    endif()
+    add_test(NAME officer-response-runtime-tests COMMAND officer-response-runtime-tests)
+    add_executable(officer-process-action-tests tests/process_action_tests.cpp)
+    target_link_libraries(officer-process-action-tests PRIVATE officer-response officer-core)
+    if(MSVC)
+        target_compile_options(officer-process-action-tests PRIVATE /W4 /permissive- /EHsc /utf-8)
+    endif()
+    add_test(NAME officer-process-action-tests COMMAND officer-process-action-tests)
+    add_executable(officer-host-inventory-tests tests/host_inventory_tests.cpp)
+    target_link_libraries(officer-host-inventory-tests PRIVATE officer-core officer-delivery)
+    if(MSVC)
+        target_compile_options(officer-host-inventory-tests PRIVATE /W4 /permissive- /EHsc /utf-8)
+    endif()
+    add_test(NAME officer-host-inventory-tests COMMAND officer-host-inventory-tests)
+    add_executable(officer-source-facts-tests tests/source_facts_tests.cpp)
+    target_link_libraries(officer-source-facts-tests PRIVATE officer-core officer-delivery)
+    if(MSVC)
+        target_compile_options(officer-source-facts-tests PRIVATE /W4 /permissive- /EHsc /utf-8)
+    endif()
+    add_test(NAME officer-source-facts-tests COMMAND officer-source-facts-tests)
+    add_executable(officer-source-supervisor-tests tests/source_supervisor_tests.cpp)
+    target_link_libraries(officer-source-supervisor-tests PRIVATE officer-core officer-collectors officer-delivery)
+    add_custom_command(TARGET officer-source-supervisor-tests POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:tinyxml2::tinyxml2> $<TARGET_FILE_DIR:officer-source-supervisor-tests>)
+    add_test(NAME officer-source-supervisor-tests COMMAND officer-source-supervisor-tests)
+    add_executable(officer-endpoint-tests tests/endpoint_tests.cpp)
+    target_link_libraries(officer-endpoint-tests PRIVATE officer-core officer-delivery)
+    add_test(NAME officer-endpoint-tests COMMAND officer-endpoint-tests)
+    add_executable(officer-journal-tests tests/journal_tests.cpp)
+    target_link_libraries(officer-journal-tests PRIVATE officer-delivery)
+    add_test(NAME officer-journal-tests COMMAND officer-journal-tests)
     add_executable(officer-core-tests tests/contract_tests.cpp)
     target_link_libraries(officer-core-tests PRIVATE officer-core)
     target_compile_definitions(
@@ -99,6 +181,28 @@ if(BUILD_TESTING)
         target_compile_options(officer-core-tests PRIVATE /W4 /permissive- /EHsc /utf-8)
     endif()
     add_test(NAME officer-core-contract-tests COMMAND officer-core-tests)
+
+    add_executable(officer-state-freshness-tests tests/state_freshness_tests.cpp)
+    add_executable(officer-defender-status-tests tests/defender_status_tests.cpp)
+    target_link_libraries(officer-defender-status-tests PRIVATE officer-core)
+    add_test(NAME officer-defender-status-tests COMMAND officer-defender-status-tests)
+    add_executable(officer-security-center-tests tests/security_center_tests.cpp)
+    target_link_libraries(officer-security-center-tests PRIVATE officer-core)
+    add_test(NAME officer-security-center-tests COMMAND officer-security-center-tests)
+    target_link_libraries(officer-state-freshness-tests PRIVATE officer-core officer-delivery)
+    add_test(NAME officer-state-freshness-tests COMMAND officer-state-freshness-tests)
+
+    add_executable(officer-firewall-rules-tests tests/firewall_rules_tests.cpp)
+    target_link_libraries(officer-firewall-rules-tests PRIVATE officer-core)
+    add_test(NAME officer-firewall-rules-tests COMMAND officer-firewall-rules-tests)
+
+    add_executable(officer-firewall-profiles-tests tests/firewall_profiles_tests.cpp)
+    target_link_libraries(officer-firewall-profiles-tests PRIVATE officer-core)
+    add_test(NAME officer-firewall-profiles-tests COMMAND officer-firewall-profiles-tests)
+
+    add_executable(officer-diagnostic-output-tests tests/diagnostic_output_tests.cpp)
+    target_link_libraries(officer-diagnostic-output-tests PRIVATE officer-core)
+    add_test(NAME officer-diagnostic-output-tests COMMAND officer-diagnostic-output-tests)
 
     add_executable(officer-collector-tests tests/collector_tests.cpp)
     target_link_libraries(officer-collector-tests PRIVATE officer-collectors officer-core)

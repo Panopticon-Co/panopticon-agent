@@ -1,15 +1,18 @@
 #include "panopticon/officer/response/command.hpp"
 #include "panopticon/officer/response/identity.hpp"
 #include "panopticon/officer/response/replay_ledger.hpp"
+#include "panopticon/officer/core/entity_id.hpp"
 
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <charconv>
 #include <limits>
 #include <optional>
 #include <sstream>
+#include <stdexcept>
 #include <utility>
 
 namespace panopticon::officer::response {
@@ -19,11 +22,9 @@ namespace {
 using nlohmann::json;
 
 // Strict RFC 3339 UTC-only parser: rejects anything that is not exactly
-// YYYY-MM-DDTHH:MM:SS(Z|+00:00) with valid calendar fields. Deliberately
-// rejects fractional seconds and any non-UTC offset, matching
-// panopticon-linux-agent's utc_timestamp() so both agents reject the same
-// malformed/ambiguous timestamps the Manager could never have produced.
-std::optional<std::int64_t> parse_utc_timestamp(const std::string& value) {
+// YYYY-MM-DDTHH:MM:SS[.1-9 digits](Z|+00:00), with exact ordering even
+// within one second. Manager's actual dispatch payload includes microseconds.
+std::optional<std::pair<std::int64_t, std::uint32_t>> parse_utc_timestamp(const std::string& value) {
     if (value.size() < 20U || (value.back() != 'Z' && (value.size() < 6U || value.substr(value.size() - 6U) != "+00:00"))) {
         return std::nullopt;
     }
@@ -50,11 +51,18 @@ std::optional<std::int64_t> parse_utc_timestamp(const std::string& value) {
     if (*month < 1 || *month > 12 || *day < 1 || *day > 31 || *hour > 23 || *minute > 59 || *second > 59) {
         return std::nullopt;
     }
-    // Exact trailing content: after the 19 fixed characters, only "Z" or
-    // "+00:00" may remain -- anything else (fractional seconds, junk) is
-    // rejected rather than silently ignored.
-    const auto tail = value.substr(19U);
-    if (tail != "Z" && tail != "+00:00") return std::nullopt;
+    const auto suffix_size = value.back() == 'Z' ? 1U : 6U;
+    const auto fraction = value.substr(19U, value.size() - suffix_size - 19U);
+    std::uint32_t nanoseconds = 0;
+    if (!fraction.empty()) {
+        if (fraction.front() != '.' || fraction.size() < 2 || fraction.size() > 10) return std::nullopt;
+        for (std::size_t index = 1; index < fraction.size(); ++index) {
+            const auto digit = fraction[index];
+            if (digit < '0' || digit > '9') return std::nullopt;
+            nanoseconds = nanoseconds * 10 + static_cast<std::uint32_t>(digit - '0');
+        }
+        for (std::size_t count = fraction.size() - 1; count < 9; ++count) nanoseconds *= 10;
+    }
 
     static constexpr std::array<int, 12> days_in_month{31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
     const bool leap = (*year % 4 == 0 && *year % 100 != 0) || *year % 400 == 0;
@@ -74,8 +82,8 @@ std::optional<std::int64_t> parse_utc_timestamp(const std::string& value) {
     const std::int64_t doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
     const std::int64_t days_since_epoch = era * 146097 + doe - 719468;
 
-    return days_since_epoch * 86400LL + static_cast<std::int64_t>(*hour) * 3600LL +
-           static_cast<std::int64_t>(*minute) * 60LL + static_cast<std::int64_t>(*second);
+    return std::pair{days_since_epoch * 86400LL + static_cast<std::int64_t>(*hour) * 3600LL +
+           static_cast<std::int64_t>(*minute) * 60LL + static_cast<std::int64_t>(*second), nanoseconds};
 }
 
 bool is_bounded_string(const json& value, std::size_t max_length) {
@@ -87,6 +95,35 @@ bool is_positive_integer(const json& value) {
     return value.is_number_integer() && !value.is_boolean() && value.get<std::int64_t>() > 0;
 }
 
+// Validate keys during parsing: checking the resulting object is too late,
+// because JSON DOM construction has already replaced duplicate members.
+std::optional<json> parse_unambiguous_json(std::string_view payload, std::string& error_message) {
+    std::vector<std::set<std::string>> object_keys;
+    bool duplicate = false;
+    try {
+        auto document = json::parse(payload, [&](int depth, json::parse_event_t event, json& value) {
+            if (depth > 32) throw std::runtime_error("JSON nesting exceeds command limit");
+            if (event == json::parse_event_t::object_start) object_keys.emplace_back();
+            else if (event == json::parse_event_t::key) {
+                if (object_keys.empty() || !object_keys.back().insert(value.get<std::string>()).second) duplicate = true;
+            } else if (event == json::parse_event_t::object_end) {
+                if (!object_keys.empty()) object_keys.pop_back();
+            }
+            return true;
+        }, true);
+        if (duplicate) {
+            error_message = "command JSON contains duplicate object keys";
+            return std::nullopt;
+        }
+        return document;
+    } catch (const json::exception&) {
+        error_message = "command JSON is not well-formed";
+    } catch (const std::runtime_error&) {
+        error_message = "command JSON nesting exceeds bounds";
+    }
+    return std::nullopt;
+}
+
 }  // namespace
 
 std::optional<Command> parse_command_json(const std::string_view payload, std::string& error_message) {
@@ -94,13 +131,9 @@ std::optional<Command> parse_command_json(const std::string_view payload, std::s
         error_message = "command JSON exceeds bounds";
         return std::nullopt;
     }
-    json document;
-    try {
-        document = json::parse(payload, /*callback*/ nullptr, /*allow_exceptions*/ true);
-    } catch (const json::exception&) {
-        error_message = "command JSON is not well-formed";
-        return std::nullopt;
-    }
+    auto parsed_document = parse_unambiguous_json(payload, error_message);
+    if (!parsed_document) return std::nullopt;
+    const auto& document = *parsed_document;
     if (!document.is_object()) {
         error_message = "command JSON must be an object";
         return std::nullopt;
@@ -140,10 +173,12 @@ std::optional<Command> parse_command_json(const std::string_view payload, std::s
         error_message = "command identity fields fail identifier validation";
         return std::nullopt;
     }
-    if (!document["schema_version"].is_string() || document["schema_version"].get<std::string>() != "1") {
+    if (!document["schema_version"].is_string() ||
+        (document["schema_version"] != "1" && document["schema_version"] != "2")) {
         error_message = "unsupported command schema version";
         return std::nullopt;
     }
+    const auto schema_version = document["schema_version"].get<std::string>();
     if (!document["expires_at"].is_string() || !document["created_at"].is_string()) {
         error_message = "command timestamps must be strings";
         return std::nullopt;
@@ -182,20 +217,51 @@ std::optional<Command> parse_command_json(const std::string_view payload, std::s
 
     ProcessTarget process_target{host_id, 0, 0};
     std::string file_path;
+    if (schema_version == "2" && !is_process_action) {
+        error_message = "schema-2 currently defines boot-bound process actions only";
+        return std::nullopt;
+    }
     if (is_process_action) {
-        if (target.size() != 2U || !target.contains("pid") || !target.contains("start_time_ticks") ||
-            !is_positive_integer(target["pid"]) || !is_positive_integer(target["start_time_ticks"])) {
+        if (target.size() != (schema_version == "2" ? 3U : 2U) || !target.contains("pid") || !target.contains("start_time_ticks") ||
+            !is_positive_integer(target["pid"])) {
             error_message = "process command target is invalid";
             return std::nullopt;
         }
         const auto pid = target["pid"].get<std::int64_t>();
-        const auto start = target["start_time_ticks"].get<std::int64_t>();
         if (pid > std::numeric_limits<std::uint32_t>::max()) {
             error_message = "process command target pid is out of range";
             return std::nullopt;
         }
         process_target.pid = static_cast<std::uint32_t>(pid);
-        process_target.start_time_ticks = static_cast<std::uint64_t>(start);
+        if (schema_version == "2") {
+            if (!target.contains("boot_id") || !is_bounded_string(target["boot_id"], 128) ||
+                !is_valid_identifier(target["boot_id"].get<std::string>()) || !target["start_time_ticks"].is_string()) {
+                error_message = "schema-2 process target requires boot identity and decimal native ticks";
+                return std::nullopt;
+            }
+            const auto& token = target["start_time_ticks"].get_ref<const std::string&>();
+            const auto& boot = target["boot_id"].get_ref<const std::string&>();
+            if (boot.size() != 69 || !boot.starts_with("boot_") ||
+                !std::all_of(boot.begin() + 5, boot.end(), [](char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'); })) {
+                error_message = "schema-2 Windows boot identity must be the canonical native boot digest";
+                return std::nullopt;
+            }
+            std::uint64_t ticks = 0;
+            const auto parsed = std::from_chars(token.data(), token.data() + token.size(), ticks);
+            if (token.empty() || token.size() > 20 || token.front() == '0' || parsed.ec != std::errc{} ||
+                parsed.ptr != token.data() + token.size() || ticks == 0) {
+                error_message = "schema-2 native ticks are not a canonical positive uint64 decimal";
+                return std::nullopt;
+            }
+            process_target.start_time_ticks = ticks;
+            process_target.boot_id = target["boot_id"].get<std::string>();
+        } else {
+            if (!is_positive_integer(target["start_time_ticks"])) {
+                error_message = "legacy process native ticks must be a positive integer";
+                return std::nullopt;
+            }
+            process_target.start_time_ticks = target["start_time_ticks"].get<std::uint64_t>();
+        }
     } else if (is_file_action) {
         if (target.size() != 1U || !target.contains("path") || !is_bounded_string(target["path"], 4096)) {
             error_message = "file command target is invalid";
@@ -207,8 +273,8 @@ std::optional<Command> parse_command_json(const std::string_view payload, std::s
         return std::nullopt;
     }
 
-    return Command{command_id,       agent_id,      host_id, "1", correlation_id, action,
-                   *expires_at,      process_target, file_path};
+    return Command{command_id,       agent_id,      host_id, schema_version, correlation_id, action,
+                   expires_at->first, process_target, file_path, document.dump()};
 }
 
 std::optional<std::vector<Command>> parse_command_poll_response(const std::string_view payload,
@@ -218,14 +284,10 @@ std::optional<std::vector<Command>> parse_command_poll_response(const std::strin
         error_message = "command poll response is invalid";
         return std::nullopt;
     }
-    json document;
-    try {
-        document = json::parse(payload, nullptr, true);
-    } catch (const json::exception&) {
-        error_message = "command poll response is not well-formed JSON";
-        return std::nullopt;
-    }
-    if (!document.is_object() || !document.contains("commands") || !document["commands"].is_array()) {
+    auto parsed_document = parse_unambiguous_json(payload, error_message);
+    if (!parsed_document) return std::nullopt;
+    const auto& document = *parsed_document;
+    if (!document.is_object() || document.size() != 1U || !document.contains("commands") || !document["commands"].is_array()) {
         error_message = "command poll response must be {\"commands\": [...]}";
         return std::nullopt;
     }
@@ -252,17 +314,41 @@ std::optional<std::string> serialize_command_result(const CommandReceipt& receip
         error_message = "receipt is invalid";
         return std::nullopt;
     }
-    const auto outcome = receipt.code == ReceiptCode::succeeded    ? "succeeded"
+    std::string hash_error;
+    const auto result_digest = core::sha256_hex(receipt.command_id, hash_error);
+    if (!result_digest) { error_message = hash_error; return std::nullopt; }
+    const auto outcome = receipt.code == ReceiptCode::indeterminate ? "indeterminate"
+                          : receipt.code == ReceiptCode::succeeded    ? "succeeded"
                           : receipt.code == ReceiptCode::execution_failed ? "failed"
                                                                            : "rejected";
     json document = {
-        {"result_id", "result-" + receipt.command_id},
+        {"schema_version", "2"},
+        {"result_id", "result_" + *result_digest},
         {"command_id", receipt.command_id},
         {"outcome", outcome},
         {"detail", std::string{outcome} + ":" + std::to_string(static_cast<unsigned int>(receipt.code)) +
                        (receipt.summary.empty() ? std::string{} : (" " + receipt.summary))},
         {"correlation_id", receipt.correlation_id},
     };
+    if (receipt.execution) {
+        const auto& execution = *receipt.execution;
+        constexpr std::array<std::string_view, 10> stages{"preflight", "boot", "open", "identity", "image",
+            "critical", "protection", "liveness", "initiate", "completion"};
+        const bool valid_outcome = execution.completion_observed
+            ? execution.action_initiated && receipt.code == ReceiptCode::succeeded
+            : execution.action_initiated ? receipt.code == ReceiptCode::indeterminate
+            : receipt.code != ReceiptCode::succeeded && receipt.code != ReceiptCode::indeterminate;
+        if (std::find(stages.begin(), stages.end(), execution.stage) == stages.end() || !valid_outcome ||
+            execution.action_initiated != (execution.stage == "completion") ||
+            (execution.native_error && receipt.code != ReceiptCode::execution_failed && receipt.code != ReceiptCode::indeterminate)) {
+            error_message = "execution evidence contradicts process outcome";
+            return std::nullopt;
+        }
+        document["execution"] = {{"representation", "windows_process_termination_v1"},
+            {"stage", execution.stage}, {"action_initiated", execution.action_initiated},
+            {"completion_observed", execution.completion_observed},
+            {"native_error", execution.native_error ? json(*execution.native_error) : json(nullptr)}};
+    }
     // Manager's CommandResult.detail is capped at 512 bytes -- truncate
     // rather than reject, since the receipt itself is still valid and must
     // still be reported.
@@ -289,7 +375,7 @@ CommandGate::CommandGate(std::string agent_id, std::string host_id,
 CommandReceipt CommandGate::validate_and_mark(const Command& received) {
     std::lock_guard lock{mutex_};
     if (!is_valid_identifier(received.command_id) || !is_valid_identifier(received.correlation_id) ||
-        received.schema_version != "1" || received.agent_id != agent_id_ || received.host_id != host_id_ ||
+        (received.schema_version != "1" && received.schema_version != "2") || received.agent_id != agent_id_ || received.host_id != host_id_ ||
         received.process_target.host_id != host_id_) {
         return {received.command_id, received.correlation_id, ReceiptCode::invalid_command,
                 "command identity, target, or schema is invalid"};
@@ -331,8 +417,8 @@ CommandReceipt CommandGate::validate_and_mark(const Command& received) {
 
 bool is_protected_process(const std::uint32_t pid, const std::string_view image_name) noexcept {
     if (pid == 0U || pid == 4U) return true;
-    static constexpr std::array<std::string_view, 5> protected_images{
-        "csrss.exe", "wininit.exe", "services.exe", "lsass.exe", "smss.exe"};
+    static constexpr std::array<std::string_view, 6> protected_images{
+        "csrss.exe", "wininit.exe", "winlogon.exe", "services.exe", "lsass.exe", "smss.exe"};
     std::string lowered{image_name};
     std::transform(lowered.begin(), lowered.end(), lowered.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });

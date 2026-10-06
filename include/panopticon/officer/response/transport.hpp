@@ -8,6 +8,7 @@
 #include <string>
 
 namespace panopticon::officer::response {
+[[nodiscard]] bool valid_result_ack(const std::string& payload, const std::string& receipt);
 
 enum class TransportOutcome { acknowledged, retryable, authentication_failed, rejected };
 

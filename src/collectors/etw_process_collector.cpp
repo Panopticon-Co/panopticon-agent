@@ -306,6 +306,8 @@ struct EtwProcessCollector::Impl {
     std::thread worker;
     std::atomic_bool is_running{false};
     std::atomic_bool stop_requested{false};
+    std::atomic_uint64_t decode_failures{0};
+    std::atomic_uint64_t sink_failures{0};
 
     EVENT_TRACE_PROPERTIES* properties() noexcept {
         return reinterpret_cast<EVENT_TRACE_PROPERTIES*>(properties_buffer.data());
@@ -329,6 +331,7 @@ struct EtwProcessCollector::Impl {
         std::string error;
         const auto raw = decode_process_start(record, error);
         if (!raw) {
+            ++decode_failures;
             report_error(std::move(error));
             return;
         }
@@ -337,8 +340,10 @@ struct EtwProcessCollector::Impl {
                 event_sink(telemetry::RawEvent{*raw});
             }
         } catch (const std::exception& exception) {
+            ++sink_failures;
             report_error("Event sink failed: " + std::string{exception.what()});
         } catch (...) {
+            ++sink_failures;
             report_error("Event sink failed with an unknown exception.");
         }
     }
@@ -358,8 +363,7 @@ struct EtwProcessCollector::Impl {
         }
         const ULONG status = ProcessTrace(&handle, 1, nullptr, nullptr);
         is_running.store(false);
-        if (!stop_requested.load() && status != ERROR_SUCCESS &&
-            status != ERROR_CANCELLED && status != ERROR_WMI_INSTANCE_NOT_FOUND) {
+        if (!stop_requested.load()) {
             report_error("ProcessTrace stopped unexpectedly: " +
                          win32_error_message(status));
         }
@@ -529,6 +533,37 @@ void EtwProcessCollector::stop() noexcept {
 
 bool EtwProcessCollector::running() const noexcept {
     return impl_->is_running.load();
+}
+
+CollectorStatus EtwProcessCollector::status() {
+    CollectorStatus result;
+    result.running = running();
+    result.decode_failures = impl_->decode_failures.load();
+    result.sink_failures = impl_->sink_failures.load();
+    // Query only the owned handle. Do not reuse the start/stop properties buffer
+    // or query by name, which could refer to another session after replacement.
+    std::scoped_lock lock{impl_->mutex};
+    if (impl_->session_handle == 0) {
+        result.statistics_error = "owned ETW session is absent";
+        return result;
+    }
+    std::vector<std::byte> storage(sizeof(EVENT_TRACE_PROPERTIES) + 2 * 1024 * sizeof(wchar_t));
+    auto* properties = reinterpret_cast<EVENT_TRACE_PROPERTIES*>(storage.data());
+    properties->Wnode.BufferSize = static_cast<ULONG>(storage.size());
+    properties->Wnode.Flags = WNODE_FLAG_TRACED_GUID;
+    properties->LoggerNameOffset = sizeof(EVENT_TRACE_PROPERTIES);
+    properties->LogFileNameOffset = sizeof(EVENT_TRACE_PROPERTIES) + 1024 * sizeof(wchar_t);
+    const auto error = ControlTraceW(impl_->session_handle, nullptr, properties, EVENT_TRACE_CONTROL_QUERY);
+    if (error != ERROR_SUCCESS) {
+        result.statistics_error = "ETW statistics query failed: " + win32_error_message(error);
+        return result;
+    }
+    result.statistics_available = true;
+    result.events_lost = properties->EventsLost;
+    result.realtime_buffers_lost = properties->RealTimeBuffersLost;
+    result.log_buffers_lost = properties->LogBuffersLost;
+    result.continuity_fault = properties->EventsLost != 0 || properties->RealTimeBuffersLost != 0 || properties->LogBuffersLost != 0;
+    return result;
 }
 
 }  // namespace panopticon::officer::collectors

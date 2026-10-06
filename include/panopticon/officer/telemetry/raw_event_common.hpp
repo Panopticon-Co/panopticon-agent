@@ -26,8 +26,19 @@ struct SourceProvenance {
 
 // Process context carried by every non-process telemetry family. It answers
 // "which process did this" without the family collector taking on process-start
-// normalization. All fields are observed facts only -- no JSON, transport, or
-// detection concerns.
+// normalization. Primary fields are observed facts; cache evidence is attached
+// separately -- no JSON, transport, or detection concerns.
+struct CachedProcessContext {
+    SourceProvenance source;
+    UtcTimestamp process_start_time;
+    std::uint32_t pid{};
+    std::string process_guid;
+    std::optional<std::string> executable;
+    std::optional<std::string> user_name;
+    std::optional<std::string> user_sid;
+    bool operator==(const CachedProcessContext&) const = default;
+};
+
 struct RawProcessContext {
     std::uint32_t pid{};
     std::optional<std::string> executable;
@@ -37,6 +48,9 @@ struct RawProcessContext {
     // Sysmon ProcessGuid string, when the source provides one. Used to derive a
     // stable process-context entity ID for non-process telemetry families.
     std::optional<std::string> process_guid;
+    // Separate cache evidence. Never overwrite the fields decoded from this
+    // event. Normalization may use this only after GUID/PID/source agreement.
+    std::optional<CachedProcessContext> cached_context;
 
     bool operator==(const RawProcessContext&) const = default;
 };
