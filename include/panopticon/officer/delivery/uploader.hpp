@@ -38,10 +38,16 @@ public:
     // collector isolation and durable source-loss records remain roadmap work.
     // No network operation occurs on the caller's thread.
     [[nodiscard]] bool enqueue(const std::string& ndjson_line);
+    [[nodiscard]] bool enqueue_checkpointed(const std::string& line, const std::string& source,
+        const std::string& checkpoint, std::uint64_t expected_revision);
+    [[nodiscard]] std::optional<SourceCheckpoint> source_checkpoint(const std::string& source) const {
+        return journal_.source_checkpoint(source);
+    }
 
     void stop();
 
     [[nodiscard]] JournalStats journal_stats() const { return journal_.stats(); }
+    std::size_t rebuild_process_graph(std::size_t events, std::size_t bytes) { return journal_.rebuild_process_graph(events, bytes); }
     [[nodiscard]] DeliveryHealth health() const;
     [[nodiscard]] std::string installation_id() { return journal_.persistent_identifier("installation"); }
     [[nodiscard]] std::uint64_t next_collector_generation() { return journal_.next_collector_generation(); }

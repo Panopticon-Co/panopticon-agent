@@ -9,6 +9,7 @@ ProcessImageCache::ProcessImageCache(std::size_t generation_capacity)
     : generation_capacity_(std::max<std::size_t>(generation_capacity, 1)) {}
 
 void ProcessImageCache::remember(const telemetry::RawProcessEvent& process_event) {
+    if (process_event.terminated) return; // Stop metadata is not a creation cache entry.
     if (!process_event.process_guid || process_event.process_guid->empty()) return;
     Identity identity{
         process_event.source,

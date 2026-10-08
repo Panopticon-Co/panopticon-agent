@@ -9,6 +9,7 @@ find_package(tinyxml2 CONFIG REQUIRED)
 add_library(officer-core STATIC
     src/core/entity_id.cpp
     src/core/process_instance.cpp
+    src/core/process_graph.cpp
     src/health/coverage.cpp
     src/health/state_freshness.cpp
     src/health/source_supervisor.cpp
@@ -20,6 +21,8 @@ add_library(officer-core STATIC
     src/pipeline/serializer.cpp
     src/state/host_inventory.cpp
     src/state/process_inventory.cpp
+    src/state/thread_inventory.cpp
+    src/state/memory_inventory.cpp
     src/state/process_token.cpp
     src/state/service_inventory.cpp
     src/state/service_triggers.cpp
@@ -34,13 +37,21 @@ add_library(officer-core STATIC
     src/state/firewall_rules.cpp
     src/state/security_center.cpp
     src/state/defender_status.cpp
+    src/state/device_guard.cpp
+    src/state/persistence_inventory.cpp
+    src/state/scheduled_task_inventory.cpp
+    src/state/wmi_subscription_inventory.cpp
+    src/state/startup_inventory.cpp
+    src/state/identity_inventory.cpp
+    src/state/software_inventory.cpp
+    src/runtime/service_host.cpp
 )
 
 target_include_directories(officer-core PUBLIC include)
 target_compile_features(officer-core PUBLIC cxx_std_20)
 target_link_libraries(officer-core
     PUBLIC nlohmann_json::nlohmann_json
-    PRIVATE bcrypt advapi32 iphlpapi ws2_32 netapi32 ole32 oleaut32 wbemuuid
+    PRIVATE bcrypt advapi32 iphlpapi ws2_32 netapi32 ole32 oleaut32 wbemuuid taskschd shell32 secur32 wtsapi32 msi tinyxml2::tinyxml2
 )
 
 add_library(officer-collectors STATIC
@@ -49,6 +60,10 @@ add_library(officer-collectors STATIC
     src/collectors/sysmon_event_collector.cpp
     src/collectors/sysmon_process_decoder.cpp
     src/collectors/sysmon_telemetry_decoder.cpp
+    src/collectors/windows_event_decoder.cpp
+    src/collectors/windows_event_log.cpp
+    src/collectors/usn_decoder.cpp
+    src/collectors/usn_journal.cpp
 )
 
 target_include_directories(officer-collectors PUBLIC include)
@@ -114,6 +129,38 @@ if(MSVC)
 endif()
 
 if(BUILD_TESTING)
+    add_executable(officer-process-graph-tests tests/process_graph_tests.cpp)
+    target_link_libraries(officer-process-graph-tests PRIVATE officer-core officer-delivery winsqlite3)
+    add_test(NAME officer-process-graph-tests COMMAND officer-process-graph-tests)
+    add_executable(officer-device-guard-tests tests/device_guard_tests.cpp)
+    target_link_libraries(officer-device-guard-tests PRIVATE officer-core)
+    add_test(NAME officer-device-guard-tests COMMAND officer-device-guard-tests)
+    add_executable(officer-identity-inventory-tests tests/identity_inventory_tests.cpp)
+    add_executable(officer-software-inventory-tests tests/software_inventory_tests.cpp)
+    add_executable(officer-service-host-tests tests/service_host_tests.cpp)
+    add_executable(officer-process-lifecycle-tests tests/process_lifecycle_tests.cpp)
+    target_link_libraries(officer-process-lifecycle-tests PRIVATE officer-core officer-collectors tdh)
+    add_test(NAME officer-process-lifecycle-tests COMMAND officer-process-lifecycle-tests)
+    target_link_libraries(officer-service-host-tests PRIVATE officer-core)
+    add_test(NAME officer-service-host-tests COMMAND officer-service-host-tests)
+    target_link_libraries(officer-software-inventory-tests PRIVATE officer-core)
+    add_test(NAME officer-software-inventory-tests COMMAND officer-software-inventory-tests)
+    set_tests_properties(officer-software-inventory-tests PROPERTIES TIMEOUT 90)
+    target_link_libraries(officer-identity-inventory-tests PRIVATE officer-core)
+    add_test(NAME officer-identity-inventory-tests COMMAND officer-identity-inventory-tests)
+    set_tests_properties(officer-identity-inventory-tests PROPERTIES TIMEOUT 90)
+    add_executable(officer-persistence-inventory-tests tests/persistence_inventory_tests.cpp)
+    target_link_libraries(officer-persistence-inventory-tests PRIVATE officer-core)
+    add_custom_command(TARGET officer-persistence-inventory-tests POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:tinyxml2::tinyxml2> $<TARGET_FILE_DIR:officer-persistence-inventory-tests>)
+    add_test(NAME officer-persistence-inventory-tests COMMAND officer-persistence-inventory-tests)
+    set_tests_properties(officer-persistence-inventory-tests PROPERTIES TIMEOUT 90)
+    add_executable(officer-windows-event-log-tests tests/windows_event_log_tests.cpp)
+    target_link_libraries(officer-windows-event-log-tests PRIVATE officer-collectors officer-delivery wevtapi advapi32)
+    add_custom_command(TARGET officer-windows-event-log-tests POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:tinyxml2::tinyxml2> $<TARGET_FILE_DIR:officer-windows-event-log-tests>)
+    add_test(NAME officer-windows-event-log-tests COMMAND officer-windows-event-log-tests)
+    set_tests_properties(officer-windows-event-log-tests PROPERTIES TIMEOUT 60)
     add_executable(officer-ip-interface-inventory-tests tests/ip_interface_inventory_tests.cpp)
     target_link_libraries(officer-ip-interface-inventory-tests PRIVATE officer-core)
     add_test(NAME officer-ip-interface-inventory-tests COMMAND officer-ip-interface-inventory-tests)
@@ -132,6 +179,18 @@ if(BUILD_TESTING)
     add_executable(officer-process-inventory-tests tests/process_inventory_tests.cpp)
     target_link_libraries(officer-process-inventory-tests PRIVATE officer-core)
     add_test(NAME officer-process-inventory-tests COMMAND officer-process-inventory-tests)
+    add_executable(officer-thread-inventory-tests tests/thread_inventory_tests.cpp)
+    add_executable(officer-memory-inventory-tests tests/memory_inventory_tests.cpp)
+    target_link_libraries(officer-memory-inventory-tests PRIVATE officer-core)
+    add_test(NAME officer-memory-inventory-tests COMMAND officer-memory-inventory-tests)
+    set_tests_properties(officer-memory-inventory-tests PROPERTIES TIMEOUT 90)
+    target_link_libraries(officer-thread-inventory-tests PRIVATE officer-core)
+    add_test(NAME officer-thread-inventory-tests COMMAND officer-thread-inventory-tests)
+    add_executable(officer-usn-journal-tests tests/usn_journal_tests.cpp)
+    target_link_libraries(officer-usn-journal-tests PRIVATE officer-core officer-collectors officer-delivery)
+    add_test(NAME officer-usn-journal-tests COMMAND officer-usn-journal-tests)
+    set_tests_properties(officer-usn-journal-tests PROPERTIES TIMEOUT 60)
+    set_tests_properties(officer-thread-inventory-tests PROPERTIES TIMEOUT 90)
     add_executable(officer-raw-handoff-tests tests/raw_handoff_tests.cpp)
     target_link_libraries(officer-raw-handoff-tests PRIVATE officer-core officer-delivery)
     add_test(NAME officer-raw-handoff-tests COMMAND officer-raw-handoff-tests)

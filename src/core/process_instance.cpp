@@ -53,7 +53,7 @@ void ProcessInstanceStore::terminate(const ProcessReference& reference, telemetr
     if (!reference.entity_id) return;
     std::scoped_lock lock{mutex_};
     const auto found = instances_.find(*reference.entity_id);
-    if (found != instances_.end()) found->second.terminated_at = time;
+    if (found != instances_.end() && (!found->second.terminated_at || time < *found->second.terminated_at)) found->second.terminated_at = time;
 }
 nlohmann::json ProcessInstanceStore::snapshot() const {
     std::scoped_lock lock{mutex_};

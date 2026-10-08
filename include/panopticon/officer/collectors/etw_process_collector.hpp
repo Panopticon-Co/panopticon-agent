@@ -5,6 +5,9 @@
 #include <memory>
 
 namespace panopticon::officer::collectors {
+namespace detail {
+[[nodiscard]] std::optional<telemetry::RawProcessEvent> decode_etw_process_record(const void* event_record, std::string& error);
+}
 
 class EtwProcessCollector final : public TelemetryCollector {
 public:

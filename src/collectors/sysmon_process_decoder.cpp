@@ -206,8 +206,8 @@ std::optional<telemetry::RawProcessEvent> SysmonProcessDecoder::decode_xml(
         }
         return std::nullopt;
     }
-    if (*event_id != 1) {
-        error_message = "The live Sysmon process decoder accepts only Event ID 1.";
+    if (*event_id != 1 && *event_id != 5) {
+        error_message = "The live Sysmon process decoder accepts only Event IDs 1 and 5.";
         return std::nullopt;
     }
 
@@ -215,7 +215,9 @@ std::optional<telemetry::RawProcessEvent> SysmonProcessDecoder::decode_xml(
     for (const auto* data = event_data->FirstChildElement("Data"); data != nullptr;
          data = data->NextSiblingElement("Data")) {
         if (const char* name = data->Attribute("Name")) {
-            fields.insert_or_assign(name, data->GetText() == nullptr ? "" : data->GetText());
+            if (!fields.emplace(name, data->GetText() == nullptr ? "" : data->GetText()).second) {
+                error_message = "Duplicate Sysmon named data field is ambiguous"; return std::nullopt;
+            }
         }
     }
 
@@ -278,6 +280,12 @@ std::optional<telemetry::RawProcessEvent> SysmonProcessDecoder::decode_xml(
     result.command_line = field(fields, "CommandLine");
     result.user_name = field(fields, "User");
     result.sha256 = extract_sha256(field(fields, "Hashes"));
+    if (*event_id == 5) {
+        result.terminated = true; result.termination_time = *timestamp;
+        result.process_start_time = {}; // EID 5 provides no native creation clock.
+        result.parent_pid.reset(); result.parent_process_guid.reset(); result.parent_executable.reset();
+        result.command_line.reset(); result.sha256.reset();
+    }
     return result;
 }
 

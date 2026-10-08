@@ -79,6 +79,35 @@ Json failure_fixtures() {
     result.push_back(factory.normalization_failure(raw, "oversized provider and unrenderable source date"));
     return result;
 }
+void native_field_scope_tests() {
+    auto event=process(); event.native_fields.emplace(); event.native_fields->event_id=1;
+    event.native_fields->event_version=3;
+    auto& field=event.native_fields->fields[0];
+    field.state=telemetry::EtwUIntFieldState::copied; field.value=UINT64_MAX;
+    field.in_type=10; field.reported_bytes=8; field.native_status=0;
+    const auto facts=pipeline::source_facts(telemetry::RawEvent{event});
+    require(facts["process"]["native_fields"]["fields"]["ProcessSequenceNumber"]["value"]=="18446744073709551615",
+        "native sequence carrier lost precision");
+    const auto refused=[&] {
+        try { (void)pipeline::source_facts(telemetry::RawEvent{event}); }
+        catch(const std::invalid_argument&) {return true;}
+        return false;
+    };
+    event.source.kind=telemetry::TelemetrySourceKind::sysmon;
+    require(refused(),"native fields accepted from another source");
+    event.source.kind=telemetry::TelemetrySourceKind::etw;
+    event.native_fields->event_id=2;
+    require(refused(),"native field operation scope mismatch accepted");
+    event.native_fields->event_id=1; field.native_status=5;
+    require(refused(),"failed native read advertised a copied value");
+    field.state=telemetry::EtwUIntFieldState::query_failed;
+    require(refused(),"refused native read retained a value");
+    field.value.reset();
+    const auto failed=pipeline::source_facts(telemetry::RawEvent{event});
+    require(failed["process"]["native_fields"]["fields"]["ProcessSequenceNumber"]["native_status"]=="5" &&
+        failed["process"]["native_fields"]["fields"]["ProcessSequenceNumber"]["value"].is_null(),
+        "native failure status/null evidence changed");
+}
 struct Scratch {
     fs::path root = fs::weakly_canonical(fs::temp_directory_path());
     fs::path path = root / ("officer-source-facts-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
@@ -90,6 +119,7 @@ struct Scratch {
 };
 int main(int argc, char** argv) {
     try {
+        native_field_scope_tests();
         const auto fixtures = failure_fixtures();
         if (argc == 2 && std::string{argv[1]} == "--emit-fixtures") { std::cout << fixtures.dump() << '\n'; return 0; }
         const auto& raw = fixtures[0]["data"]["source_facts"];

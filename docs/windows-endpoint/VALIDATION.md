@@ -1,5 +1,442 @@
 # Windows endpoint validation ledger
 
+Native memory-region implementation wave, 2026-10-09: bounded rotating held
+process metadata capture is integrated into the durable state worker. It emits
+native `VirtualQueryEx` region attributes without reading contents or changing
+targets, and publishes explicit process open/identity refusals plus partial
+coverage/freshness health. Fresh Debug and Release suites each contain 42
+tests. The fresh Release `officer-memory-inventory-tests` executes on Windows
+and verifies an owned held process, private RW and RX allocations, PID-zero open
+refusal and false content/injection/full-coverage claims. The component report
+is retained at
+`C:\Users\Acer\AppData\Local\Temp\panopticon-memory-component-2e892b4155574ea68fa8d0fd16133b99.json`.
+This is native host component evidence, not dedicated-guest endpoint runtime,
+durable-recovery, protected-target, performance/soak or OS-matrix qualification.
+R remains partial. See [memory regions](MEMORY_REGION_INVENTORY.md).
+
+Native USN checkpoint recovery follow-up, 2026-10-07: fresh Debug/Release
+builds each pass 41 tests; Release elapsed 19.25 s. The expanded elevated native
+component exits zero in owned guest directory
+`C:\ProgramData\PanopticonValidation\usn-cursor-fault-eb424ba8f25642c3aa134311433e9cc4`.
+Its tested executable and DLL were exported and SHA-256 matched to the host
+build. Evidence is preserved in
+`C:\Users\Acer\Documents\Panopticon-Windows-Validation\evidence\usn-cursor-fault-eb424ba8f25642c3aa134311433e9cc4`.
+The test closes the durable journal after stopping the source, creates a file
+while both are closed, reopens the exact checkpoint and verifies native replay.
+It also seeds isolated owned stores with a mismatched journal ID, an ahead
+cursor, a cursor before actual retained bounds and a malformed cursor. Real
+native queries produce the first three explicit durable gaps with replacement
+cursors derived from native bounds. The malformed cursor remains unchanged at
+revision one, with blind health and no accepted record. Native journal policy,
+ID and retention are never modified. `usn-cursor-verification-report.json`
+independently checks gap classification, native-buffer fidelity and Schema/Manager
+body preservation: 197 decoded rows checked, including two synthetic rows.
+Report original SHA-256:
+`23a359e87aa63cb66c26feadf78e996641dc5992181a9a20e802b5e5cef1b85d`.
+The launch observation timed out while UAC was pending; the same launched run
+was subsequently inspected and its completed transcript/exit-zero report
+exported. No duplicate launch occurred. The owned test process was absent at
+the subsequent process census. This follow-up does not rerun the endpoint
+runtime harness or qualify actual journal rotation/retention pressure, full
+service/process restart, disk-full, power loss or OS compatibility. Those gates
+remain open; the full capability matrix and DoD remain incomplete.
+
+Native USN filesystem wave, 2026-10-07: independent existing-journal readers,
+bounded V2/V3 decoding with complete original native buffers, atomic accepted
+record/cursor transactions, immutable refusal retries and per-volume committed
+cursor/health bindings are integrated. Fresh Debug and Release suites each pass
+41 tests; Release elapsed 14.89 s. Non-elevated host journal access returns
+Win32 5 and does not count as live verification. V2 layouts are synthetic-tested;
+the successful guest runtime returned V3 records with 128-bit native file IDs.
+
+Final elevated guest `run-20261006-173322`, package `build-20261007-060108`,
+passes all 23 component executables. Native component evidence verifies actual
+create/ADS/rename/delete reasons, independent held-file identity agreement,
+unchanged cursors during refused commits and replay of a mutation made while
+the source is stopped. That replay restarts the collector with the journal
+object open; it does not qualify a full service restart or native power loss.
+The independent endpoint runtime fixture also verifies create/ADS/rename/delete.
+Export `C:\Users\Acer\Documents\Panopticon-Windows-Validation\evidence\guest-usn-final-20261007`
+preserves 104 root files; encrypted spool stays in the guest with unchanged ACLs.
+`usn-verification-report.json` validates 1,061 original Schema 1.0 records,
+exact Manager body preservation, package hashes and byte-identical originals
+across two recovery reopens after abrupt owned endpoint exit. It independently
+checks native-buffer fidelity for six runtime batches containing 65 V3 rows,
+one explicit gap, 11 owned fixture rows and 23 committed cursor/health bindings.
+Three separate synthetic contract records are checked, not counted as live
+Windows evidence. Original NDJSON SHA-256:
+`6d7e97c872167d959cc61a12d929e88323e9ea8c1b3dc7dad9a13c91ef3ef1c3`.
+Consolidated thread revalidation covers 18 pages/1,105 rows/1,090 native exact
+references, 15 query/open refusals and 21 manifest/health bindings. This run
+did not request process lifecycle fixtures and adds no process-stop qualification.
+
+Earlier attempts remain preserved and excluded from successful qualification:
+guest `run-20261006-172209` exposed an incorrect test assumption equating native
+64-bit file indexes with V3 128-bit identities, and a PowerShell ADS fixture API
+failure. The test now queries both native identity forms independently; ADS uses
+the Windows PowerShell stream provider. Guest `run-20261006-172712` passed all
+23 components but runtime report serialization failed on a generic list; the
+final harness materializes an array explicitly. Their guest roots and selected
+host evidence remain available. Successful final launcher PID 2704 was confirmed
+absent. No foreign processes, ETW sessions, Linux work or VM configuration were
+reset or removed.
+
+H remains partial. Actor attribution, full paths, initial file/FIM baseline,
+content integrity, minifilter enforcement, volume hotplug/clone reconciliation,
+journal rotation/retention faults, hard native stop deadlines, byte fairness,
+spool feedback, sustained resource/chaos and OS/security qualification remain
+open. Full filesystem coverage and the all-domain Definition of Done are false.
+See [native USN fallback](USN_JOURNAL.md).
+
+Native thread state wave, 2026-10-07: independent bounded Toolhelp thread
+snapshot plus separate held-thread TID/creation/CPU/owner-PID/priority/cycle and
+point-in-time termination queries; versioned native thread identities require
+host/boot/held TID/nonzero creation FILETIME. Descriptor instance and owner
+process instance remain unresolved, undefined exit time stays null, and no
+start-address, continuous thread, handle or injection coverage is asserted.
+Durable begin/pages/manifests, immutable acceptance retry, exact query errors,
+shutdown state and record-bound six-minute freshness/blind transitions are
+integrated. Fresh final Debug and Release builds each pass all 40 tests; final
+Release suite elapsed 23.53 s. Owned native host tests cover actual self thread,
+missing boot, cancellation, rejected pages, total bounds and invalid limits.
+
+Dedicated guest `run-20261006-170030`, fresh package `build-20261007-052929`,
+passes all 22 component executables and the endpoint runtime/persistence capture
+harness. Export `C:\Users\Acer\Documents\Panopticon-Windows-Validation\evidence\guest-thread-wave-20261007`
+preserves 98 root files; encrypted guest spool stays in place with unchanged
+ACLs. `thread-inventory-report.json` validates 1,141 Schema 1.0 records and
+exact Manager body preservation, package hashes and byte-identical original
+journal recovery across two reopens after abrupt owned endpoint exit. Runtime
+thread capture has 17 ordered pages, 1,048 rows, 1,034 native exact references,
+14 OpenThread refusals with exact Win32 error 87 (cause not inferred), 14 query
+failures and 22 committed manifest/freshness health bindings. Snapshot traversal
+completed; inventory/continuous thread coverage and owner instances remain
+unqualified. Original NDJSON SHA-256:
+`6f8c59b69814be1eab9f06a688a1ef9f48d483fba087f470c39497a8a97c5427`.
+987 native Windows log records were retained. This run did not request the owned
+process-lifecycle fixture; its ProcessStopVerified and retained graph fixture
+flags are false, and it adds no lifecycle qualification beyond earlier evidence.
+Temporary persistence fixtures cleaned up and elevated launcher PID 5612 was
+confirmed absent at completion. Linux VM configuration/work remained untouched.
+Both guests stay running under latest user concurrency authorization. C remains
+partial, all-domain DoD remains unmet. See [thread state](THREAD_STATE.md).
+Native process scalar wave, 2026-10-07: nineteen selected UInt32/UInt64 source
+properties now retain template-scoped absence/refusal/native-read status and
+lossless decimal carriers, event ID/version and provider GUID. No sequence
+aliases or creator/parent instances are promoted. Fresh Debug/Release builds
+pass all 39 tests (25.82/25.41 s). Native TDH fixtures cover old stop, sequenced
+stop and birth templates, maximum unsigned carriers, truncation, source/operation
+scope, failure/null consistency and handoff ownership. A consolidated guest run
+passes all 21 component executables and recovers 1,640 unchanged originals
+validated by Schema 1.0, Manager body preservation and package hashes. Four
+archived live lifecycle records use birth version 4 and stop version 2. Their
+process sequences are retained, two parent sequences are retained on births,
+and the owned exact target's birth/stop sequences agree. Each stop has eleven
+copied scalars and eight template-absent fields. Exact target exit and durable
+birth/stop graph verification remain positive; parent edges remain unverified.
+Evidence:
+`C:\Users\Acer\Documents\Panopticon-Windows-Validation\evidence\guest-native-process-fields-20261007`
+(`native-process-fields-report.json`, `host-verification-report.json`, originals
+and independent synthetic fixtures). B/Y/AK remain partial. See
+[native process fields](NATIVE_PROCESS_FIELDS.md).
+
+Native guest SCM validation, 2026-10-07: the guarded manual LocalSystem fixture
+completes two start/stop iterations against one journal directory, verifies exact
+executable/account/PID binding, Stopped status and zero native/service-specific
+exit codes. Journal sizes are 25,579,520 and 49,094,656 bytes. Exported report:
+`C:\Users\Acer\Documents\Panopticon-Windows-Validation\evidence\service-wave-20261007/service-report.json`.
+LocalSystem content recovery, fault/stop deadline, reboot, installer/update/signing
+and OS/security matrix qualification remain open. AJ remains partial.
+
+First consolidated dedicated Windows guest validation, 2026-10-07:
+Windows 11 Enterprise LTSC 26100.1742, four vCPUs/4 GiB, concurrent Linux guest
+unchanged. Corrected elevated harness runs all 21 selected component executables
+with native exit code zero and no timeout. Its owned runtime, abrupt exit and
+two readbacks yield 1,164 immutable Schema 1.0 records; Manager native-body
+preservation and installed package hashes verify on exported evidence.
+There are 1,012 native log records across Security (193), System (193), Defender
+Operational (194), WMI Activity (199), PowerShell Operational (98) and classic
+PowerShell (135). Task/DNS enabled-channel semantics remain unverified.
+Nine real ETW births and nine stops survive in the independent lifecycle archive.
+The owned ping fixture's exact PID/creation FILETIME/exit code binds one live
+stop in delivery and archive, and its durable graph contains both birth and stop,
+zero index backlog, null liveness and no parent edge. This proves retained exact
+lifecycle reconstruction; positive parent ancestry/creator/complete continuity
+remain unverified. Disabled hidden task and inert Run-value fixtures are captured
+and cleaned up. Nine native identity/persistence/software captures assemble with
+reported counts; one LSA query refusal remains explicit. Device Guard has one
+durable provider capture and 22 exact health bindings, without effective-protection
+claims. All domains remain partial and no fleet/OS-matrix/soak qualification is
+claimed. Evidence directory:
+`C:\Users\Acer\Documents\Panopticon-Windows-Validation\evidence\guest-wave-corrected-20261007`
+(`host-verification-report.json`, `native-surface-summary.json`, runtime/lifecycle/
+Device Guard reports and exact originals). Repeatable host verifier:
+`tools/verify_windows_guest_evidence.py`. Initial null-exit/task-settings harness
+failure is preserved separately; it is not counted as a passing run.
+
+Durable process graph wave, 2026-10-07: schema 6 commits an exact identity/parent
+index with encrypted lifecycle originals, delivery acceptance and source cursors.
+Bounded ancestry queries rederive evidence under one read transaction; reported
+parentage, unresolved PID-only claims and null liveness remain explicit. Durable
+index counters and bounded schema-5 archive backfill expose backlog. Fresh Debug/
+Release builds pass all 39 tests (25.80/22.28 s), covering restart/ACK independence,
+actual migration/backfill, source separation, PID reuse, forged references,
+conflicts, cycles and query bounds. Positive ancestry is fixture evidence only.
+An owned 20-second host runtime recovers 7,945 unchanged Schema 1.0 originals
+with Manager body preservation and 23 graph health records. Host ETW is denied;
+there are zero archived lifecycle records and the absent-identity query correctly
+returns no evidence/edges. Live native ancestry and guest qualification remain
+unverified. See [process graph](PROCESS_GRAPH.md) and
+`demo-run/process-graph/persistence-runtime-715aca2c54b841589d0aaef8103f7e53/process-graph-report.json`.
+B/AG remain partial. Latest hashed Release package:
+`staging/build-20261007-043554`.
+
+Device Guard/VBS provider wave, 2026-10-07: ten selected local Win32_DeviceGuard
+properties are captured with native HRESULT/type/carrier provenance, bounded
+SAFEARRAY copying, immutable journal retry and independent capture freshness.
+Fresh Debug/Release builds pass all 38 CTest entries (24.98/22.07 s). Native host
+component/runtime queries each return ten readable properties. An owned
+20-second Release runtime and abrupt exit recover 11,643 originals with
+byte-identical repeated readback, Schema 1.0 validity and Manager body preservation.
+One durable Device Guard capture and 22 committed health bindings match the exact
+body/record and capture/commit ordering. Effective enforcement, policy authority,
+attestation, provider deadlines/faults and cross-version/guest qualification remain
+unverified. X/Y remain partial. See [Device Guard evidence](DEVICE_GUARD.md) and
+`demo-run/device-guard/persistence-runtime-0caed55b684c49ef805d39476ed27a2f/device-guard-report.json`.
+
+Durable process history wave, 2026-10-07: schema 5 archives exact encrypted
+canonical-tagged process birth/stop originals atomically with delivery acceptance
+and source checkpoint updates. ACK retirement cannot erase local lifecycle
+evidence. Shared retention quota charges both copies before ACK and the archive
+afterward. Bounded streaming inspection and durable count/byte health are added.
+This is lifecycle evidence retention, not a complete or trusted process graph.
+Fresh Debug/Release builds pass all 37 CTest entries (23.06/18.44 s), including
+schema-4 migration, rollback on shared quota/cursor refusal, retry after ACK,
+encrypted reopen and actual abrupt child exit after lifecycle retirement.
+An owned 20-second Release runtime recovers 13,762 immutable records; all pass
+Schema 1.0 and Manager body preservation. Twenty-five archive health records
+report zero lifecycle rows/degraded scope; streaming archive readback is empty.
+Host ETW remains access-denied. Evidence:
+`demo-run/history-runtime/persistence-runtime-4f0f684e7b794609ad5997de3cbfe778/report.json`
+and `history-report.json`. Positive archive lifecycle contents are component
+fixtures, not live privileged source/guest evidence. Guest harness archive
+readbacks and exact identity verification are prepared; execution remains pending.
+See [process history](PROCESS_HISTORY.md). B/AG remain partial.
+
+
+VM access/recovery wave, 2026-10-07: the dedicated four-vCPU/4096 MiB guest
+still has a black framebuffer and Guest Additions unavailable. Two 30-second
+storage samples are identical; Ctrl+Alt+Delete has no visible effect and a normal
+ACPI shutdown request did not stop the guest. No bug check is reported. A live
+diagnostic snapshot completed successfully (UUID
+`019f78a5-96dd-4e03-988c-b2962f65c084`) before one recovery reset; the guest
+returned to EFI Windows boot-manager loading and a boot splash. This preserves
+the original installation stall. Post-reset disk reads increased from 101,311,488
+to 285,601,792 bytes and writes from 13,312 to 48,895,488 bytes over 30 seconds,
+with a boot spinner visible. This verifies boot activity, not successful
+installation/login or endpoint execution. Those remain unverified. Evidence:
+`C:\Users\Acer\Documents\Panopticon-Windows-Validation\diagnostics\run-dd4140dffe9842269886a1b78947447f\report.json`.
+The subsequent framebuffer reached Windows setup's `Installing 0%` screen,
+confirming installation resumed beyond the black screen; completion is pending.
+Post-reset evidence is in `diagnostics\run-1fa98df51f82418eb1ce1de1572df280`
+under the same validation root.
+The new Diagnose action retains scoped state/storage/memory/screenshot evidence,
+excludes secrets and suspect debugger clock queries, and performs no recovery
+mutation. Guest validation now guards guest/elevation before mutation, defaults
+to native ETW and optionally verifies a live owned stop using exact PID plus
+creation FILETIME/exit code, with immutable recovery and retained failure reports.
+Both scripts pass PowerShell AST parsing; the guest script rejects this host
+before package access. These are tooling checks, **not guest validation**. New
+Release package `build-20261007-011626` retains existing binaries with updated
+scripts and hashes. See [VM workflow](WINDOWS_VM.md). No capability is promoted.
+
+Process stop wave, 2026-10-07: native ETW ID 2 and Sysmon ID 5 decode/dispatch
+paths now emit dedicated canonical stop observations, independent stop clocks,
+exact native/source-scoped identity or explicit null, and source facts. Resident
+tombstones change after durable acceptance; late duplicate stops cannot move
+the earliest retained stop or affect a reused PID instance. Source availability
+projects scoped degraded/blind stop health. Stops bypass legacy birth normalization
+and creation-cache admission. TDH metadata/property copy and name/array bounds
+are enforced. Debug build and all 37 CTest entries pass (26.35 s).
+Tests exercise synthetic payloads using actual native TDH ID 2 version 0
+metadata, truncated payloads, Sysmon XML/duplicate fields, clock/identity/PID reuse
+and legacy-normalizer refusal. Release build and all 37 CTest entries also pass
+(21.83 s). Three canonical stop fixtures pass Schema 1.0 and
+Manager body preservation. Evidence:
+`demo-run/process-lifecycle/1d342c71e5914394ac80e2bba006b051/report.json`.
+This is component/native-ABI evidence, not live privileged ETW or Sysmon
+termination capture. Guest/live-source configuration,
+complete lifecycle/ancestry and durable graph qualification remain open.
+See [process lifecycle](PROCESS_LIFECYCLE.md). B remains partial.
+An owned 20-second `--source etw` host runtime followed by abrupt exit recovers
+3,708 records with identical complete readbacks. All originals pass Schema 1.0
+and Manager native-data preservation. ETW StartTraceW explicitly reports access
+denied; zero stop records are retained and scoped stop coverage is blind. Other
+native state/log capture continues. This verifies refusal/coverage behavior,
+not live termination telemetry. Evidence:
+`demo-run/lifecycle-runtime/persistence-runtime-4b32a09b80b34af784c549bd1a153f4d/report.json`
+and its `stop-source-report.json`. The new Release package includes the lifecycle
+test binary; guest execution remains pending.
+
+SCM host wave, 2026-10-07: own-process `--service` dispatch, explicit status
+transitions, short STOP/SHUTDOWN handlers and owned/duplicated stop events are
+implemented. Absolute enabled storage/credential/action-root paths are required.
+Checkpoints reflect actual startup/join/drain progress, never a timer that masks
+a stuck native call. Runtime host mode and incomplete service scope appear in
+durable health. All 36 CTest entries pass in fresh Debug/Release builds
+(24.22/20.38 s after final status-error propagation refinement).
+The status sink tests cover stop/readiness races, duplicate controls,
+checkpoint semantics, failures and exactly-once terminal publication.
+
+Native console invocation of `--service` correctly returns SCM error 1063 rather
+than starting a console collector; `--service --help` succeeds. Evidence:
+`demo-run/service-host/91dd5ac42c234be68c51043a0975ea92/report.json`.
+This verifies dispatch rejection/CLI behavior, not an actual SCM start-stop.
+A dedicated-guest-only LocalSystem start/stop/restart fixture is prepared,
+checks package/executable/account/PID binding and preserves a still-active
+service on observation timeout. Guest installation remains unverified, so the
+fixture has not run. Same-account DPAPI content recovery, hard native deadlines,
+shutdown/reboot/fault/security qualification, installer/signing/update and broker
+separation remain open. See [service host](SERVICE_HOST.md). AJ remains partial.
+An owned console runtime after the service dispatch refactor recovers 2,992
+records following abrupt exit; complete stopped-spool readbacks are identical.
+All records pass Schema 1.0 and preserve native data through Manager, with 25
+health records explicitly identifying console mode and incomplete service
+qualification. Evidence:
+`demo-run/service-console/persistence-runtime-935850bf64a64695aad4694c1dfa5a29/report.json`
+and its `manager-body-preservation.json`. This is a console regression, not SCM
+or orderly service shutdown proof.
+
+Native software registration wave, 2026-10-07: independent MSI and selected
+uninstall-registry workers emit durable begin/pages/manifests and source-bound
+freshness. Fresh Debug/Release builds pass all 35 CTest entries (24.65/21.08 s).
+Owned HKCU fixture checks include malformed UTF-16 metadata, no actor/file proof,
+bounded pages, refusal and cancellation. Independent MSI failure and stale
+software-domain freshness regressions pass. A first runtime check exposed false
+copy-refusal accounting from untouched output lengths on failed native calls;
+fixed it, added regressions and reran both builds/runtimes. Earlier evidence is
+retained but superseded for that counter.
+
+Corrected owned 20-second Debug/Release runtimes followed by abrupt exit recover
+4,169/13,386 records. Software capture retains 213 MSI registrations plus two
+all-user-context ERROR_ACCESS_DENIED rows, and 389 uninstall registrations plus
+six absent-partition rows. Five MSI property getters report ERROR_UNKNOWN_PROPERTY
+(1608). MSI enumeration is incomplete; registry indexed enumeration completes
+without proving atomic/full software coverage. Four fixture failures are the
+owned malformed string appearing in retained registry views/hive observations.
+Both sources stay degraded with zero copy refusals. Capture sets assemble,
+accepted manifests match committed fresh health, and second readbacks are
+byte-identical. All runtime originals and 158 component fixtures per build pass
+Schema 1.0 and Manager native-data preservation. Evidence:
+`demo-run/software-fixed/persistence-runtime-93f600e00b6741e99f0c6e60a3e29fea/report.json`
+and `demo-run/software-release/persistence-runtime-017b8ce665364f2d963780ab423b3a43/report.json`,
+with separate `manager-body-preservation.json` reports. See
+[software state](SOFTWARE_STATE.md). Guest tests remain pending; the new Release
+package and nine-source guest checks are prepared. No VM/soak/complete Z claim.
+
+Native account/group/logon/WTS wave, 2026-10-07: four independent bounded-page
+workers now emit durable captures, immutable admission retries and explicit
+query/copy/budget/cancellation health. All 34 CTest entries pass in fresh Debug
+and Release builds (23.67/23.32 s). Native host queries retain seven account,
+50 group/member/summary, 26 logon and two WTS rows. Twenty-four LSA queries return
+NTSTATUS 0xC0000022; denied rows remain visible. All identity sources remain
+degraded; enumeration completion does not prove a complete identity census.
+Owned 20-second Debug/Release runtimes followed by abrupt exit recover
+4,238/13,200 records. All seven identity/persistence capture sets assemble;
+accepted manifests match committed fresh health, and second readbacks are
+byte-identical. All originals and 88 component fixtures per build pass endpoint
+Schema 1.0 and Manager native-data preservation. Evidence:
+`demo-run/identity/persistence-runtime-263852cfe0ac46899062d94bd51ed990/report.json`
+and `demo-run/identity-release/persistence-runtime-951f0afa1feb4ba595720ebccac88cce/report.json`.
+See [identity state](IDENTITY_STATE.md) for semantics and remaining gates.
+The guest script now validates all seven sources and a fresh Release package
+was staged. The four-CPU/4-GiB guest is running but has no ready Guest Additions
+channel; no guest execution or VM qualification is claimed.
+Additional focused Debug/Release freshness regressions pass: LSA refusal cannot
+erase independent account/group/WTS evidence; stale identity captures make D/U
+blind; local account evidence cannot invent remote-session coverage. Only the
+test target changed after the full 34-test runs; the fresh test binary was
+included in a new staged package. Manager preservation evidence is retained as
+`manager-body-preservation.json` alongside each runtime report.
+
+Native persistence wave, 2026-10-07: independent Task Scheduler definition/getter/
+SDDL, permanent WMI subscription and selected startup registry/folder workers
+now emit durable begin/pages/ordered manifests with immutable refusal retries,
+explicit query/copy/budget/cancellation accounting and record-bound freshness.
+Fresh Debug/Release builds pass all 33 CTest entries. Native host checks retain
+371 task/folder, nine WMI object/scan and 92 startup rows. Four loaded
+LocalService/NetworkService Run-key access refusals remain explicit; startup
+enumeration is incomplete. An owned 20-second Debug runtime and abrupt exit
+recover 5,851 records. All three capture sets assemble exactly; health references
+accepted manifests, and second readback is identical. All 37 component and 5,851
+runtime records pass shared Schema 1.0 and Manager native-body preservation.
+Evidence: `demo-run/persistence/persistence-runtime-7b5ab233966c4bbea86b45b74dd60f44/report.json`.
+Guest installation is still running; guest execution/qualification is pending.
+See [persistence](PERSISTENCE_STATE.md). No broad Detection scenario was run.
+
+The fresh Release 20-second run retained 10,071 records. The initial recovery
+harness correctly refused its 10,000-record aggregate bound; this was a harness
+limit, not journal loss. Added bounded-page NDJSON streaming readback and verified
+the same stopped spool without restarting the endpoint. All 10,071 originals
+pass Schema 1.0 and Manager native-body preservation; all three capture sets and
+fresh health match, and two complete readbacks have identical SHA-256
+`9dddf017b4060273b83e761ca85fbfea2d1d110c67a92db80d4cced1cadd0b30`.
+Evidence: `demo-run/persistence-release/persistence-runtime-57dfe38ec14e4abcb824cd9f48a19987/report.json`.
+The final Debug/Release builds and all 33 CTest entries pass (22.12/13.60 s). Short-run record
+counts are functional recovery evidence, not throughput/soak qualification.
+
+Independent Windows log wave, 2026-10-06: MSVC x64 Debug build and all 32
+native CTest entries pass (23.82 s). Added decoder/CAS/encryption/quota/ACK/reopen
+checks, real owned Application EvtSubscribe/EvtNext refusal retries and strict
+bookmark restart, plus abrupt owned process exit after combined record/cursor
+commit. The Application test retains exactly two owned tokens across collector
+restart without re-consuming the first accepted event. Full channel/event,
+log-generation continuity, attribution and resource qualification are not implied.
+
+Actual owned agent runtime for 12 s, then abrupt exit and immutable spool reopen,
+recovers 566 canonical records: 483 native XML records from five channels
+(classic PowerShell 97, System 97, PowerShell Operational 97, WMI Activity 97,
+Defender Operational 95), with 14 per-channel health records. All recovered
+records and ten C++ envelope fixtures pass canonical JSON Schema 1.0.
+Security accurately reports ERROR_ACCESS_DENIED (5); TaskScheduler and DNS Client
+Operational accurately report disabled. Backlog replay remains visible and
+continuity unverified; writer PID is never promoted to subject identity. Evidence:
+`demo-run/winevt/winevt-runtime-f2d6628f871f4518afbf4b1d18df0ff8/report.json`.
+Modern 36-property Defender contract preservation also passes the pending Manager
+check (1 passed, 29 deselected, 4.09 s). No broad Detection Engine scenario was run.
+See [Windows logs](WINDOWS_EVENT_LOG.md) for scope and remaining gates.
+
+A fresh Release build and all 32 native CTest entries also pass (22.41 s).
+The separate 12 s Release executable run recovers 2,933 canonical records,
+including 2,819 native log records across the same five channels, with 23
+per-channel health records. All recovered originals and ten fixtures pass
+canonical JSON Schema, and second stopped-spool readback is identical. Evidence:
+`demo-run/winevt-release/winevt-runtime-504361ddd25e403a9676a13048972829/report.json`.
+These short runs are functional evidence, not throughput budgets or soak proof.
+Final rebuild after collection-boot metadata and stopped-worker health hardening
+passes all 32 native entries in both Debug and Release (final Release 17.64 s).
+The final ten C++ log fixtures also pass the common Manager EndpointRecord model
+without schema or Detection changes. The current Release binaries and valid
+Microsoft VC runtime were packaged with SHA-256 manifest for the dedicated guest
+under `C:\Users\Acer\Documents\Panopticon-Windows-Validation\staging\build-20261006-233721`.
+Guest installation/execution remains pending; packaging is not deployment proof.
+
+Dedicated VirtualBox Windows 11 validation VM was created without modifying
+the existing Linux or Windows analysis VMs. Its 4 GiB/four-vCPU/80 GiB dynamic
+disk/EFI/TPM/NAT/read-only staging configuration is verified. Official Microsoft
+LTSC evaluation image download completed (5,112,850,432 bytes), its local SHA-256
+and official HTTPS provenance were recorded, and protected unattended installation
+was prepared. Following explicit user authorization to run concurrently under
+memory pressure, the owned guest was started headless with four vCPUs and
+4096 MiB RAM. Windows 11 installation was visually observed at 11 percent;
+Guest Additions, guest tests and qualified baseline snapshot remain pending.
+Download and guest workflow are tracked in [Windows VM](WINDOWS_VM.md).
+The default 5 GiB startup gate remains, with an explicit override. Host page-file
+capacity is not proof of guest performance. Prepared scripts are not VM runtime evidence.
+PowerShell helper parsing and the refusing resource gate were exercised. The
+Microsoft VC runtime installer downloads successfully and its publisher
+Authenticode signature is valid. No A–AN domain is complete.
+
 Defender independent-state increment: MSVC x64 build and all 31 native CTest
 entries pass (24.75 s). Native tests preserve Boolean false/true versus invalid
 raw values, uint32 high bits and age sentinel, uint8, CIM mismatch, null/BYREF/

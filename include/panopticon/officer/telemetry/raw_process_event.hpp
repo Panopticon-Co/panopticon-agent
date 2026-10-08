@@ -3,12 +3,38 @@
 #include "panopticon/officer/telemetry/raw_event_common.hpp"
 
 #include <chrono>
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <variant>
 
 namespace panopticon::officer::telemetry {
+
+enum class EtwUIntFieldState { copied, absent, type_refused, size_refused, query_failed };
+struct EtwUIntField {
+    EtwUIntFieldState state = EtwUIntFieldState::absent;
+    std::optional<std::uint16_t> in_type;
+    std::optional<std::uint32_t> native_status;
+    std::optional<std::uint32_t> reported_bytes;
+    std::optional<std::uint64_t> value;
+    bool operator==(const EtwUIntField&) const = default;
+};
+// Fixed selected scalar facts from the source template, not live PID queries.
+// Numeric enum/flag values remain uninterpreted; sequence values are not GUIDs.
+struct EtwProcessNativeFields {
+    static constexpr std::array<std::string_view, 19> names{
+        "ProcessSequenceNumber", "ParentProcessSequenceNumber", "SessionID", "Flags",
+        "ProcessTokenElevationType", "ProcessTokenIsElevated", "ImageChecksum", "TimeDateStamp",
+        "SecurityMitigations", "TokenElevationType", "HandleCount", "CommitCharge", "CommitPeak",
+        "CPUCycleCount", "ReadOperationCount", "WriteOperationCount", "ReadTransferKiloBytes",
+        "WriteTransferKiloBytes", "HardFaultCount"};
+    std::uint16_t event_id = 0;
+    std::uint8_t event_version = 0;
+    std::array<EtwUIntField, names.size()> fields;
+    bool operator==(const EtwProcessNativeFields&) const = default;
+};
 
 // A source adapter publishes this structure. It contains observed facts only;
 // it does not contain JSON, transport, storage, or detection concerns.
@@ -35,6 +61,12 @@ struct RawProcessEvent {
     std::optional<std::string> user_sid;
     std::optional<std::string> user_name;
     std::optional<std::string> sha256;
+    // Stops retain their own clock; never reinterpret exit time as creation.
+    bool terminated = false;
+    std::optional<UtcTimestamp> termination_time;
+    std::optional<std::uint64_t> termination_time_ticks;
+    std::optional<std::uint32_t> exit_code;
+    std::optional<EtwProcessNativeFields> native_fields;
 
     bool operator==(const RawProcessEvent&) const = default;
 };

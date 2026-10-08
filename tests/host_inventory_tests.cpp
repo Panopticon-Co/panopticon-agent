@@ -13,27 +13,39 @@ using Json = nlohmann::json;
 void require(bool value, const char* message) { if (!value) throw std::runtime_error(message); }
 int main(int argc, char** argv) {
     try {
-        if (argc == 3 && std::string{argv[1]} == "--read-spool") {
+        if (argc == 3 && (std::string{argv[1]} == "--read-spool" || std::string{argv[1]} == "--read-spool-lines" || std::string{argv[1]} == "--read-process-history-lines")) {
+            const auto history = std::string{argv[1]} == "--read-process-history-lines";
+            const auto lines = history || std::string{argv[1]} == "--read-spool-lines";
             const std::filesystem::path path{argv[2]};
             require(std::filesystem::is_directory(path), "read probe requires an existing owned spool");
             require(std::filesystem::is_regular_file(path / "journal.db"), "read probe must not initialize an unrelated or missing journal");
             delivery::DurableJournal journal{{path}};
-            const auto pending = journal.stats().pending_events;
+            const auto stats = journal.stats();
+            const auto pending = history ? stats.process_history_records : stats.pending_events;
             auto records = Json::array();
-            std::uint64_t cursor = 0; std::size_t bytes = 0;
+            std::uint64_t cursor = 0, recovered_count = 0; std::size_t bytes = 0;
             for (;;) {
-                const auto page = journal.inspect_pending(cursor, 1000, 8u * 1024 * 1024);
+                const auto page = history ? journal.inspect_process_history(cursor, 1000, 8u * 1024 * 1024) :
+                    journal.inspect_pending(cursor, 1000, 8u * 1024 * 1024);
                 if (page.empty()) break;
                 for (const auto& entry : page) {
                     require(entry.local_sequence > cursor, "inspection cursor must advance");
-                    require(records.size() < 10000 && entry.original.body.size() <= 64u * 1024 * 1024 - bytes,
-                        "owned read probe aggregate limit exceeded; never present partial recovery as journal loss");
-                    cursor = entry.local_sequence; bytes += entry.original.body.size();
-                    records.push_back(Json::parse(entry.original.body));
+                    cursor = entry.local_sequence; ++recovered_count;
+                    if (lines) {
+                        // Bounded inspect pages and one parsed row at a time;
+                        // never accumulate an unbounded recovery JSON array.
+                        (void)Json::parse(entry.original.body);
+                        std::cout << entry.original.body << '\n';
+                        require(static_cast<bool>(std::cout), "owned streaming read probe output failed");
+                    } else {
+                        require(records.size() < 10000 && entry.original.body.size() <= 64u * 1024 * 1024 - bytes,
+                            "owned read probe aggregate limit exceeded; never present partial recovery as journal loss");
+                        bytes += entry.original.body.size(); records.push_back(Json::parse(entry.original.body));
+                    }
                 }
             }
-            require(records.size() == pending, "owned stopped journal inspection must recover all pending records");
-            std::cout << records.dump() << '\n';
+            require(recovered_count == pending, "owned stopped journal inspection must recover all pending records");
+            if (!lines) std::cout << records.dump() << '\n';
             return 0;
         }
         const auto original_error_mode = GetThreadErrorMode();

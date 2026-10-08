@@ -11,15 +11,21 @@ namespace health = panopticon::officer::health;
 void require(bool ok, const char* text) { if (!ok) throw std::runtime_error(text); }
 Json sample() {
     Json result{{"capabilities", Json::array()}};
-    for (const auto* key : {"host_inventory", "process_inventory", "service_inventory", "loaded_driver_inventory",
-        "socket_inventory", "route_inventory", "ip_interface_inventory", "firewall_profile_state", "firewall_rule_inventory", "security_center_state", "defender_status"})
+    for (const auto* key : {"host_inventory", "process_inventory", "thread_inventory", "memory_region_inventory", "service_inventory", "loaded_driver_inventory",
+        "socket_inventory", "route_inventory", "ip_interface_inventory", "firewall_profile_state", "firewall_rule_inventory", "security_center_state", "defender_status",
+        "scheduled_task_inventory", "wmi_subscription_inventory", "startup_inventory",
+        "account_inventory", "local_group_inventory", "logon_session_inventory", "terminal_session_inventory",
+        "msi_product_inventory", "uninstall_registry_inventory"})
         result[key] = {{"state", "degraded"}, {"last_committed_record_id", "record-1"},
             {"last_committed_capture_started_uptime_ms", "100"}, {"last_committed_uptime_ms", "200"},
             {"collection_started_uptime_ms", "360100"}, {"collection_in_progress", true},
             {"last_committed_query_status", {{"state", "healthy"}, {"native_error_code", "0"}}}};
-    for (const auto* id : {"A.host", "state.process_inventory", "state.service_security_descriptor",
+    for (const auto* id : {"A.host", "state.process_inventory", "state.thread_inventory", "state.memory_region_inventory", "C.thread_handle", "state.service_security_descriptor",
         "state.loaded_driver_inventory", "state.socket_table.tcp4", "state.route_table.ipv4",
-        "state.ip_interface_table.ipv6", "state.firewall_profiles", "state.firewall_rule_inventory", "state.security_center.antivirus", "state.defender_status", "B.process"})
+        "state.ip_interface_table.ipv6", "state.firewall_profiles", "state.firewall_rule_inventory", "state.security_center.antivirus", "state.defender_status",
+        "state.scheduled_task_inventory", "state.wmi_subscription_inventory", "state.startup_inventory",
+        "state.account_inventory", "state.local_group_inventory", "state.logon_session_inventory", "state.terminal_session_inventory",
+        "state.msi_product_inventory", "state.uninstall_registry_inventory", "B.process"})
         result["capabilities"].push_back({{"id", id}, {"state", "healthy"}, {"reason", "native query"}});
     return result;
 }
@@ -122,6 +128,58 @@ Json journal_retry_cases(const Json& fresh, const Json& stale, const Json& recov
 }
 int main(int argc, char** argv) {
     try {
+        auto software = sample();
+        software["capabilities"].push_back({{"id", "Z.software"}, {"state", "unavailable"}});
+        software["msi_product_inventory"]["state"] = "unavailable";
+        health::apply_state_capture_freshness(software, 360100);
+        require(software["capabilities"].back()["state"] == "degraded", "MSI refusal erased registry evidence");
+        software = sample();
+        software["capabilities"].push_back({{"id", "Z.software"}, {"state", "degraded"}});
+        health::apply_state_capture_freshness(software, 360101);
+        require(software["capabilities"].back()["state"] == "blind", "stale software census remained current");
+        auto identity = sample();
+        for (const auto* id : {"D.user_session", "U.remote_access"})
+            identity["capabilities"].push_back({{"id", id}, {"state", "unavailable"}});
+        identity["logon_session_inventory"]["state"] = "unavailable";
+        health::apply_state_capture_freshness(identity, 360100);
+        require(identity["capabilities"].back()["state"] == "degraded" &&
+            identity["capabilities"][identity["capabilities"].size()-2]["state"] == "degraded",
+            "LSA refusal erased independent account/group/WTS evidence");
+        identity = sample();
+        for (const auto* id : {"D.user_session", "U.remote_access"})
+            identity["capabilities"].push_back({{"id", id}, {"state", "degraded"}});
+        health::apply_state_capture_freshness(identity, 360101);
+        require(identity["capabilities"].back()["state"] == "blind" &&
+            identity["capabilities"][identity["capabilities"].size()-2]["state"] == "blind",
+            "stale identity captures remained current user or remote-session coverage");
+        identity = sample();
+        for (const auto* id : {"D.user_session", "U.remote_access"})
+            identity["capabilities"].push_back({{"id", id}, {"state", "unavailable"}});
+        identity["logon_session_inventory"]["state"] = "unavailable";
+        identity["terminal_session_inventory"]["state"] = "unavailable";
+        health::apply_state_capture_freshness(identity, 360100);
+        require(identity["capabilities"].back()["state"] == "unavailable" &&
+            identity["capabilities"][identity["capabilities"].size()-2]["state"] == "degraded",
+            "local account evidence invented remote-session coverage");
+        auto persistence = sample();
+        for (const auto* id : {"J.persistence", "L.scheduled_task", "M.wmi"})
+            persistence["capabilities"].push_back({{"id", id}, {"state", "unavailable"}});
+        persistence["scheduled_task_inventory"]["state"] = "unavailable";
+        health::apply_state_capture_freshness(persistence, 360100);
+        require(persistence["capabilities"].back()["state"] == "degraded" &&
+            persistence["capabilities"][persistence["capabilities"].size()-2]["state"] == "unavailable" &&
+            persistence["capabilities"][persistence["capabilities"].size()-3]["state"] == "degraded",
+            "independent source failure erased persistence evidence or invented task coverage");
+        persistence = sample();
+        persistence["capabilities"].push_back({{"id", "L.scheduled_task"}, {"state", "degraded"}});
+        health::apply_state_capture_freshness(persistence, 360101);
+        require(persistence["capabilities"].back()["state"] == "blind", "stale task inventory kept domain eligible");
+        persistence = sample();
+        persistence["capabilities"].push_back({{"id", "L.scheduled_task"}, {"state", "degraded"}});
+        persistence["windows_event_log"] = {{"channels", Json::array({{{"channel", "Microsoft-Windows-TaskScheduler/Operational"}, {"state", "degraded"}}})}};
+        health::apply_state_capture_freshness(persistence, 360101);
+        require(persistence["capabilities"].back()["state"] == "degraded" && persistence["scheduled_task_inventory"]["state"] == "blind",
+            "active native task log did not preserve scoped partial coverage alongside stale inventory");
         auto posture = sample();
         posture["capabilities"].push_back({{"id", "Q.security_product"}, {"state", "unavailable"}});
         posture["security_center_state"]["state"] = "unsupported";

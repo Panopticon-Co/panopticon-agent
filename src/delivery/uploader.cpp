@@ -49,6 +49,18 @@ DeliveryHealth Uploader::health() const {
     std::scoped_lock lock{mutex_};
     return health_;
 }
+bool Uploader::enqueue_checkpointed(const std::string& line, const std::string& source,
+    const std::string& checkpoint, std::uint64_t expected) {
+    std::scoped_lock lock{mutex_};
+    if (stop_requested_.load()) return false;
+    try {
+        journal_.append_checkpointed(line, source, checkpoint, expected);
+        health_.durability_state = "healthy"; wake_ = true; cv_.notify_one(); return true;
+    } catch (const std::exception& error) {
+        ++health_.commit_failures; health_.durability_state = "degraded"; health_.last_error = error.what();
+        return false; // Never synchronously print from this source's commit path.
+    }
+}
 void Uploader::set_bearer_token(const std::string& agent_id, std::string token) {
     std::scoped_lock lock{mutex_};
     if (agent_id != agent_id_ || token.empty() || token.size() > 512) throw std::invalid_argument("delivery credential identity mismatch");

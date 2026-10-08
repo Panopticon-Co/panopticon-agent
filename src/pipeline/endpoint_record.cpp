@@ -96,13 +96,57 @@ Json EndpointRecordFactory::observation(const telemetry::RawEvent& raw, const te
         return envelope("observation", normalized.event.category, time, std::move(provenance), reference.json(), std::move(data));
     }, raw);
 }
+Json EndpointRecordFactory::process_stop(const telemetry::RawProcessEvent& event) {
+    if (!event.terminated || !event.termination_time) throw std::invalid_argument("process stop lacks its termination clock");
+    const auto kind = observed_source_kind_name(event.source.kind);
+    const auto scope = kind + ":" + event.source.provider + ":" + event.source.channel.value_or("");
+    if (event.source.provider.empty() || event.source.provider.size() > 512 || !valid_utf8(scope) || scope.size() > 1024 ||
+        (event.process_guid && (event.process_guid->empty() || event.process_guid->size() > 256 || !valid_utf8(*event.process_guid))))
+        throw std::invalid_argument("invalid process stop provenance");
+    const auto reference = processes_.observe(event.pid, event.start_time_ticks, event.process_guid, scope);
+    Json data{{"process", {{"pid", event.pid}, {"entity_id", nullable(reference.entity_id)},
+        {"start_time_ticks", event.start_time_ticks ? Json(std::to_string(*event.start_time_ticks)) : Json(nullptr)},
+        {"parent", {{"entity_id", nullptr}}}}}, {"source_facts", source_facts(telemetry::RawEvent{event})},
+        {"enrichment", Json::object()}, {"lifecycle", {{"operation", "stop"}, {"identity", reference.json()},
+        {"exit_code", event.exit_code ? Json(std::to_string(*event.exit_code)) : Json(nullptr)},
+        {"termination_time_ticks", event.termination_time_ticks ? Json(std::to_string(*event.termination_time_ticks)) : Json(nullptr)},
+        {"creation_observed", false}, {"ancestry", "not inferred from a stop"}, {"continuity", "unverified"}}}};
+    return envelope("observation", "process_stop", *event.termination_time,
+        {{"kind", kind}, {"provider", event.source.provider}, {"channel", nullable(event.source.channel)},
+        {"native_record_id", event.source.record_id ? Json(std::to_string(*event.source.record_id)) : Json(nullptr)},
+        {"native_observation_id", nullptr}, {"continuity", "unverified"}}, reference.json(), std::move(data));
+}
+void EndpointRecordFactory::accepted_process_stop(const telemetry::RawProcessEvent& event) {
+    if (!event.terminated || !event.termination_time) throw std::invalid_argument("invalid accepted stop");
+    const auto scope = observed_source_kind_name(event.source.kind) + ":" + event.source.provider + ":" + event.source.channel.value_or("");
+    processes_.terminate(processes_.observe(event.pid, event.start_time_ticks, event.process_guid, scope), *event.termination_time);
+}
 Json EndpointRecordFactory::capture_scope() const {
     return {{"installation_id", installation_id_}, {"boot_id", nullable(boot_id_)},
         {"collector_generation", std::to_string(generation_)}, {"collector_epoch", epoch_}};
 }
+Json EndpointRecordFactory::windows_event_log(std::string channel, Json data, std::optional<telemetry::UtcTimestamp> time) {
+    if (channel.empty() || channel.size() > 512 || !valid_utf8(channel)) throw std::invalid_argument("invalid event log channel");
+    const auto provider = data.value("provider_name", Json(nullptr));
+    Json provenance{{"kind", "windows_event_log"}, {"provider", provider.is_string() && !provider.get_ref<const std::string&>().empty() &&
+        provider.get_ref<const std::string&>().size() <= 512 ? provider : Json("Officer-WindowsEventLog")}, {"channel", channel},
+        {"native_record_id", data.value("event_record_id", Json(nullptr))}, {"native_observation_id", nullptr}, {"continuity", "unverified"}};
+    data["envelope_event_time_semantics"] = time ? "native_SystemTime" : "capture_time_native_event_time_uninterpreted";
+    data["event_boot_id"] = nullptr;
+    data["boot_identity_scope"] = "collection_boot_only_native_log_event_may_predate_boot";
+    return envelope(time ? "observation" : "evidence", "windows_event_log", time.value_or(now()), std::move(provenance), nullptr, std::move(data));
+}
 Json EndpointRecordFactory::state(std::string category, Json data) {
     return envelope("state", std::move(category), now(), {{"kind", "win32"}, {"provider", "Officer-State"}, {"channel", nullptr},
         {"native_record_id", nullptr}, {"native_observation_id", nullptr}, {"continuity", "snapshot"}}, nullptr, std::move(data));
+}
+Json EndpointRecordFactory::usn_journal(std::string volume, Json data, bool gap) {
+    data["event_boot_id"] = nullptr;
+    data["boot_identity_scope"] = "collection_boot_only_USN_records_may_predate_boot";
+    return envelope(gap ? "gap" : "evidence", gap ? "filesystem_usn_gap" : "filesystem_usn_batch", now(),
+        {{"kind", "win32"}, {"provider", "Windows-USN-Journal"}, {"channel", std::move(volume)},
+            {"native_record_id", nullptr}, {"native_observation_id", nullptr}, {"continuity", gap ? "gap" : "unverified"}},
+        nullptr, std::move(data));
 }
 Json EndpointRecordFactory::health(Json data) {
     return envelope("health", "endpoint_health", now(), {{"kind", "agent"}, {"provider", "Officer-Health"}, {"channel", nullptr},

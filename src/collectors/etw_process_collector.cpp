@@ -8,6 +8,7 @@
 #include <tdh.h>
 
 #include <atomic>
+#include <algorithm>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -27,6 +28,7 @@ namespace {
 constexpr wchar_t kSessionName[] = L"Panopticon-Officer-Process";
 constexpr wchar_t kProviderName[] = L"Microsoft-Windows-Kernel-Process";
 constexpr std::uint16_t kProcessStartEventId = 1;
+constexpr std::uint16_t kProcessStopEventId = 2;
 constexpr std::uint64_t kProcessKeyword = 0x10;
 constexpr GUID kKernelProcessProvider{
     0x22fb2cd6,
@@ -72,7 +74,7 @@ std::optional<std::vector<std::byte>> event_information(
     ULONG required = 0;
     TDHSTATUS status = TdhGetEventInformation(
         const_cast<EVENT_RECORD*>(&record), 0, nullptr, nullptr, &required);
-    if (status != ERROR_INSUFFICIENT_BUFFER || required < sizeof(TRACE_EVENT_INFO)) {
+    if (status != ERROR_INSUFFICIENT_BUFFER || required < sizeof(TRACE_EVENT_INFO) || required > 2 * 1024 * 1024) {
         error_message = "TdhGetEventInformation could not size event metadata: " +
                         win32_error_message(status);
         return std::nullopt;
@@ -84,7 +86,7 @@ std::optional<std::vector<std::byte>> event_information(
         nullptr,
         reinterpret_cast<TRACE_EVENT_INFO*>(buffer.data()),
         &required);
-    if (status != ERROR_SUCCESS) {
+    if (status != ERROR_SUCCESS || required > buffer.size()) {
         error_message = "TdhGetEventInformation could not read event metadata: " +
                         win32_error_message(status);
         return std::nullopt;
@@ -97,14 +99,19 @@ bool has_property_type(
     std::wstring_view property_name,
     USHORT expected_type) {
     const auto* info = reinterpret_cast<const TRACE_EVENT_INFO*>(metadata.data());
+    const auto offset = offsetof(TRACE_EVENT_INFO, EventPropertyInfoArray);
+    if (info->TopLevelPropertyCount > info->PropertyCount || info->PropertyCount > (metadata.size() - offset) / sizeof(EVENT_PROPERTY_INFO)) return false;
     for (ULONG index = 0; index < info->TopLevelPropertyCount; ++index) {
         const EVENT_PROPERTY_INFO& property = info->EventPropertyInfoArray[index];
         if ((property.Flags & PropertyStruct) != 0 || property.NameOffset >= metadata.size()) {
             continue;
         }
+        if (property.NameOffset % alignof(wchar_t) || metadata.size() - property.NameOffset < sizeof(wchar_t)) continue;
         const auto* name = reinterpret_cast<const wchar_t*>(
             metadata.data() + property.NameOffset);
-        if (property_name == name) {
+        const auto units = (metadata.size() - property.NameOffset) / sizeof(wchar_t);
+        const auto end = std::find(name, name + units, L'\0');
+        if (end != name + units && property_name == std::wstring_view(name, end - name)) {
             return property.nonStructType.InType == expected_type;
         }
     }
@@ -133,6 +140,7 @@ std::optional<std::vector<std::byte>> property_bytes(
                         win32_error_message(status);
         return std::nullopt;
     }
+    if (size > 128 * 1024) { error_message = "ETW property exceeds bounded application copy"; return std::nullopt; }
     std::vector<std::byte> buffer(size);
     status = TdhGetProperty(
         const_cast<EVENT_RECORD*>(&record),
@@ -258,6 +266,66 @@ std::optional<telemetry::UtcTimestamp> filetime_to_utc(
         std::chrono::nanoseconds{static_cast<std::int64_t>(unix_ticks * 100)}};
 }
 
+telemetry::EtwProcessNativeFields selected_native_fields(const EVENT_RECORD& record,
+    const std::vector<std::byte>& metadata) {
+    telemetry::EtwProcessNativeFields result;
+    result.event_id = record.EventHeader.EventDescriptor.Id;
+    result.event_version = record.EventHeader.EventDescriptor.Version;
+    const auto* info = reinterpret_cast<const TRACE_EVENT_INFO*>(metadata.data());
+    const auto offset = offsetof(TRACE_EVENT_INFO, EventPropertyInfoArray);
+    if (info->TopLevelPropertyCount > info->PropertyCount ||
+        info->PropertyCount > (metadata.size() - offset) / sizeof(EVENT_PROPERTY_INFO)) {
+        for (auto& field : result.fields) field.state = telemetry::EtwUIntFieldState::type_refused;
+        return result;
+    }
+    for (std::size_t index = 0; index < result.names.size(); ++index) {
+        auto& field = result.fields[index];
+        wchar_t name[64]{};
+        const auto selected = result.names[index];
+        std::transform(selected.begin(), selected.end(), name, [](char value) { return wchar_t(value); });
+        const EVENT_PROPERTY_INFO* found = nullptr;
+        bool ambiguous = false;
+        for (ULONG position = 0; position < info->TopLevelPropertyCount; ++position) {
+            const auto& property = info->EventPropertyInfoArray[position];
+            if (property.NameOffset % alignof(wchar_t) || property.NameOffset >= metadata.size() ||
+                metadata.size() - property.NameOffset < sizeof(wchar_t)) continue;
+            const auto* begin = reinterpret_cast<const wchar_t*>(metadata.data() + property.NameOffset);
+            const auto units = (metadata.size() - property.NameOffset) / sizeof(wchar_t);
+            const auto end = std::find(begin, begin + units, L'\0');
+            if (end == begin + units || std::wstring_view(begin, end - begin) != name) continue;
+            if (found) ambiguous = true;
+            found = &property;
+        }
+        if (!found) continue; // Scoped absence in this actual source template.
+        const auto expected = index == 0 || index == 1 || index == 11 || index == 12 || index == 13 ?
+            TDH_INTYPE_UINT64 : TDH_INTYPE_UINT32;
+        if (!(found->Flags & PropertyStruct)) field.in_type = found->nonStructType.InType;
+        if (ambiguous || (found->Flags & (PropertyStruct | PropertyParamCount | PropertyParamLength | PropertyParamFixedCount)) ||
+            found->count != 1 || field.in_type != expected) {
+            field.state = telemetry::EtwUIntFieldState::type_refused;
+            continue;
+        }
+        PROPERTY_DATA_DESCRIPTOR descriptor{};
+        descriptor.PropertyName = reinterpret_cast<ULONGLONG>(name);
+        descriptor.ArrayIndex = ULONG_MAX;
+        ULONG size = 0;
+        auto status = TdhGetPropertySize(const_cast<EVENT_RECORD*>(&record), 0, nullptr, 1, &descriptor, &size);
+        field.native_status = status;
+        if (status != ERROR_SUCCESS) { field.state = telemetry::EtwUIntFieldState::query_failed; continue; }
+        field.reported_bytes = size;
+        const auto required = expected == TDH_INTYPE_UINT64 ? sizeof(std::uint64_t) : sizeof(std::uint32_t);
+        if (size != required) { field.state = telemetry::EtwUIntFieldState::size_refused; continue; }
+        std::uint64_t value = 0;
+        status = TdhGetProperty(const_cast<EVENT_RECORD*>(&record), 0, nullptr, 1, &descriptor,
+            size, reinterpret_cast<PBYTE>(&value));
+        field.native_status = status;
+        if (status != ERROR_SUCCESS) { field.state = telemetry::EtwUIntFieldState::query_failed; continue; }
+        field.value = value;
+        field.state = telemetry::EtwUIntFieldState::copied;
+    }
+    return result;
+}
+
 std::optional<telemetry::RawProcessEvent> decode_process_start(
     const EVENT_RECORD& record,
     std::string& error_message) {
@@ -269,6 +337,23 @@ std::optional<telemetry::RawProcessEvent> decode_process_start(
         record, *metadata, L"ProcessID", TDH_INTYPE_UINT32, error_message);
     const auto create_time = integral_property<std::uint64_t>(
         record, *metadata, L"CreateTime", TDH_INTYPE_FILETIME, error_message);
+    if (record.EventHeader.EventDescriptor.Id == kProcessStopEventId) {
+        const auto exit_time = integral_property<std::uint64_t>(record, *metadata, L"ExitTime", TDH_INTYPE_FILETIME, error_message);
+        if (!pid || !create_time || !exit_time || !*create_time || *exit_time < *create_time) {
+            if (error_message.empty()) error_message = "ETW stop identity/clock invalid";
+            return std::nullopt;
+        }
+        const auto time = filetime_to_utc(*exit_time, error_message); if (!time) return std::nullopt;
+        telemetry::RawProcessEvent result; result.source.kind = telemetry::TelemetrySourceKind::etw;
+        result.source.provider = "Microsoft-Windows-Kernel-Process"; result.pid = *pid; result.start_time_ticks = *create_time;
+        result.terminated = true; result.termination_time = *time; result.termination_time_ticks = *exit_time;
+        if (has_property_type(*metadata, L"ExitCode", TDH_INTYPE_UINT32)) {
+            result.exit_code = integral_property<std::uint32_t>(record, *metadata, L"ExitCode", TDH_INTYPE_UINT32, error_message);
+            if (!result.exit_code) return std::nullopt;
+        }
+        result.native_fields = selected_native_fields(record, *metadata);
+        return result;
+    }
     const auto parent_pid = integral_property<std::uint32_t>(
         record, *metadata, L"ParentProcessID", TDH_INTYPE_UINT32, error_message);
     const auto image = unicode_property(record, *metadata, L"ImageName", error_message);
@@ -290,10 +375,22 @@ std::optional<telemetry::RawProcessEvent> decode_process_start(
     if (!image->empty()) {
         result.executable = *image;
     }
+    result.native_fields = selected_native_fields(record, *metadata);
     return result;
 }
 
 }  // namespace
+
+std::optional<telemetry::RawProcessEvent> detail::decode_etw_process_record(const void* pointer, std::string& error) {
+    error.clear();
+    if (!pointer) { error = "Missing native ETW event record"; return std::nullopt; }
+    const auto& record = *static_cast<const EVENT_RECORD*>(pointer);
+    if (!IsEqualGUID(record.EventHeader.ProviderId, kKernelProcessProvider) ||
+        (record.EventHeader.EventDescriptor.Id != kProcessStartEventId && record.EventHeader.EventDescriptor.Id != kProcessStopEventId)) {
+        error = "Unsupported ETW process provider/event"; return std::nullopt;
+    }
+    return decode_process_start(record, error);
+}
 
 struct EtwProcessCollector::Impl {
     mutable std::mutex mutex;
@@ -325,11 +422,11 @@ struct EtwProcessCollector::Impl {
 
     void deliver(const EVENT_RECORD& record) noexcept {
         if (!IsEqualGUID(record.EventHeader.ProviderId, kKernelProcessProvider) ||
-            record.EventHeader.EventDescriptor.Id != kProcessStartEventId) {
+            (record.EventHeader.EventDescriptor.Id != kProcessStartEventId && record.EventHeader.EventDescriptor.Id != kProcessStopEventId)) {
             return;
         }
         std::string error;
-        const auto raw = decode_process_start(record, error);
+        const auto raw = detail::decode_etw_process_record(&record, error);
         if (!raw) {
             ++decode_failures;
             report_error(std::move(error));

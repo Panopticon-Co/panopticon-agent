@@ -1,5 +1,6 @@
 #include "panopticon/officer/delivery/journal.hpp"
 #include "panopticon/officer/core/entity_id.hpp"
+#include "panopticon/officer/core/process_graph.hpp"
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -18,6 +19,8 @@
 #include <mutex>
 #include <stdexcept>
 #include <utility>
+#include <unordered_set>
+#include <unordered_map>
 
 namespace panopticon::officer::delivery {
 namespace {
@@ -60,7 +63,7 @@ std::string digest(const std::string& input) {
 }
 class Transaction {
 public:
-    explicit Transaction(sqlite3* db) : db_(db) { exec(db_, "BEGIN IMMEDIATE"); }
+    explicit Transaction(sqlite3* db, bool write = true) : db_(db) { exec(db_, write ? "BEGIN IMMEDIATE" : "BEGIN"); }
     ~Transaction() { if (!committed_) sqlite3_exec(db_, "ROLLBACK", nullptr, nullptr, nullptr); }
     void commit() { exec(db_, "COMMIT"); committed_ = true; }
 private:
@@ -182,7 +185,7 @@ struct DurableJournal::Impl {
         auto version = prepare(db.get(), "PRAGMA user_version");
         check(db.get(), sqlite3_step(version.get()));
         const auto schema = sqlite3_column_int(version.get(), 0);
-        if (schema < 0 || schema > 3) throw std::runtime_error("unsupported journal schema version");
+        if (schema < 0 || schema > 6) throw std::runtime_error("unsupported journal schema version");
         version.reset();
         auto mode = prepare(db.get(), "PRAGMA journal_mode=WAL");
         check(db.get(), sqlite3_step(mode.get()));
@@ -211,7 +214,28 @@ struct DurableJournal::Impl {
         exec(db.get(), "CREATE INDEX IF NOT EXISTS observations_protocol_state ON observations(protocol,state,seq);"
             "CREATE TABLE IF NOT EXISTS commands (key TEXT PRIMARY KEY, scope TEXT NOT NULL, digest TEXT NOT NULL,"
             "payload BLOB NOT NULL, state TEXT NOT NULL DEFAULT 'received', result BLOB, bytes INTEGER NOT NULL);"
-            "CREATE INDEX IF NOT EXISTS commands_scope_state ON commands(scope,state); PRAGMA user_version=3;");
+            "CREATE INDEX IF NOT EXISTS commands_scope_state ON commands(scope,state);"
+            "CREATE TABLE IF NOT EXISTS source_checkpoints (source TEXT PRIMARY KEY, revision TEXT NOT NULL,"
+            "value BLOB NOT NULL, record_digest TEXT NOT NULL, bytes INTEGER NOT NULL);");
+        {
+            Transaction migration{db.get()};
+            exec(db.get(), "CREATE TABLE IF NOT EXISTS process_history (seq INTEGER PRIMARY KEY, key TEXT UNIQUE NOT NULL, payload BLOB NOT NULL, bytes INTEGER NOT NULL);"
+                "INSERT OR IGNORE INTO counters SELECT 'process_history_bytes',COALESCE(SUM(bytes),0) FROM process_history;"
+                "INSERT OR IGNORE INTO counters SELECT 'process_history_count',COUNT(*) FROM process_history;"
+                "CREATE TRIGGER IF NOT EXISTS process_history_insert AFTER INSERT ON process_history BEGIN "
+                "UPDATE counters SET value=value+NEW.bytes WHERE name='process_history_bytes';"
+                "UPDATE counters SET value=value+1 WHERE name='process_history_count'; END;"
+                "CREATE TABLE IF NOT EXISTS process_graph_index (history_seq INTEGER PRIMARY KEY, entity_digest TEXT NOT NULL, parent_digest TEXT NOT NULL, quality INTEGER NOT NULL);"
+                "CREATE INDEX IF NOT EXISTS process_graph_entity ON process_graph_index(entity_digest,history_seq);"
+                "CREATE INDEX IF NOT EXISTS process_graph_parent ON process_graph_index(parent_digest,history_seq);"
+                "INSERT OR IGNORE INTO counters SELECT 'process_graph_count',COUNT(*) FROM process_graph_index;"
+                "INSERT OR IGNORE INTO counters SELECT 'process_graph_unresolved',COALESCE(SUM(quality<>0),0) FROM process_graph_index;"
+                "CREATE TRIGGER IF NOT EXISTS process_graph_insert AFTER INSERT ON process_graph_index BEGIN "
+                "UPDATE counters SET value=value+1 WHERE name='process_graph_count';"
+                "UPDATE counters SET value=value+(NEW.quality<>0) WHERE name='process_graph_unresolved'; END;"
+                "PRAGMA user_version=6;");
+            migration.commit();
+        }
         auto integrity = prepare(db.get(), "PRAGMA quick_check");
         check(db.get(), sqlite3_step(integrity.get()));
         if (text_column(integrity.get(), 0) != "ok") throw std::runtime_error("journal integrity check failed; original database retained");
@@ -220,23 +244,58 @@ struct DurableJournal::Impl {
     }
 
     std::uint64_t retained() const {
-        auto statement = prepare(db.get(), "SELECT value + COALESCE((SELECT SUM(bytes) FROM commands),0) FROM counters WHERE name='retained'");
+        auto statement = prepare(db.get(), "SELECT value + COALESCE((SELECT SUM(bytes) FROM commands),0) + "
+            "COALESCE((SELECT SUM(bytes) FROM source_checkpoints),0) + "
+            "COALESCE((SELECT value FROM counters WHERE name='process_history_bytes'),0) FROM counters WHERE name='retained'");
         check(db.get(), sqlite3_step(statement.get()));
         return static_cast<std::uint64_t>(sqlite3_column_int64(statement.get(), 0));
+    }
+    void index_process(std::uint64_t sequence, const Json& document) {
+        const auto fact = core::process_graph_fact(document);
+        auto index = prepare(db.get(), "INSERT OR IGNORE INTO process_graph_index(history_seq,entity_digest,parent_digest,quality) VALUES (?,?,?,?)");
+        check(db.get(), sqlite3_bind_int64(index.get(), 1, static_cast<sqlite3_int64>(sequence)));
+        bind_text(db.get(), index.get(), 2, fact.entity_id ? digest(*fact.entity_id) : "");
+        bind_text(db.get(), index.get(), 3, fact.parent_entity_id ? digest(*fact.parent_entity_id) : "");
+        check(db.get(), sqlite3_bind_int(index.get(), 4, fact.interpretable ? (fact.entity_id ? 0 : 1) : 2));
+        check(db.get(), sqlite3_step(index.get()));
     }
     void insert(const std::string& line, const std::string& key) {
         auto exists = prepare(db.get(), "SELECT 1 FROM observations WHERE key=?");
         bind_text(db.get(), exists.get(), 1, key);
         const int rc = sqlite3_step(exists.get());
         check(db.get(), rc);
-        if (rc == SQLITE_ROW) return;
-        const auto bytes = retained();
-        if (line.size() > config.retained_payload_limit || bytes > config.retained_payload_limit - line.size())
-            throw std::runtime_error("journal retention quota exhausted; existing evidence retained");
-        const auto encrypted = protect(line, key, true);
-        admit_growth(encrypted.size());
+        const bool pending_exists = rc == SQLITE_ROW;
         const auto document = Json::parse(line, nullptr, false);
         const unsigned protocol = document.is_object() && document.contains("schema_version") && document.at("schema_version").is_string() && document.at("schema_version") == "1.0" && document.contains("kind") ? 2u : 1u;
+        // Archive exact canonical lifecycle evidence only. Do not turn a
+        // family event's PID context or a state snapshot into a birth claim.
+        const bool lifecycle = protocol == 2 && document.value("kind", Json{}) == "observation" &&
+            (document.value("category", Json{}) == "process_stop" ||
+             (document.value("category", Json{}) == "process" && document.contains("data") && document["data"].is_object() &&
+              document["data"].contains("event") && document["data"]["event"].is_object() && document["data"]["event"].value("type", Json{}) == "start"));
+        bool archive_exists = false;
+        if (lifecycle) {
+            auto archived = prepare(db.get(), "SELECT 1 FROM process_history WHERE key=?");
+            bind_text(db.get(), archived.get(), 1, key);
+            const auto archive_rc = sqlite3_step(archived.get()); check(db.get(), archive_rc);
+            archive_exists = archive_rc == SQLITE_ROW;
+        }
+        if (pending_exists && (!lifecycle || archive_exists)) return;
+        const auto bytes = retained();
+        const auto copies = static_cast<std::uint64_t>(!pending_exists) + static_cast<std::uint64_t>(lifecycle && !archive_exists);
+        if (line.size() > config.retained_payload_limit / copies || bytes > config.retained_payload_limit - copies * line.size())
+            throw std::runtime_error("journal retention quota exhausted; existing evidence retained");
+        const auto encrypted = protect(line, key, true);
+        admit_growth(encrypted.size() * copies);
+        if (lifecycle && !archive_exists) {
+            auto archive = prepare(db.get(), "INSERT INTO process_history(key,payload,bytes) VALUES (?,?,?)");
+            bind_text(db.get(), archive.get(), 1, key);
+            check(db.get(), sqlite3_bind_blob(archive.get(), 2, encrypted.data(), static_cast<int>(encrypted.size()), SQLITE_TRANSIENT));
+            check(db.get(), sqlite3_bind_int64(archive.get(), 3, static_cast<sqlite3_int64>(line.size())));
+            check(db.get(), sqlite3_step(archive.get()));
+            index_process(static_cast<std::uint64_t>(sqlite3_last_insert_rowid(db.get())), document);
+        }
+        if (pending_exists) return;
         auto statement = prepare(db.get(), "INSERT INTO observations(key,payload,bytes,protocol) VALUES (?,?,?,?)");
         bind_text(db.get(), statement.get(), 1, key);
         check(db.get(), sqlite3_bind_blob(statement.get(), 2, encrypted.data(), static_cast<int>(encrypted.size()), SQLITE_TRANSIENT));
@@ -336,6 +395,63 @@ void DurableJournal::append(const std::string& line) {
     impl_->insert(line, digest(line));
     transaction.commit();
 }
+namespace {
+void validate_source(const std::string& source) {
+    if (source.empty() || source.size() > 512 || source.find_first_of("\r\n") != std::string::npos ||
+        source.find('\0') != std::string::npos) throw std::invalid_argument("invalid source checkpoint key");
+}
+std::uint64_t checkpoint_revision(const std::string& text) {
+    std::uint64_t value = 0;
+    const auto parsed = std::from_chars(text.data(), text.data() + text.size(), value);
+    if (text.empty() || (text.size() > 1 && text.front() == '0') || parsed.ec != std::errc{} ||
+        parsed.ptr != text.data() + text.size() || !value) throw std::runtime_error("invalid retained source checkpoint revision");
+    return value;
+}
+}
+std::optional<SourceCheckpoint> DurableJournal::source_checkpoint(const std::string& source) const {
+    validate_source(source); std::scoped_lock lock{impl_->mutex};
+    auto row = prepare(impl_->db.get(), "SELECT revision,value FROM source_checkpoints WHERE source=?");
+    bind_text(impl_->db.get(), row.get(), 1, source);
+    const auto rc = sqlite3_step(row.get()); check(impl_->db.get(), rc);
+    if (rc == SQLITE_DONE) return std::nullopt;
+    return SourceCheckpoint{checkpoint_revision(text_column(row.get(), 0)), protect(column(row.get(), 1), "source:" + source, false)};
+}
+void DurableJournal::append_checkpointed(const std::string& line, const std::string& source,
+    const std::string& checkpoint, std::uint64_t expected) {
+    validate_source(source);
+    if (checkpoint.empty() || checkpoint.size() > 16384 || expected == std::numeric_limits<std::uint64_t>::max())
+        throw std::invalid_argument("invalid source checkpoint or exhausted revision");
+    if (line.find_first_not_of(" \t") == std::string::npos || line.find_first_of("\r\n") != std::string::npos ||
+        line.size() > impl_->config.event_size_limit) throw std::invalid_argument("invalid checkpointed observation");
+    const auto key = digest(line);
+    std::scoped_lock lock{impl_->mutex}; auto* db = impl_->db.get(); Transaction transaction{db};
+    auto existing = prepare(db, "SELECT revision,value,record_digest,bytes FROM source_checkpoints WHERE source=?");
+    bind_text(db, existing.get(), 1, source); const auto rc = sqlite3_step(existing.get()); check(db, rc);
+    const auto revision = rc == SQLITE_ROW ? checkpoint_revision(text_column(existing.get(), 0)) : 0;
+    const auto old_bytes = rc == SQLITE_ROW ? static_cast<std::uint64_t>(sqlite3_column_int64(existing.get(), 3)) : 0;
+    if (revision != expected) {
+        if (revision == expected + 1 && text_column(existing.get(), 2) == key &&
+            protect(column(existing.get(), 1), "source:" + source, false) == checkpoint) { transaction.commit(); return; }
+        throw std::runtime_error("source checkpoint revision conflict; retained cursor preserved");
+    }
+    existing.reset();
+    if (!revision) {
+        auto count = prepare(db, "SELECT COUNT(*) FROM source_checkpoints"); check(db, sqlite3_step(count.get()));
+        if (sqlite3_column_int64(count.get(), 0) >= 64) throw std::runtime_error("source checkpoint count limit");
+    }
+    impl_->insert(line, key);
+    const auto retained = impl_->retained();
+    if (retained < old_bytes || checkpoint.size() > impl_->config.retained_payload_limit ||
+        retained - old_bytes > impl_->config.retained_payload_limit - checkpoint.size())
+        throw std::runtime_error("source checkpoint retention quota exhausted; record and cursor unchanged");
+    const auto encrypted = protect(checkpoint, "source:" + source, true); impl_->admit_growth(encrypted.size());
+    auto save = prepare(db, "INSERT INTO source_checkpoints VALUES (?,?,?,?,?) ON CONFLICT(source) DO UPDATE SET "
+        "revision=excluded.revision,value=excluded.value,record_digest=excluded.record_digest,bytes=excluded.bytes");
+    bind_text(db, save.get(), 1, source); bind_text(db, save.get(), 2, std::to_string(expected + 1));
+    check(db, sqlite3_bind_blob(save.get(), 3, encrypted.data(), static_cast<int>(encrypted.size()), SQLITE_TRANSIENT));
+    bind_text(db, save.get(), 4, key); check(db, sqlite3_bind_int64(save.get(), 5, static_cast<sqlite3_int64>(checkpoint.size())));
+    check(db, sqlite3_step(save.get())); transaction.commit();
+}
 
 std::optional<JournalBatch> DurableJournal::peek(std::size_t max_events, std::size_t max_bytes) {
     if (!max_events || max_events > 1000 || !max_bytes || max_bytes > 8u * 1024 * 1024)
@@ -395,6 +511,171 @@ std::vector<JournalInspectionEntry> DurableJournal::inspect_pending(std::uint64_
         entries.push_back({static_cast<std::uint64_t>(sequence), static_cast<unsigned>(sqlite3_column_int(query.get(), 1)), {std::move(key), std::move(body)}});
     }
     return entries;
+}
+
+std::vector<JournalInspectionEntry> DurableJournal::inspect_process_history(std::uint64_t after, std::size_t max_events, std::size_t max_bytes) const {
+    if (!max_events || max_events > 1000 || !max_bytes || max_bytes > 8u * 1024 * 1024 || after > INT64_MAX)
+        throw std::invalid_argument("invalid process history limits or cursor");
+    std::scoped_lock lock{impl_->mutex};
+    auto query = prepare(impl_->db.get(), "SELECT seq,key,payload FROM process_history WHERE seq>? ORDER BY seq LIMIT ?");
+    check(impl_->db.get(), sqlite3_bind_int64(query.get(), 1, static_cast<sqlite3_int64>(after)));
+    check(impl_->db.get(), sqlite3_bind_int64(query.get(), 2, static_cast<sqlite3_int64>(max_events)));
+    std::vector<JournalInspectionEntry> entries; std::size_t bytes = 0;
+    for (;;) {
+        const auto rc = sqlite3_step(query.get()); check(impl_->db.get(), rc);
+        if (rc == SQLITE_DONE) break;
+        const auto sequence = sqlite3_column_int64(query.get(), 0);
+        if (sequence <= 0) throw std::runtime_error("invalid local process history sequence");
+        auto key = text_column(query.get(), 1); auto body = protect(column(query.get(), 2), key, false);
+        if (body.size() + 1 > max_bytes - bytes) {
+            if (entries.empty()) throw std::runtime_error("process history record exceeds page byte ceiling");
+            break;
+        }
+        bytes += body.size() + 1;
+        entries.push_back({static_cast<std::uint64_t>(sequence), 2u, {std::move(key), std::move(body)}});
+    }
+    return entries;
+}
+
+std::size_t DurableJournal::rebuild_process_graph(std::size_t max_events, std::size_t max_bytes) {
+    if (!max_events || max_events > 1000 || !max_bytes || max_bytes > 8u * 1024 * 1024)
+        throw std::invalid_argument("invalid process graph rebuild bounds");
+    std::scoped_lock lock{impl_->mutex};
+    auto* db = impl_->db.get();
+    Transaction transaction{db};
+    auto query = prepare(db, "SELECT h.seq,h.key,h.payload FROM process_history h LEFT JOIN process_graph_index g "
+        "ON g.history_seq=h.seq WHERE g.history_seq IS NULL ORDER BY h.seq LIMIT ?");
+    check(db, sqlite3_bind_int64(query.get(), 1, static_cast<sqlite3_int64>(max_events)));
+    std::size_t count = 0, bytes = 0;
+    for (;;) {
+        const auto rc = sqlite3_step(query.get()); check(db, rc);
+        if (rc == SQLITE_DONE) break;
+        const auto sequence = sqlite3_column_int64(query.get(), 0);
+        if (sequence <= 0) throw std::runtime_error("invalid process graph archive sequence");
+        auto body = protect(column(query.get(), 2), text_column(query.get(), 1), false);
+        if (body.size() + 1 > max_bytes - bytes) {
+            if (!count) throw std::runtime_error("process graph rebuild head exceeds byte bound; no evidence skipped");
+            break;
+        }
+        impl_->admit_growth(256);
+        impl_->index_process(static_cast<std::uint64_t>(sequence), Json::parse(body, nullptr, false));
+        bytes += body.size() + 1; ++count;
+    }
+    query.reset(); transaction.commit(); return count;
+}
+
+nlohmann::json DurableJournal::process_ancestry(const std::string& entity_id, std::size_t max_nodes,
+    std::size_t max_depth, std::size_t max_evidence, std::size_t max_bytes) const {
+    if (entity_id.size() != 69 || !entity_id.starts_with("proc_") ||
+        entity_id.find_first_not_of("0123456789abcdef", 5) != std::string::npos ||
+        !max_nodes || max_nodes > 256 || !max_depth || max_depth > 64 ||
+        !max_evidence || max_evidence > 1000 || max_bytes < 4096 || max_bytes > 8u * 1024 * 1024)
+        throw std::invalid_argument("invalid process ancestry identity or bounds");
+    std::scoped_lock lock{impl_->mutex};
+    auto* db = impl_->db.get();
+    Transaction snapshot{db, false};
+    auto counts = prepare(db, "SELECT (SELECT value FROM counters WHERE name='process_history_count')-"
+        "(SELECT value FROM counters WHERE name='process_graph_count')");
+    check(db, sqlite3_step(counts.get()));
+    const auto backlog = sqlite3_column_int64(counts.get(), 0);
+    if (backlog < 0) throw std::runtime_error("process graph index accounting mismatch");
+    counts.reset();
+    Json result{{"format", "process_ancestry_v1"}, {"state", "degraded"}, {"root_entity_id", entity_id},
+        {"nodes", Json::array()}, {"edges", Json::array()}, {"truncated", false},
+        {"index_backlog", std::to_string(backlog)}, {"source_coverage_complete", false},
+        {"creator_relationship_verified", false}, {"alias_promotion_performed", false},
+        {"snapshot_consistency", "one SQLite read transaction over retained originals and index"},
+        {"scope", "exact rederived identity only; observed parent reports may be spoofed; missing evidence never proves absence or liveness"}};
+    struct Pending { std::string entity; std::vector<std::string> path; };
+    std::vector<Pending> pending{{entity_id, {entity_id}}};
+    std::unordered_set<std::string> queued{entity_id};
+    std::unordered_set<std::string> visited;
+    std::size_t evidence_count = 0, consumed = result.dump().size();
+    bool truncated = false;
+    for (std::size_t cursor = 0; cursor < pending.size(); ++cursor) {
+        const auto current = pending[cursor];
+        if (visited.contains(current.entity)) continue;
+        if (visited.size() >= max_nodes) { truncated = true; break; }
+        visited.insert(current.entity);
+        Json node{{"entity_id", current.entity}, {"evidence", Json::array()},
+            {"birth_observed", false}, {"stop_observed", false}, {"liveness", nullptr},
+            {"parent_claims_conflict", false}, {"retained_evidence_read_complete", true}};
+        std::unordered_set<std::string> parents;
+        auto query = prepare(db, "SELECT h.seq,h.key,h.payload,g.parent_digest FROM process_graph_index g "
+            "JOIN process_history h ON h.seq=g.history_seq WHERE g.entity_digest=? ORDER BY h.seq LIMIT ?");
+        bind_text(db, query.get(), 1, digest(current.entity));
+        check(db, sqlite3_bind_int64(query.get(), 2, static_cast<sqlite3_int64>(max_evidence - evidence_count + 1)));
+        for (;;) {
+            const auto rc = sqlite3_step(query.get()); check(db, rc);
+            if (rc == SQLITE_DONE) break;
+            if (evidence_count >= max_evidence) { truncated = true; node["retained_evidence_read_complete"] = false; break; }
+            const auto sequence = sqlite3_column_int64(query.get(), 0);
+            const auto body = protect(column(query.get(), 2), text_column(query.get(), 1), false);
+            const auto fact = core::process_graph_fact(Json::parse(body));
+            if (sequence <= 0 || !fact.interpretable || fact.entity_id != current.entity ||
+                text_column(query.get(), 3) != (fact.parent_entity_id ? digest(*fact.parent_entity_id) : ""))
+                throw std::runtime_error("process graph index does not match immutable evidence");
+            Json evidence{{"archive_sequence", std::to_string(sequence)}, {"record_id", fact.record_id},
+                {"operation", fact.stop ? "stop" : "start"}, {"identity", fact.identity},
+                {"reported_parent_identity", fact.parent_identity}};
+            Json edge = nullptr;
+            if (fact.parent_entity_id) {
+                edge = {{"child_entity_id", current.entity}, {"parent_entity_id", *fact.parent_entity_id},
+                    {"record_id", fact.record_id}, {"basis", "exact decoded source GUID plus observed parent PID"},
+                    {"relationship", "source_reported_parent"}, {"creator_verified", false},
+                    {"cycle_detected", std::find(current.path.begin(), current.path.end(), *fact.parent_entity_id) != current.path.end()}};
+            }
+            const auto charge = body.size() + evidence.dump().size() + (edge.is_null() ? 0 : edge.dump().size()) + 2;
+            if (charge > max_bytes - consumed) { truncated = true; node["retained_evidence_read_complete"] = false; break; }
+            consumed += charge; ++evidence_count;
+            node["evidence"].push_back(std::move(evidence));
+            node[fact.stop ? "stop_observed" : "birth_observed"] = true;
+            if (!fact.parent_identity.is_null()) parents.insert(fact.parent_identity.dump());
+            if (fact.parent_entity_id) {
+                const bool cycle = edge.at("cycle_detected").get<bool>();
+                result["edges"].push_back(std::move(edge));
+                if (!cycle && queued.contains(*fact.parent_entity_id)) {
+                    // Shared ancestors are visited once without becoming cycles
+                    // or falsely incomplete traversal claims.
+                } else if (!cycle && current.path.size() < max_depth && pending.size() < max_nodes) {
+                    auto path = current.path; path.push_back(*fact.parent_entity_id);
+                    queued.insert(*fact.parent_entity_id);
+                    pending.push_back({*fact.parent_entity_id, std::move(path)});
+                } else if (!cycle) truncated = true;
+            }
+        }
+        node["parent_claims_conflict"] = parents.size() > 1;
+        const auto node_bytes = node.dump().size();
+        // This includes a conservative second charge for derived node content;
+        // all copied originals and returned JSON must fit the caller's bound.
+        if (node_bytes > max_bytes - consumed) { truncated = true; break; }
+        consumed += node_bytes; result["nodes"].push_back(std::move(node));
+        if (evidence_count >= max_evidence) break;
+    }
+    result["truncated"] = truncated || visited.size() < pending.size();
+    // Detect cycles across shared ancestry branches too, not only the first
+    // path that reached a node. This is scoped to the returned edge set.
+    std::unordered_map<std::string, std::vector<std::string>> adjacency;
+    for (const auto& edge : result["edges"])
+        adjacency[edge.at("child_entity_id").get<std::string>()].push_back(edge.at("parent_entity_id").get<std::string>());
+    for (auto& edge : result["edges"]) {
+        const auto child = edge.at("child_entity_id").get<std::string>();
+        std::vector<std::string> search{edge.at("parent_entity_id").get<std::string>()};
+        std::unordered_set<std::string> examined;
+        bool cycle = false;
+        for (std::size_t i = 0; i < search.size(); ++i) {
+            if (search[i] == child) { cycle = true; break; }
+            if (!examined.insert(search[i]).second) continue;
+            const auto found = adjacency.find(search[i]);
+            if (found != adjacency.end()) search.insert(search.end(), found->second.begin(), found->second.end());
+        }
+        edge["cycle_detected"] = cycle;
+        edge["cycle_detection_scope"] = "returned edge set only";
+    }
+    result["evidence_records_read"] = std::to_string(evidence_count);
+    result["retained_evidence_traversal_complete"] = !result["truncated"].get<bool>() && backlog == 0;
+    if (result.dump().size() > max_bytes) throw std::runtime_error("process ancestry output exceeds byte ceiling");
+    snapshot.commit(); return result;
 }
 
 void DurableJournal::acknowledge(const JournalBatch& batch, const std::string& receipt) {
@@ -464,7 +745,18 @@ JournalStats DurableJournal::stats() const {
     check(db, sqlite3_step(statement.get()));
     stats.pending_events = static_cast<std::uint64_t>(sqlite3_column_int64(statement.get(), 0));
     stats.dead_letter_events = static_cast<std::uint64_t>(sqlite3_column_int64(statement.get(), 1));
-    stats.retained_bytes = static_cast<std::uint64_t>(sqlite3_column_int64(statement.get(), 2));
+    stats.retained_bytes = impl_->retained();
+    statement = prepare(db, "SELECT (SELECT value FROM counters WHERE name='process_history_count'),(SELECT value FROM counters WHERE name='process_history_bytes')");
+    check(db, sqlite3_step(statement.get()));
+    stats.process_history_records = static_cast<std::uint64_t>(sqlite3_column_int64(statement.get(), 0));
+    stats.process_history_bytes = static_cast<std::uint64_t>(sqlite3_column_int64(statement.get(), 1));
+    statement = prepare(db, "SELECT (SELECT value FROM counters WHERE name='process_graph_count'),"
+        "(SELECT value FROM counters WHERE name='process_graph_unresolved')");
+    check(db, sqlite3_step(statement.get()));
+    stats.process_graph_indexed = static_cast<std::uint64_t>(sqlite3_column_int64(statement.get(), 0));
+    stats.process_graph_unresolved = static_cast<std::uint64_t>(sqlite3_column_int64(statement.get(), 1));
+    if (stats.process_graph_indexed > stats.process_history_records || stats.process_graph_unresolved > stats.process_graph_indexed)
+        throw std::runtime_error("process graph counter accounting inconsistent");
     statement = prepare(db, "SELECT value FROM counters WHERE name='acknowledged'");
     check(db, sqlite3_step(statement.get()));
     stats.acknowledged_events = static_cast<std::uint64_t>(sqlite3_column_int64(statement.get(), 0));

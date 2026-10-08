@@ -34,6 +34,9 @@ void blocked_storage_and_bounds(bool count_bound) {
     Scratch scratch; d::DurableJournal journal{{scratch.path}};
     std::promise<void> entered, release; auto released = release.get_future().share();
     t::RawProcessEvent raw{}; raw.pid = 42; raw.command_line = "exact owned command";
+    raw.native_fields.emplace(); raw.native_fields->event_id=1; raw.native_fields->event_version=3;
+    raw.native_fields->fields[0].state=t::EtwUIntFieldState::copied;
+    raw.native_fields->fields[0].value=UINT64_MAX;
     const t::RawEvent event{raw}; const auto charge = p::raw_event_charge(event);
     p::RawHandoff queue{count_bound ? 1u : 2u, count_bound ? charge * 2 : charge, [&](t::RawEvent owned) {
         entered.set_value(); released.wait();

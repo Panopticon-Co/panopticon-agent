@@ -97,6 +97,7 @@ std::optional<telemetry::PanopticonEvent> normalize_process_event(
     const NormalizationContext& context,
     std::string& error_message) {
     error_message.clear();
+    if (enriched.raw.terminated) { error_message = "Process stop requires the canonical lifecycle path, not process-start normalization"; return std::nullopt; }
     if (!context_is_valid(context, error_message)) {
         return std::nullopt;
     }

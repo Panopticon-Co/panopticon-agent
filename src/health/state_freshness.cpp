@@ -19,6 +19,8 @@ struct Source { const char* key; std::array<const char*, 8> prefixes; };
 constexpr Source sources[]{
     {"host_inventory", {"A.host", "state.tpm_device", "state.entra_default_join", "state.storage_volumes", "state.system_audit_policy", "W.enterprise_identity", "Y.posture"}},
     {"process_inventory", {"state.process_inventory"}},
+    {"thread_inventory", {"state.thread_inventory", "C.thread_handle"}},
+    {"memory_region_inventory", {"state.memory_region_inventory", "memory.region_metadata"}},
     {"service_inventory", {"state.service_", "K.service_driver"}},
     {"loaded_driver_inventory", {"state.loaded_driver_inventory"}},
     {"socket_inventory", {"state.socket_"}},
@@ -27,7 +29,17 @@ constexpr Source sources[]{
     {"firewall_profile_state", {"state.firewall_profiles", "state.firewall_exclusions.", "P.firewall"}},
     {"firewall_rule_inventory", {"state.firewall_rule_inventory", "P.firewall"}},
     {"security_center_state", {"state.security_center", "Q.security_product"}},
-    {"defender_status", {"state.defender_status", "Q.security_product"}}
+    {"defender_status", {"state.defender_status", "Q.security_product"}},
+    {"device_guard_state", {"state.device_guard_state"}},
+    {"scheduled_task_inventory", {"state.scheduled_task_inventory"}},
+    {"wmi_subscription_inventory", {"state.wmi_subscription_inventory"}},
+    {"startup_inventory", {"state.startup_inventory"}},
+    {"account_inventory", {"state.account_inventory"}},
+    {"local_group_inventory", {"state.local_group_inventory"}},
+    {"logon_session_inventory", {"state.logon_session_inventory"}},
+    {"terminal_session_inventory", {"state.terminal_session_inventory"}},
+    {"msi_product_inventory", {"state.msi_product_inventory"}},
+    {"uninstall_registry_inventory", {"state.uninstall_registry_inventory"}}
 };
 bool positive(const Json& state) { return state == "healthy" || state == "degraded"; }
 }
@@ -95,6 +107,49 @@ void apply_state_capture_freshness(Json& health, std::uint64_t now) {
             capability["state"] = available ? "degraded" : blind ? "blind" : "unavailable";
             capability["reason"] = available ? "partial reports from at least one fresh independent security source; protection unverified" :
                 blind ? "no eligible security source report; committed partial posture overdue" : "no eligible security source report";
+        }
+    }
+    // Full domains remain partial. Derive availability from independent fresh
+    // state sources and active corresponding log sources, so one failing source
+    // neither erases another nor leaves a stale inventory looking current.
+    if (health.contains("capabilities") && health["capabilities"].is_array()) {
+        struct Group { const char* id; std::array<const char*, 4> state_sources; const char* log_channel; };
+        constexpr Group groups[]{
+            {"J.persistence", {"service_inventory", "scheduled_task_inventory", "wmi_subscription_inventory", "startup_inventory"}, nullptr},
+            {"L.scheduled_task", {"scheduled_task_inventory"}, "Microsoft-Windows-TaskScheduler/Operational"},
+            {"M.wmi", {"wmi_subscription_inventory"}, "Microsoft-Windows-WMI-Activity/Operational"},
+            {"D.user_session", {"account_inventory", "local_group_inventory", "logon_session_inventory", "terminal_session_inventory"}, nullptr},
+            {"U.remote_access", {"terminal_session_inventory", "logon_session_inventory"}, nullptr},
+            {"Z.software", {"msi_product_inventory", "uninstall_registry_inventory"}, nullptr}
+        };
+        for (const auto& group : groups) {
+            bool partial = false, blind = false, present = false, all_disabled = true;
+            Json evidence = Json::object();
+            for (const auto* key : group.state_sources) {
+                if (!key || !health.contains(key) || !health[key].is_object()) continue;
+                const auto state = health[key].value("state", "unavailable");
+                present = true; partial |= state == "healthy" || state == "degraded"; blind |= state == "blind"; all_disabled &= state == "disabled";
+                evidence[key] = {{"state", state}, {"record_id", health[key].value("last_committed_record_id", Json(nullptr))},
+                    {"capture_freshness", health[key].value("capture_freshness", Json(nullptr))}};
+            }
+            if (group.log_channel && health.contains("windows_event_log") && health["windows_event_log"].contains("channels")
+                && health["windows_event_log"]["channels"].is_array()) {
+                for (const auto& channel : health["windows_event_log"]["channels"]) {
+                    if (channel.value("channel", "") != group.log_channel) continue;
+                    const auto state = channel.value("state", "unavailable");
+                    present = true; partial |= state == "healthy" || state == "degraded"; blind |= state == "blind"; all_disabled &= state == "disabled";
+                    evidence[group.log_channel] = {{"state", state}, {"scope", "native channel collector status; continuity/attribution unqualified"}};
+                }
+            }
+            if (!present) continue;
+            for (auto& capability : health["capabilities"]) {
+                if (!capability.is_object() || capability.value("id", "") != group.id) continue;
+                capability["state"] = partial ? "degraded" : blind ? "blind" : all_disabled ? "disabled" : "unavailable";
+                capability["reason"] = partial ? "partial evidence from independent eligible native sources; full domain coverage unqualified" :
+                    blind ? "no eligible partial source; committed capture or event continuity blind" : all_disabled ? "partial source workers disabled" : "no eligible partial native source";
+                capability["partial_source_status"] = evidence;
+                capability["scope"] = "selected native state/log sources; full domain, execution/lifetime/change/effective authorization coverage incomplete";
+            }
         }
     }
 }

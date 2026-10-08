@@ -2,8 +2,10 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
+#include <tdh.h>
 #include <limits>
 #include <type_traits>
+#include <stdexcept>
 
 namespace panopticon::officer::pipeline {
 using Json = nlohmann::json;
@@ -44,12 +46,52 @@ Json source_facts(const telemetry::RawEvent& raw) {
                 {"provider", lossless_text(event.source.provider)}, {"channel", text(event.source.channel)}, {"record_id", decimal(event.source.record_id)}}}};
         if constexpr (std::is_same_v<Event, telemetry::RawProcessEvent>) {
             result["family"] = "process";
-            result["event_time_ns"] = std::to_string(event.process_start_time.time_since_epoch().count());
+            result["operation"] = event.terminated ? "stop" : "start";
+            result["event_time_ns"] = event.terminated ? (event.termination_time ? Json(std::to_string(event.termination_time->time_since_epoch().count())) : Json(nullptr)) : Json(std::to_string(event.process_start_time.time_since_epoch().count()));
+            if (event.terminated) {
+                result["termination_time_ticks"] = decimal(event.termination_time_ticks);
+                result["exit_code"] = event.exit_code ? Json(std::to_string(*event.exit_code)) : Json(nullptr);
+            }
             result["process"] = {{"pid", event.pid}, {"start_time_ticks", decimal(event.start_time_ticks)},
                 {"process_guid", text(event.process_guid)}, {"parent_process_guid", text(event.parent_process_guid)},
                 {"parent_pid", event.parent_pid ? Json(*event.parent_pid) : Json(nullptr)}, {"parent_executable", text(event.parent_executable)},
                 {"executable", text(event.executable)}, {"command_line", text(event.command_line)},
                 {"user_sid", text(event.user_sid)}, {"user_name", text(event.user_name)}, {"sha256", text(event.sha256)}};
+            if (event.native_fields) {
+                const auto& native = *event.native_fields;
+                if (event.source.kind != telemetry::TelemetrySourceKind::etw ||
+                    event.source.provider != "Microsoft-Windows-Kernel-Process" ||
+                    native.event_id != (event.terminated ? 2 : 1))
+                    throw std::invalid_argument("native process field source/operation mismatch");
+                Json fields = Json::object();
+                for (std::size_t i = 0; i < native.fields.size(); ++i) {
+                    const auto& field = native.fields[i];
+                    const bool wide = i == 0 || i == 1 || i == 11 || i == 12 || i == 13;
+                    if (field.state == telemetry::EtwUIntFieldState::copied &&
+                        (!field.value || field.in_type != (wide ? TDH_INTYPE_UINT64 : TDH_INTYPE_UINT32) ||
+                         field.native_status != 0 || field.reported_bytes != (wide ? 8u : 4u) ||
+                         (!wide && *field.value > UINT32_MAX)))
+                        throw std::invalid_argument("native process field copy evidence incomplete");
+                    if (field.state != telemetry::EtwUIntFieldState::copied && field.value)
+                        throw std::invalid_argument("refused native process field has a value");
+                    const auto state = field.state == telemetry::EtwUIntFieldState::copied ? "healthy" :
+                        field.state == telemetry::EtwUIntFieldState::absent ? "unsupported" : "unavailable";
+                    const auto reason = field.state == telemetry::EtwUIntFieldState::copied ? "selected_scalar_copied" :
+                        field.state == telemetry::EtwUIntFieldState::absent ? "property_absent_in_source_template" :
+                        field.state == telemetry::EtwUIntFieldState::type_refused ? "non_scalar_or_unexpected_native_type" :
+                        field.state == telemetry::EtwUIntFieldState::size_refused ? "unexpected_native_byte_count" : "native_query_failed";
+                    fields[std::string(native.names[i])] = {{"state", state}, {"reason", reason},
+                        {"native_in_type", field.in_type ? Json(*field.in_type) : Json(nullptr)},
+                        {"native_status", field.native_status ? Json(std::to_string(*field.native_status)) : Json(nullptr)},
+                        {"reported_bytes", field.reported_bytes ? Json(*field.reported_bytes) : Json(nullptr)},
+                        {"value", decimal(field.value)}, {"value_interpreted", false}};
+                }
+                result["process"]["native_fields"] = {{"format", "windows_etw_process_fields_v1"},
+                    {"event_id", native.event_id}, {"event_version", native.event_version},
+                    {"provider_guid", "{22fb2cd6-0e7b-422b-a0c7-2fad1fd0e716}"}, {"fields", std::move(fields)},
+                    {"full_native_payload_retained", false}, {"parent_instance_verified", false},
+                    {"sequence_alias_promotion_performed", false}};
+            }
         } else {
             result["event_time_ns"] = std::to_string(event.timestamp.time_since_epoch().count());
             result["process"] = context(event.process);

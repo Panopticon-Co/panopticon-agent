@@ -30,7 +30,7 @@ constexpr wchar_t kSysmonChannel[] = L"Microsoft-Windows-Sysmon/Operational";
 // Process create (1) plus the V3 telemetry families: network (3), image load
 // (7), file create/delete (11, 23, 26) and registry key/value (12, 13, 14).
 constexpr wchar_t kTelemetryQuery[] =
-    L"*[System[(EventID=1 or EventID=3 or EventID=7 or EventID=11 or EventID=12 or "
+    L"*[System[(EventID=1 or EventID=5 or EventID=3 or EventID=7 or EventID=11 or EventID=12 or "
     L"EventID=13 or EventID=14 or EventID=23 or EventID=26)]]";
 
 // Cheap EventID sniff from the rendered XML so deliver() can route to the right
@@ -213,10 +213,10 @@ struct SysmonEventCollector::Impl {
         }
 
         std::optional<telemetry::RawEvent> raw;
-        if (sniff_event_id(*xml) == 1) {
+        if (sniff_event_id(*xml) == 1 || sniff_event_id(*xml) == 5) {
             const auto process_event = SysmonProcessDecoder::decode_xml(*xml, error);
             if (process_event) {
-                process_cache.remember(*process_event);
+                if (!process_event->terminated) process_cache.remember(*process_event);
                 raw = telemetry::RawEvent{*process_event};
             }
         } else {

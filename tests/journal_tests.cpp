@@ -12,6 +12,7 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
+#include <winsqlite/winsqlite3.h>
 
 namespace {
 namespace delivery = panopticon::officer::delivery;
@@ -38,6 +39,81 @@ std::string observation(int id) {
 }
 Json receipt(const delivery::JournalBatch& batch) {
     return Json{{"batch_id", batch.id}, {"received", batch.entries.size()}, {"accepted", batch.entries.size()}, {"duplicates", 0u}, {"rejected", Json::array()}};
+}
+
+std::string lifecycle(int id, bool stop) {
+    return Json{{"schema_version", "1.0"}, {"kind", "observation"}, {"category", stop ? "process_stop" : "process"},
+        {"record_id", "history-" + std::to_string(id)}, {"subject", {{"observed_pid", 77}, {"entity_id", "instance-" + std::to_string(id)}}},
+        {"data", {{"event", {{"type", stop ? "stop" : "start"}}}, {"private", "private-process-command-" + std::to_string(id)}}}}.dump();
+}
+void test_process_history_retirement_and_quota() {
+    Scratch scratch;
+    const auto birth = lifecycle(1, false), stop = lifecycle(2, true);
+    {
+        delivery::DurableJournal journal{{scratch.path}};
+        journal.append(birth); journal.append(stop); journal.append(stop); journal.append(observation(9));
+        auto unrelated = Json::parse(birth); unrelated["category"] = "network";
+        journal.append(unrelated.dump());
+        const auto history = journal.inspect_process_history(0, 1000, 8192);
+        expect(history.size() == 2 && history[0].original.body == birth && history[1].original.body == stop,
+            "archive retains exact births/stops without converting family context or PID into lifecycle evidence");
+        expect(journal.stats().process_history_bytes == birth.size() + stop.size() && journal.stats().process_history_records == 2,
+            "archive retry is idempotent and durable retained bytes are separately observable");
+        while (auto batch = journal.peek(1000, 8192)) journal.acknowledge(*batch, receipt(*batch).dump());
+        expect(journal.stats().pending_events == 0 && journal.stats().retained_bytes == birth.size() + stop.size(),
+            "delivery retirement preserves archive quota charge and originals");
+        const auto page = journal.inspect_process_history(0, 1, birth.size()+1);
+        expect(page.size() == 1 && journal.inspect_process_history(page[0].local_sequence, 1, 8192)[0].original.body == stop,
+            "archive traversal obeys independent local cursor and byte bound");
+        expect_failure([&] { (void)journal.inspect_process_history(0, 1, 1); }, "archive refuses undersized head page without skipping evidence");
+        expect_failure([&] { (void)journal.inspect_process_history(UINT64_MAX, 1, 8192); }, "archive cursor cannot wrap");
+        journal.append(birth);
+        expect(journal.stats().process_history_records == 2 && journal.stats().pending_events == 1,
+            "retry after ACK cannot create a second archived birth");
+        for (const auto& file : fs::directory_iterator(scratch.path)) {
+            if (!file.is_regular_file()) continue;
+            std::ifstream stream(file.path(), std::ios::binary); const std::string bytes((std::istreambuf_iterator<char>(stream)), {});
+            expect(bytes.find("private-process-command-") == std::string::npos, "archive DB/WAL never exposes lifecycle command plaintext");
+        }
+    }
+    delivery::DurableJournal reopened{{scratch.path}};
+    expect(reopened.inspect_process_history(0, 1000, 8192).size() == 2 && reopened.stats().process_history_records == 2,
+        "archive and durable counters survive reopen independently of delivery state");
+    Scratch small;
+    delivery::JournalConfig config{small.path}; config.retained_payload_limit = birth.size()*2-1;
+    delivery::DurableJournal limited{config};
+    expect_failure([&] { limited.append(birth); }, "both pending and archive copies must fit shared retention quota");
+    expect(limited.stats().pending_events == 0 && limited.stats().process_history_records == 0,
+        "quota refusal commits neither observation nor archive");
+    Scratch cursor;
+    config.directory=cursor.path; config.retained_payload_limit=birth.size()*2;
+    delivery::DurableJournal checkpointed{config};
+    expect_failure([&] { checkpointed.append_checkpointed(birth,"history-source","bookmark",0); },
+        "cursor charge failure rolls back lifecycle observation and archive together");
+    expect(checkpointed.stats().pending_events == 0 && checkpointed.stats().process_history_records == 0 &&
+        !checkpointed.source_checkpoint("history-source"), "failed checkpoint transaction leaves no archive-only lifecycle evidence");
+}
+void test_process_history_schema4_migration() {
+    Scratch scratch; const auto birth=lifecycle(44,false);
+    { delivery::DurableJournal journal{{scratch.path}}; journal.append(birth); }
+    // Reproduce the actual prior schema, with retained pending canonical
+    // evidence but no archive table/counters. No unrelated database is opened.
+    sqlite3* database=nullptr;
+    if (sqlite3_open16((scratch.path/L"journal.db").c_str(),&database)!=SQLITE_OK) throw std::runtime_error("owned migration fixture open failed");
+    const auto rc=sqlite3_exec(database,
+        "DROP TRIGGER process_graph_insert; DROP TABLE process_graph_index;"
+        "DROP TRIGGER process_history_insert; DROP TABLE process_history;"
+        "DELETE FROM counters WHERE name IN ('process_history_count','process_history_bytes','process_graph_count','process_graph_unresolved'); PRAGMA user_version=4;",nullptr,nullptr,nullptr);
+    sqlite3_close(database);
+    if (rc!=SQLITE_OK) throw std::runtime_error("owned schema4 fixture construction failed");
+    delivery::DurableJournal migrated{{scratch.path}};
+    expect(migrated.stats().pending_events==1 && migrated.stats().retained_bytes==birth.size() &&
+        migrated.inspect_process_history(0,1000,8192).empty(),
+        "schema4 migration preserves pending originals without claiming a retrospective complete archive");
+    migrated.append(birth);
+    expect(migrated.stats().pending_events==1 && migrated.stats().process_history_records==1 &&
+        migrated.stats().retained_bytes==birth.size()*2 && migrated.inspect_process_history(0,1000,8192)[0].original.body==birth,
+        "retry of pre-upgrade pending evidence archives atomically without duplicating pending delivery");
 }
 
 void test_read_only_inspection_paging() {
@@ -258,6 +334,10 @@ void test_hard_process_exit() {
     CloseHandle(process.hProcess);
     expect(wait == WAIT_OBJECT_0 && code == 77, "child terminates abruptly after committed observations");
     delivery::DurableJournal recovered{{scratch.path}};
+    const auto lifecycle_history = recovered.inspect_process_history(0, 1000, 8192);
+    expect(lifecycle_history.size() == 2 && lifecycle_history[0].original.body == lifecycle(70,false) &&
+        lifecycle_history[1].original.body == lifecycle(71,true),
+        "delivery-retired lifecycle originals survive actual abrupt child process termination");
     const auto batch = recovered.peek(1000, 4096);
     const auto commands = recovered.pending_commands("crash-scope", 10);
     expect(commands.size() == 2 && commands[0].state == "received" && commands[1].state == "executing" &&
@@ -358,6 +438,9 @@ int main(int argc, char** argv) {
     if (argc == 3 && std::string{argv[1]} == "--crash-writer") {
         delivery::DurableJournal journal{{fs::path{argv[2]}}};
         (void)journal.next_collector_generation();
+        journal.append(lifecycle(70,false)); journal.append(lifecycle(71,true));
+        const auto retired_lifecycle = journal.peek(1000,8192);
+        journal.acknowledge(*retired_lifecycle, receipt(*retired_lifecycle).dump());
         for (int index = 100; index < 110; ++index) journal.append(observation(index));
         journal.receive_command("crash-scope", "queued-command", "committed queued body");
         journal.receive_command("crash-scope", "interrupted-command", "committed executing body");
@@ -368,6 +451,8 @@ int main(int argc, char** argv) {
     try {
         test_restart_encryption_and_ack();
         test_read_only_inspection_paging();
+        test_process_history_retirement_and_quota();
+        test_process_history_schema4_migration();
         test_quota_and_bounds();
         test_physical_admission_preserves_evidence();
         test_protocol_partition_and_install_identity();

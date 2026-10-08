@@ -1,11 +1,17 @@
 #include "panopticon/officer/collectors/etw_process_collector.hpp"
 #include "panopticon/officer/collectors/sysmon_event_collector.hpp"
+#include "panopticon/officer/collectors/windows_event_log.hpp"
 #include "panopticon/officer/delivery/config.hpp"
 #include "panopticon/officer/delivery/uploader.hpp"
 #include "panopticon/officer/health/coverage.hpp"
 #include "panopticon/officer/health/state_freshness.hpp"
 #include "panopticon/officer/state/security_center.hpp"
 #include "panopticon/officer/state/defender_status.hpp"
+#include "panopticon/officer/state/device_guard.hpp"
+#include "panopticon/officer/state/persistence_inventory.hpp"
+#include "panopticon/officer/state/identity_inventory.hpp"
+#include "panopticon/officer/state/software_inventory.hpp"
+#include "panopticon/officer/runtime/service_host.hpp"
 #include "panopticon/officer/health/source_supervisor.hpp"
 #include "panopticon/officer/pipeline/normalizer.hpp"
 #include "panopticon/officer/pipeline/serializer.hpp"
@@ -26,6 +32,9 @@
 #include "panopticon/officer/pipeline/raw_handoff.hpp"
 #include "panopticon/officer/pipeline/diagnostic_output.hpp"
 #include "panopticon/officer/state/process_inventory.hpp"
+#include "panopticon/officer/state/thread_inventory.hpp"
+#include "panopticon/officer/state/memory_inventory.hpp"
+#include "panopticon/officer/collectors/usn_journal.hpp"
 #include "panopticon/officer/state/service_inventory.hpp"
 #include "panopticon/officer/state/driver_inventory.hpp"
 #include "panopticon/officer/state/socket_inventory.hpp"
@@ -39,8 +48,10 @@
 #include <windows.h>
 
 #include <atomic>
+#include <array>
 #include <chrono>
 #include <fstream>
+#include <filesystem>
 #include <functional>
 #include <iostream>
 #include <limits>
@@ -257,7 +268,7 @@ std::optional<CliOptions> parse_arguments(int argc, char* argv[]) {
         const std::string_view argument = argv[index];
         if (argument == "--help" || argument == "-h") {
             std::cout << "Usage: " << argv[0]
-                      << " [--source all|etw|sysmon] [--manager-url <https-url>] [--insecure-tls]\n"
+                      << " [--service] [--source all|etw|sysmon] [--manager-url <https-url>] [--insecure-tls]\n"
                          "       [--enable-response] [--identity-path <path>] [--bootstrap-token-path <path>]\n"
                          "       [--file-collection-root <dir>] [--quarantine-root <dir>]\n"
                          "       [--manager-exception-host <ip>] [--manager-exception-port <port>]\n"
@@ -646,7 +657,9 @@ void run_response_cycle(ResponseRuntime& runtime) {
 
 }  // namespace
 
-int main(int argc, char* argv[]) {
+int run_endpoint(int argc, char* argv[], HANDLE service_stop = nullptr,
+    const std::function<void()>& progress = {}, const std::function<void()>& ready = {},
+    const std::function<void()>& stopping = {}) {
     bool help_requested = false;
     for (int index = 1; index < argc; ++index) {
         const std::string_view argument = argv[index];
@@ -655,6 +668,18 @@ int main(int argc, char* argv[]) {
     const auto options = parse_arguments(argc, argv);
     if (!options) {
         return help_requested ? 0 : 2;
+    }
+    if (service_stop) {
+        const auto absolute = [](const std::string& path) { return !path.empty() && std::filesystem::path(path).is_absolute(); };
+        if (!absolute(options->spool_directory) || !absolute(options->identity_path) ||
+            (options->manager_url && !absolute(options->keypair_path)) ||
+            (options->enable_response && !absolute(options->replay_ledger_path)) ||
+            (!options->bootstrap_token_path.empty() && !absolute(options->bootstrap_token_path)) ||
+            (!options->file_collection_root.empty() && !absolute(options->file_collection_root)) ||
+            (!options->quarantine_root.empty() && !absolute(options->quarantine_root))) {
+            std::cerr << "Service mode requires absolute spool/identity and enabled delivery/response credential/ledger paths.\n";
+            return 2;
+        }
     }
 
     std::string error;
@@ -674,13 +699,17 @@ int main(int argc, char* argv[]) {
         std::cerr << "Warning: Officer is not elevated. ETW or Sysmon subscription may be denied.\n";
     }
 
-    UniqueHandle stop_event{CreateEventW(nullptr, TRUE, FALSE, nullptr)};
+    HANDLE endpoint_stop = nullptr;
+    if (service_stop) {
+        if (!DuplicateHandle(GetCurrentProcess(), service_stop, GetCurrentProcess(), &endpoint_stop, 0, FALSE, DUPLICATE_SAME_ACCESS)) return 3;
+    } else endpoint_stop = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    UniqueHandle stop_event{endpoint_stop};
     if (stop_event.get() == nullptr) {
         std::cerr << "Officer could not create its shutdown event.\n";
         return 3;
     }
     shutdown_event.store(stop_event.get());
-    if (!SetConsoleCtrlHandler(&console_control_handler, TRUE)) {
+    if (!service_stop && !SetConsoleCtrlHandler(&console_control_handler, TRUE)) {
         shutdown_event.store(nullptr);
         std::cerr << "Officer could not install its Ctrl+C handler.\n";
         return 3;
@@ -734,6 +763,7 @@ int main(int argc, char* argv[]) {
     std::string boot_error;
     const auto boot_id = panopticon::officer::core::query_native_boot_id(boot_error);
     pipeline::EndpointRecordFactory record_factory{*context, device_id, installation_id, boot_id, collector_generation};
+    if (progress) progress(); // Runtime identity and durable writer are initialized.
     if (uploader) uploader->set_capture_scope(record_factory.capture_scope());
     pipeline::DiagnosticOutput diagnostic_stdout{GetStdHandle(STD_OUTPUT_HANDLE), 1024, 8 * 1024 * 1024};
     pipeline::DiagnosticOutput diagnostic_stderr{GetStdHandle(STD_ERROR_HANDLE), 256, 4 * 1024 * 1024};
@@ -746,6 +776,9 @@ int main(int argc, char* argv[]) {
         }
     };
     panopticon::officer::health::CoverageRegistry coverage;
+    if (service_stop) coverage.set("AJ.update", panopticon::officer::health::CapabilityState::degraded,
+        "SCM dispatch path active; service installation/update/security qualification incomplete",
+        "own-process service lifecycle only; RUNNING does not prove sensor coverage");
     using CapabilityState = panopticon::officer::health::CapabilityState;
     UniqueHandle health_changed{CreateEventW(nullptr, FALSE, FALSE, nullptr)};
     if (!health_changed.get()) {
@@ -804,6 +837,25 @@ int main(int argc, char* argv[]) {
             (void)diagnostic_stdout.try_submit(line);
         };
     const collectors::RawEventSink process_raw_event = [&](telemetry::RawEvent raw_event) {
+        if (const auto* stopped = std::get_if<telemetry::RawProcessEvent>(&raw_event); stopped && stopped->terminated) {
+            std::scoped_lock lock{output_mutex};
+            nlohmann::json record;
+            try { record = record_factory.process_stop(*stopped); }
+            catch (const std::exception& error) {
+                // emit_normalized owns the same output lock; release before
+                // re-entering it is not possible here, so retain explicit failure.
+                ++normalization_failures;
+                record = record_factory.normalization_failure(raw_event, error.what());
+            }
+            if (!persist_record(record.dump())) {
+                ++observation_admission_failures; SetEvent(health_changed.get());
+                throw std::runtime_error("process stop was not durably accepted");
+            }
+            if (record["category"] == "process_stop") record_factory.accepted_process_stop(*stopped);
+            else ++failure_evidence_committed;
+            (void)diagnostic_stdout.try_submit(record.dump());
+            return;
+        }
         const auto source_record = raw_event;
         std::string normalization_error;
         std::optional<telemetry::PanopticonEvent> normalized;
@@ -1782,6 +1834,228 @@ int main(int argc, char* argv[]) {
         }
     }};
 
+    auto device_guard_health = nlohmann::json{{"state", "unavailable"}, {"committed_snapshots", "0"},
+        {"commit_failures", "0"}, {"pending_durable_acceptance", false}};
+    std::jthread device_guard_worker{[&](std::stop_token stop) {
+        std::uint64_t committed = 0, failures = 0, next_capture = 0;
+        std::string pending, pending_id; auto status = nlohmann::json::object();
+        coverage.set("state.device_guard_state", CapabilityState::unavailable,
+            "no committed Device Guard WMI status capture", "caller-visible Device Guard WMI reports; protection unverified");
+        while (!stop.stop_requested() && WaitForSingleObject(stop_event.get(), 0) != WAIT_OBJECT_0) {
+            try {
+                if (pending.empty() && GetTickCount64() >= next_capture) {
+                    { std::scoped_lock lock{inventory_mutex}; device_guard_health["collection_in_progress"] = true;
+                      device_guard_health["collection_started_uptime_ms"] = std::to_string(GetTickCount64()); }
+                    status = panopticon::officer::state::collect_device_guard_state();
+                    const auto record = record_factory.state("device_guard_state", status);
+                    pending_id = record.at("record_id").get<std::string>(); pending = record.dump();
+                }
+                if (!pending.empty()) {
+                    bool accepted;
+                    { std::scoped_lock lock{output_mutex}; accepted = persist_record(pending);
+                      if (accepted) (void)diagnostic_stdout.try_submit(pending); }
+                    std::scoped_lock lock{inventory_mutex};
+                    if (accepted) {
+                        pending.clear(); next_capture = GetTickCount64() + 300000;
+                        device_guard_health["committed_snapshots"] = std::to_string(++committed);
+                        device_guard_health["last_committed_record_id"] = pending_id;
+                        device_guard_health["last_committed_uptime_ms"] = std::to_string(GetTickCount64());
+                        device_guard_health["last_committed_capture_started_uptime_ms"] = device_guard_health["collection_started_uptime_ms"];
+                        device_guard_health["last_committed_query_status"] = status;
+                        const auto value = status["state"] == "unsupported" ? CapabilityState::unsupported :
+                            status["state"] == "unavailable" ? CapabilityState::unavailable : CapabilityState::degraded;
+                        coverage.set("state.device_guard_state", value, "Device Guard WMI query status in record " + pending_id,
+                            "selected Device Guard/VBS reports; effective protection and policy authority unverified");
+                    } else device_guard_health["commit_failures"] = std::to_string(++failures);
+                    device_guard_health["state"] = accepted ? status["state"] : nlohmann::json("unavailable");
+                    device_guard_health["pending_durable_acceptance"] = !pending.empty();
+                    device_guard_health["collection_in_progress"] = false; SetEvent(health_changed.get());
+                }
+            } catch (const std::exception& error) {
+                std::scoped_lock lock{inventory_mutex}; device_guard_health["state"] = "unavailable";
+                device_guard_health["last_error"] = error.what(); device_guard_health["collection_in_progress"] = false;
+                if (pending.empty()) next_capture = GetTickCount64() + 30000;
+                coverage.set("state.device_guard_state", CapabilityState::unavailable, error.what(), "Device Guard WMI collection unavailable", true);
+                SetEvent(health_changed.get());
+            }
+            WaitForSingleObject(stop_event.get(), 1000);
+        }
+    }};
+
+    constexpr std::array persistence_sources{
+        panopticon::officer::state::PersistenceSource::scheduled_tasks,
+        panopticon::officer::state::PersistenceSource::wmi_subscriptions,
+        panopticon::officer::state::PersistenceSource::startup};
+    constexpr std::array identity_sources{
+        panopticon::officer::state::IdentitySource::accounts,
+        panopticon::officer::state::IdentitySource::groups,
+        panopticon::officer::state::IdentitySource::logons,
+        panopticon::officer::state::IdentitySource::terminal_sessions};
+    constexpr std::array software_sources{
+        panopticon::officer::state::SoftwareSource::msi,
+        panopticon::officer::state::SoftwareSource::uninstall_registry};
+    const auto native_category = [&](std::size_t index) {
+        if (index < persistence_sources.size()) return panopticon::officer::state::persistence_source_name(persistence_sources[index]);
+        index -= persistence_sources.size();
+        if (index < identity_sources.size()) return panopticon::officer::state::identity_source_name(identity_sources[index]);
+        index -= identity_sources.size();
+        if (index < software_sources.size()) return panopticon::officer::state::software_source_name(software_sources[index]);
+        return index == 0 ? "thread_inventory" : "memory_region_inventory";
+    };
+    std::array<nlohmann::json, 11> persistence_health;
+    std::array<std::jthread, 11> persistence_workers;
+    for (std::size_t index = 0; index < persistence_workers.size(); ++index)
+        persistence_health[index] = {{"state", "unavailable"}, {"committed_snapshots", "0"}, {"commit_failures", "0"},
+            {"pending_durable_acceptance", false}, {"collection_in_progress", false}};
+    for (std::size_t index = 0; index < persistence_workers.size(); ++index) {
+        persistence_workers[index] = std::jthread{[&, index](std::stop_token stop) {
+            const std::string category = native_category(index);
+            const auto capability = "state." + category;
+            coverage.set(capability, CapabilityState::unavailable, "no committed native state capture", "local caller-visible native state only");
+            std::uint64_t failures = 0, committed = 0, next_capture = 0;
+            std::uint32_t memory_after_pid = 0;
+            const auto cancelled = [&] { return stop.stop_requested() || WaitForSingleObject(stop_event.get(), 0) == WAIT_OBJECT_0; };
+            while (!cancelled()) {
+                if (GetTickCount64() < next_capture) { WaitForSingleObject(stop_event.get(), 1000); continue; }
+                try {
+                    const auto capture_started = GetTickCount64();
+                    { std::scoped_lock lock{inventory_mutex}; auto& status = persistence_health[index];
+                      status["collection_in_progress"] = true; status["collection_started_uptime_ms"] = std::to_string(capture_started); }
+                    auto page_ids = nlohmann::json::array();
+                    const auto begin = record_factory.state(category + "_begin", {{"format", "paged_" + category + "_begin_v1"},
+                        {"inventory_complete", false}, {"collection_started_uptime_ms", std::to_string(capture_started)}});
+                    const auto capture_id = begin.at("record_id").get<std::string>();
+                    const auto retain = [&](const nlohmann::json& record) {
+                        const auto line = record.dump();
+                        while (!cancelled()) {
+                            // Each caller retains immutable canonical bytes until
+                            // journal acceptance; no cross-source output lock.
+                            const auto accepted = persist_record(line);
+                            if (accepted) (void)diagnostic_stdout.try_submit(line);
+                            { std::scoped_lock lock{inventory_mutex}; auto& status = persistence_health[index];
+                              status["capture_id"] = capture_id; status["committed_pages"] = std::to_string(page_ids.size());
+                              status["pending_durable_acceptance"] = !accepted;
+                              if (!accepted) status["commit_failures"] = std::to_string(++failures); }
+                            SetEvent(health_changed.get());
+                            if (accepted) return true;
+                            WaitForSingleObject(stop_event.get(), 1000);
+                        }
+                        return false;
+                    };
+                    if (!retain(begin)) break;
+                    const auto consume = [&](nlohmann::json page) {
+                        page["capture_id"] = capture_id;
+                        const auto record = record_factory.state(category + "_page", std::move(page));
+                        if (!retain(record)) return false;
+                        page_ids.push_back(record.at("record_id"));
+                        { std::scoped_lock lock{inventory_mutex}; persistence_health[index]["committed_pages"] = std::to_string(page_ids.size()); }
+                        return true;
+                    };
+                    nlohmann::json manifest;
+                    if (index < persistence_sources.size())
+                        manifest = panopticon::officer::state::collect_persistence_inventory_pages(persistence_sources[index], consume, {}, cancelled);
+                    else if (index < persistence_sources.size() + identity_sources.size())
+                        manifest = panopticon::officer::state::collect_identity_inventory_pages(identity_sources[index - persistence_sources.size()], consume, {}, cancelled);
+                    else if (index < persistence_sources.size() + identity_sources.size() + software_sources.size())
+                        manifest = panopticon::officer::state::collect_software_inventory_pages(software_sources[index - persistence_sources.size() - identity_sources.size()], consume, {}, cancelled);
+                    else if (category == "thread_inventory") manifest = panopticon::officer::state::collect_thread_inventory_pages(context->host.id, boot_id, consume, {}, cancelled);
+                    else {
+                        panopticon::officer::state::MemoryInventoryLimits bounds; bounds.after_pid = memory_after_pid;
+                        manifest = panopticon::officer::state::collect_memory_inventory_pages(context->host.id, boot_id, consume, bounds, cancelled);
+                    }
+                    manifest["format"] = "paged_" + category + "_v1";
+                    manifest["capture_id"] = capture_id; manifest["page_record_ids"] = page_ids;
+                    const auto record = record_factory.state(category, manifest);
+                    if (!retain(record)) break;
+                    if (category == "memory_region_inventory") memory_after_pid = manifest.at("next_after_pid").get<std::uint32_t>();
+                    { std::scoped_lock lock{inventory_mutex}; auto& status = persistence_health[index];
+                      status["state"] = manifest["state"]; status["committed_snapshots"] = std::to_string(++committed);
+                      status["last_committed_record_id"] = record["record_id"];
+                      status["last_committed_uptime_ms"] = std::to_string(GetTickCount64());
+                      status["last_committed_capture_started_uptime_ms"] = std::to_string(capture_started);
+                      status["last_committed_query_status"] = nlohmann::json::object();
+                      for (const auto* key : {"state", "source", "scope", "enumeration_complete", "query_failure_count", "copy_refusal_count",
+                          "entries_delivered", "pages_produced", "bound_exceeded", "consumer_refused", "cancelled", "soft_budget_exceeded"})
+                          status["last_committed_query_status"][key] = manifest.at(key);
+                      status["collection_in_progress"] = false;
+                      coverage.set(capability, manifest["state"] == "unavailable" ? CapabilityState::unavailable : CapabilityState::degraded,
+                          "native query status in committed manifest " + record["record_id"].get<std::string>(), manifest["scope"].get<std::string>()); }
+                    if (category == "thread_inventory") coverage.set("C.thread_handle",
+                        manifest["state"] == "unavailable" ? CapabilityState::unavailable : CapabilityState::degraded,
+                        "durable sampled thread descriptors and held-thread queries", "owner process instances, handles, interactions and continuous thread lifecycle unverified");
+                    if (category == "memory_region_inventory") coverage.set("R.memory_injection",
+                        manifest["state"] == "unavailable" ? CapabilityState::unavailable : CapabilityState::degraded,
+                        "durable bounded held-process virtual-memory metadata", "no content reads, injected-thread/handle/ETW correlation, verdict or complete process/memory coverage");
+                    next_capture = GetTickCount64() + 300000; SetEvent(health_changed.get());
+                } catch (const std::exception& error) {
+                    { std::scoped_lock lock{inventory_mutex}; auto& status = persistence_health[index];
+                      status["state"] = "unavailable"; status["last_error"] = error.what(); status["collection_in_progress"] = false; }
+                    coverage.set(capability, CapabilityState::unavailable, error.what(), "incomplete begin/pages retained; fresh capture retries after 30 seconds", true);
+                    if (category == "thread_inventory") coverage.set("C.thread_handle", CapabilityState::unavailable,
+                        error.what(), "thread collection unavailable; handles and interactions not implemented", true);
+                    if (category == "memory_region_inventory") coverage.set("R.memory_injection", CapabilityState::unavailable,
+                        error.what(), "memory region collection unavailable; no injection verdict or target mutation", true);
+                    next_capture = GetTickCount64() + 30000; SetEvent(health_changed.get());
+                }
+            }
+            { std::scoped_lock lock{inventory_mutex}; auto& status = persistence_health[index];
+              status["last_source_state"] = status["state"]; status["state"] = "disabled";
+              status["reason"] = "endpoint_shutdown"; status["worker_stopped"] = true; status["collection_in_progress"] = false; }
+            coverage.set(capability, CapabilityState::disabled, "endpoint_shutdown", "last committed state remains historical evidence");
+            if (category == "thread_inventory") coverage.set("C.thread_handle", CapabilityState::disabled,
+                "endpoint_shutdown", "thread worker stopped; last committed evidence historical");
+            if (category == "memory_region_inventory") coverage.set("R.memory_injection", CapabilityState::disabled,
+                "endpoint_shutdown", "memory worker stopped; last committed evidence historical");
+        }};
+    }
+
+    std::unique_ptr<collectors::UsnJournal> usn_journal;
+    std::string usn_init_error;
+    try {
+        collectors::UsnCallbacks callbacks;
+        callbacks.load = [&](const std::string& source) {
+            return uploader ? uploader->source_checkpoint(source) : offline_journal->source_checkpoint(source);
+        };
+        callbacks.make_record = [&](const std::string& volume, nlohmann::json body, bool gap) {
+            return record_factory.usn_journal(volume, std::move(body), gap).dump();
+        };
+        callbacks.commit = [&](const std::string& line, const std::string& source, const std::string& cursor, std::uint64_t revision) {
+            bool accepted = false;
+            if (uploader) accepted = uploader->enqueue_checkpointed(line, source, cursor, revision);
+            else { try { offline_journal->append_checkpointed(line, source, cursor, revision); accepted = true; } catch (const std::exception&) {} }
+            if (accepted) (void)diagnostic_stdout.try_submit(line);
+            return accepted;
+        };
+        callbacks.changed = [&] { SetEvent(health_changed.get()); };
+        usn_journal = std::make_unique<collectors::UsnJournal>(std::move(callbacks));
+    } catch (const std::exception& error) { usn_init_error = error.what(); }
+
+    std::unique_ptr<collectors::WindowsEventLog> windows_logs;
+    std::string windows_log_init_error;
+    try {
+        collectors::WindowsLogCallbacks callbacks;
+        callbacks.load = [&](const std::string& source) {
+            return uploader ? uploader->source_checkpoint(source) : offline_journal->source_checkpoint(source);
+        };
+        callbacks.make_record = [&](const std::string& channel, const collectors::DecodedWindowsEvent& event, bool gap) {
+            return (gap ? record_factory.gap("winevt:" + channel, event.data) :
+                record_factory.windows_event_log(channel, event.data, event.event_time)).dump();
+        };
+        callbacks.commit = [&](const std::string& line, const std::string& source, const std::string& bookmark, std::uint64_t revision) {
+            bool accepted = false;
+            if (bookmark.empty()) accepted = persist_record(line);
+            else if (uploader) accepted = uploader->enqueue_checkpointed(line, source, bookmark, revision);
+            else {
+                try { offline_journal->append_checkpointed(line, source, bookmark, revision); accepted = true; }
+                catch (const std::exception&) { accepted = false; }
+            }
+            if (accepted) (void)diagnostic_stdout.try_submit(line);
+            return accepted;
+        };
+        callbacks.changed = [&] { SetEvent(health_changed.get()); };
+        windows_logs = std::make_unique<collectors::WindowsEventLog>(std::move(callbacks));
+    } catch (const std::exception& error) { windows_log_init_error = error.what(); }
+
     // Response is a second, independent opt-in: it never starts unless
     // --enable-response was explicitly passed, and any bootstrap/config
     // failure here is reported and disables only the response path --
@@ -1962,6 +2236,9 @@ int main(int argc, char* argv[]) {
             process_visible |= visible;
             if (name == "sysmon") sysmon_visible = visible;
         }
+        coverage.set("state.process_stop", process_visible ? CapabilityState::degraded : CapabilityState::blind,
+            process_visible ? "ETW ID 2/Sysmon ID 5 decode path enabled; source configuration and live lifecycle unqualified" : "no eligible process source; stop visibility blind",
+            "exact native creation token or source-scoped GUID only; no PID-only tombstone, full lifecycle or ancestry assertion");
         if (!process_visible)
             coverage.set("B.process", CapabilityState::blind, "no subscribed process source has verified consumer availability", "process-start adapters");
         if (!sysmon_visible && options->source != SourceSelection::etw) {
@@ -1977,6 +2254,14 @@ int main(int argc, char* argv[]) {
     std::uint64_t committed_handoff_refusals = 0, committed_handoff_failures = 0;
     std::uint64_t pending_handoff_refusals = 0, pending_handoff_failures = 0;
     const auto emit_health = [&](bool display = true) {
+        const auto log_health = windows_logs ? windows_logs->snapshot() : nlohmann::json{{"state", "unavailable"}, {"reason", windows_log_init_error}};
+        if (windows_logs) for (const auto& channel : log_health.at("channels")) {
+            const auto state = channel.at("state").get<std::string>();
+            coverage.set("log." + channel.at("channel").get<std::string>(), state == "disabled" ? CapabilityState::disabled :
+                state == "blind" ? CapabilityState::blind : state == "unavailable" ? CapabilityState::unavailable : CapabilityState::degraded,
+                channel.at("reason").get<std::string>(), "native retained channel records and atomic encrypted bookmark; policy and continuity unverified");
+        }
+        else coverage.set("AA.windows_event_log", CapabilityState::unavailable, windows_log_init_error, "native log workers unavailable");
         const auto stdout_health = diagnostic_stdout.snapshot();
         const auto stderr_health = diagnostic_stderr.snapshot();
         for (const auto& entry : {std::pair{"pipeline.diagnostic_stdout", stdout_health}, std::pair{"pipeline.diagnostic_stderr", stderr_health}})
@@ -1984,8 +2269,18 @@ int main(int argc, char* argv[]) {
                 entry.second["state"] == "disabled" ? CapabilityState::disabled : CapabilityState::degraded,
                 "best-effort display; independent of durable telemetry acceptance", "bounded volatile queue and native write counters");
         auto health = coverage.snapshot(context->agent.id, context->host.id);
+        health["service_host"] = {{"mode", service_stop ? "scm" : "console"},
+            {"running_semantics", "runtime initialized and source startup attempted; independent coverage applies"},
+            {"shutdown_deadline", "native joins may block; SCM checkpoints advance only on actual progress"},
+            {"service_qualification", "incomplete"}};
 
         health["sources"] = source_health;
+        health["windows_event_log"] = log_health;
+        health["usn_journal"] = usn_journal ? usn_journal->snapshot() : nlohmann::json{{"state", "unavailable"}, {"reason", usn_init_error}};
+        const auto usn_state = health["usn_journal"]["state"].get<std::string>();
+        coverage.set("filesystem.usn_journal", usn_state == "degraded" ? CapabilityState::degraded :
+            usn_state == "blind" ? CapabilityState::blind : usn_state == "disabled" ? CapabilityState::disabled : CapabilityState::unavailable,
+            "per-volume native USN query/read and durable cursor status", "source-native file IDs/names/reasons; full paths, actors, baseline and complete filesystem coverage unverified");
         { std::scoped_lock lock{inventory_mutex};
           health["host_inventory"] = inventory_health;
           health["process_inventory"] = process_inventory_health;
@@ -1998,6 +2293,9 @@ int main(int argc, char* argv[]) {
           health["firewall_rule_inventory"] = firewall_rule_health;
           health["security_center_state"] = security_center_health;
           health["defender_status"] = defender_health;
+          health["device_guard_state"] = device_guard_health;
+          for (std::size_t index = 0; index < persistence_workers.size(); ++index)
+              health[native_category(index)] = persistence_health[index];
           health["capabilities"] = coverage.snapshot(context->agent.id, context->host.id).at("capabilities"); }
         health["process_state_admission_failures"] = record_factory.process_state_admission_failures();
         if (response_runtime) health["response_results"] = {
@@ -2033,6 +2331,9 @@ int main(int argc, char* argv[]) {
           health["firewall_rule_inventory"] = firewall_rule_health;
           health["security_center_state"] = security_center_health;
           health["defender_status"] = defender_health;
+          health["device_guard_state"] = device_guard_health;
+          for (std::size_t index = 0; index < persistence_workers.size(); ++index)
+              health[native_category(index)] = persistence_health[index];
               health["capabilities"] = coverage.snapshot(context->agent.id, context->host.id).at("capabilities"); }
         }
         health["pipeline"] = {{"normalization_or_serialization_failures", std::to_string(normalization_failures.load())},
@@ -2066,6 +2367,13 @@ int main(int argc, char* argv[]) {
                 const auto stats = uploader ? uploader->journal_stats() : offline_journal->stats();
                 health["journal"] = {{"pending_events", stats.pending_events}, {"dead_letter_events", stats.dead_letter_events},
                     {"acknowledged_events", stats.acknowledged_events}, {"retained_bytes", stats.retained_bytes},
+                    {"process_history", {{"state", "degraded"}, {"records", std::to_string(stats.process_history_records)},
+                        {"retained_bytes", std::to_string(stats.process_history_bytes)}, {"delivery_independent", true},
+                        {"scope", "exact canonical births/stops archived with acceptance; prior retired evidence, source continuity and durable ancestry reconstruction unverified"}}},
+                    {"process_graph", {{"state", "degraded"}, {"indexed_records", std::to_string(stats.process_graph_indexed)},
+                        {"unresolved_or_refused_records", std::to_string(stats.process_graph_unresolved)},
+                        {"archive_backlog", std::to_string(stats.process_history_records - stats.process_graph_indexed)},
+                        {"scope", "exact identity index over retained lifecycle originals; PID-only ancestry, creator relationships, source continuity and alias promotion unverified"}}},
                     {"disk_bytes", stats.disk_bytes}, {"legacy_gaps", stats.legacy_gaps},
                     {"storage_admission", {{"state", "degraded"}, {"scope", "sampled DB/WAL/SHM logical file sizes and caller-available volume bytes; no reservation or aggregate budget"},
                         {"physical_admission_limit", std::to_string(stats.physical_admission_limit)},
@@ -2073,6 +2381,17 @@ int main(int argc, char* argv[]) {
                         {"caller_available_bytes", std::to_string(stats.caller_available_bytes)},
                         {"refusals", std::to_string(stats.storage_admission_refusals)},
                         {"refusals_scope", "current journal object lifetime; not durable loss accounting"}}}};
+                if (stats.process_graph_indexed < stats.process_history_records) {
+                    try {
+                        const auto rebuilt = uploader ? uploader->rebuild_process_graph(32, 2u * 1024 * 1024) :
+                            offline_journal->rebuild_process_graph(32, 2u * 1024 * 1024);
+                        health["journal"]["process_graph"]["backfilled_this_pass"] = std::to_string(rebuilt);
+                        health["journal"]["process_graph"]["backlog_sample_scope"] = "before this bounded rebuild pass";
+                    } catch (const std::exception& graph_error) {
+                        health["journal"]["process_graph"]["state"] = "unavailable";
+                        health["journal"]["process_graph"]["last_error"] = graph_error.what();
+                    }
+                }
             } catch (const std::exception& journal_error) {
                 health["journal"] = {{"storage_admission", {{"state", "unavailable"}, {"reason", journal_error.what()}}}};
                 health["delivery"]["durability_state"] = "degraded";
@@ -2115,6 +2434,7 @@ int main(int argc, char* argv[]) {
         else coverage.set("AG.durability", CapabilityState::degraded, "health record commit failed", "durable health capture", true);
     };
     const HANDLE wait_handles[]{stop_event.get(), health_changed.get()};
+    if (ready) ready(); // Workers/source startup attempted; coverage may be degraded.
     auto next_health = GetTickCount64();
     bool health_notification = true;
     for (;;) {
@@ -2129,6 +2449,7 @@ int main(int argc, char* argv[]) {
         health_notification = wait == WAIT_OBJECT_0 + 1;
     }
     (void)diagnostic_stderr.try_submit("Stopping Officer collectors...");
+    if (stopping) stopping();
     inventory_worker.request_stop();
     process_inventory_worker.request_stop();
     service_inventory_worker.request_stop();
@@ -2140,6 +2461,10 @@ int main(int argc, char* argv[]) {
     firewall_rule_worker.request_stop();
     security_center_worker.request_stop();
     defender_worker.request_stop();
+    device_guard_worker.request_stop();
+    for (auto& worker : persistence_workers) worker.request_stop();
+    if (windows_logs) windows_logs->stop();
+    if (usn_journal) usn_journal->stop();
     inventory_worker.join();
     process_inventory_worker.join();
     service_inventory_worker.join();
@@ -2151,11 +2476,15 @@ int main(int argc, char* argv[]) {
     firewall_rule_worker.join();
     security_center_worker.join();
     defender_worker.join();
+    device_guard_worker.join();
+    for (auto& worker : persistence_workers) worker.join();
+    if (progress) progress(); // Native inventory workers have joined.
 
     for (auto iterator = all_collectors.rbegin(); iterator != all_collectors.rend(); ++iterator) {
         (*iterator)->stop();
     }
     raw_handoff.close();
+    if (progress) progress(); // Source consumers and raw handoff have drained.
     supervise_sources();
     emit_health();
     stop_response.store(true);
@@ -2168,8 +2497,26 @@ int main(int argc, char* argv[]) {
     if (uploader) {
         uploader->stop();  // accepted observations are already durably committed
     }
+    if (progress) progress(); // Delivery worker closed; journal ownership retained until return.
     SetConsoleCtrlHandler(&console_control_handler, FALSE);
     shutdown_event.store(nullptr);
     // Final durable health carries shutdown evidence; no synchronous display on exit.
     return 0;
+}
+
+int main(int argc, char* argv[]) {
+    bool service = false, help = false;
+    std::vector<char*> arguments{argv[0]};
+    for (int index = 1; index < argc; ++index) {
+        if (std::string_view(argv[index]) == "--service") service = true;
+        else arguments.push_back(argv[index]);
+        help |= std::string_view(argv[index]) == "--help" || std::string_view(argv[index]) == "-h";
+    }
+    arguments.push_back(nullptr);
+    const int count = static_cast<int>(arguments.size() - 1);
+    if (service && !help) return panopticon::officer::runtime::run_service(
+        [&](HANDLE stop, const std::function<void()>& progress, const std::function<void()>& ready,
+            const std::function<void()>& stopping) { return run_endpoint(count, arguments.data(), stop, progress, ready, stopping); });
+    try { return run_endpoint(count, arguments.data()); }
+    catch (const std::exception& error) { std::cerr << "Officer fatal runtime error: " << error.what() << '\n'; return 6; }
 }
