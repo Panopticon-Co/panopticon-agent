@@ -2732,7 +2732,7 @@ int run_endpoint(int argc, char* argv[], HANDLE service_stop = nullptr,
                             "committed Win32_EncryptableVolume status in record " + pending_id,
                             "bounded caller-visible WMI association/status only; no hardware/key-protector/escrow or full-disk claim");
                     } else volume_encryption_health["commit_failures"] = std::to_string(++failures);
-                    volume_encryption_health["state"] = accepted ? status.value("state", std::string("unavailable")) : nlohmann::json("unavailable");
+                    volume_encryption_health["state"] = accepted ? status.value("state", std::string("unavailable")) : std::string("unavailable");
                     volume_encryption_health["pending_durable_acceptance"] = !pending.empty();
                     volume_encryption_health["collection_in_progress"] = false;
                     SetEvent(health_changed.get());

@@ -88,8 +88,9 @@ struct ChannelLogInfo {
     std::string generation;
     std::uint64_t oldest_record_id{};
     std::uint64_t record_count{};
-    std::uint64_t newest_record_estimate{};
+    std::uint64_t newest_record_id{};
 };
+std::uint64_t native_event_record_id(EVT_HANDLE event);
 
 ChannelLogInfo channel_log_info(const std::wstring& channel) {
     Evt log{EvtOpenLog(nullptr, channel.c_str(), EvtOpenChannelPath)};
@@ -99,9 +100,18 @@ ChannelLogInfo channel_log_info(const std::wstring& channel) {
     result.generation = creation ? std::to_string(creation) : "unknown";
     result.record_count = log_info_u64(log.value, EvtLogNumberOfLogRecords, EvtVarTypeUInt64);
     result.oldest_record_id = log_info_u64(log.value, EvtLogOldestRecordNumber, EvtVarTypeUInt64);
-    if (result.record_count && result.oldest_record_id &&
-        result.record_count - 1 <= std::numeric_limits<std::uint64_t>::max() - result.oldest_record_id)
-        result.newest_record_estimate = result.oldest_record_id + result.record_count - 1;
+    // Native record IDs can have holes: oldest + count - 1 is not the newest ID.
+    // Using that estimate to detect regression falsely resets valid bookmarks.
+    Evt query{EvtQuery(nullptr, channel.c_str(), L"*", EvtQueryChannelPath | EvtQueryReverseDirection)};
+    if (!query.value) throw NativeError("EvtQuery newest record ID", GetLastError());
+    EVT_HANDLE native = nullptr; DWORD count = 0;
+    if (EvtNext(query.value, 1, &native, 1000, 0, &count)) {
+        Evt event{native};
+        if (count != 1 || !event.value) throw NativeError("EvtNext newest record count", ERROR_INVALID_DATA);
+        result.newest_record_id = native_event_record_id(event.value);
+    } else if (GetLastError() != ERROR_NO_MORE_ITEMS) {
+        throw NativeError("EvtNext newest record ID", GetLastError());
+    }
     return result;
 }
 
@@ -147,10 +157,16 @@ std::string encode_cursor(const std::string& bookmark, const ChannelLogInfo& log
 }
 
 std::uint64_t native_event_record_id(EVT_HANDLE event) {
-    EVT_VARIANT value{}; DWORD required = 0;
-    if (!EvtGetEventInfo(event, EvtEventRecordId, sizeof(value), &value, &required))
-        throw NativeError("EvtGetEventInfo record ID", GetLastError());
-    if (value.Type != EvtVarTypeUInt64) throw NativeError("EvtGetEventInfo record ID type", ERROR_INVALID_DATA);
+    // EventRecordID is an event value, not an EVT_EVENT_PROPERTY_ID.
+    // Render only this scalar so the fixed buffer cannot contain string pointers.
+    LPCWSTR paths[] = {L"Event/System/EventRecordID"};
+    Evt context{EvtCreateRenderContext(1, paths, EvtRenderContextValues)};
+    if (!context.value) throw NativeError("EvtCreateRenderContext record ID", GetLastError());
+    EVT_VARIANT value{}; DWORD required = 0, count = 0;
+    if (!EvtRender(context.value, event, EvtRenderEventValues, sizeof(value), &value, &required, &count))
+        throw NativeError("EvtRender record ID", GetLastError());
+    if (count != 1 || required != sizeof(value) || value.Type != EvtVarTypeUInt64)
+        throw NativeError("EvtRender record ID type", ERROR_INVALID_DATA);
     return value.UInt64Val;
 }
 }
@@ -250,7 +266,7 @@ struct WindowsEventLog::Impl {
                     worker.health["log_generation_id"] = info.generation;
                     worker.health["oldest_retained_record_id"] = info.oldest_record_id ? Json(std::to_string(info.oldest_record_id)) : Json(nullptr);
                     worker.health["retained_record_count"] = std::to_string(info.record_count);
-                    worker.health["newest_record_id_estimate"] = info.newest_record_estimate ? Json(std::to_string(info.newest_record_estimate)) : Json(nullptr);
+                    worker.health["newest_retained_record_id"] = info.newest_record_id ? Json(std::to_string(info.newest_record_id)) : Json(nullptr);
                 };
                 set_log_health(log_info);
                 const auto lifecycle_reason = [&](const BookmarkCursor& saved, const ChannelLogInfo& current) -> std::string {
@@ -261,7 +277,7 @@ struct WindowsEventLog::Impl {
                         return "log_generation_changed_clear_or_recreate";
                     if (saved.generation != current.generation && (saved.generation == "unknown" || current.generation == "unknown"))
                         return "log_generation_identity_unavailable_or_changed";
-                    if (saved.last_record_id_known && current.newest_record_estimate && current.newest_record_estimate < saved.last_record_id)
+                    if (saved.last_record_id_known && current.newest_record_id && current.newest_record_id < saved.last_record_id)
                         return "record_id_regressed_after_log_clear_or_recreate";
                     if (saved.last_record_id_known && current.oldest_record_id && saved.last_record_id <
                         std::numeric_limits<std::uint64_t>::max() && current.oldest_record_id > saved.last_record_id + 1)
@@ -281,7 +297,7 @@ struct WindowsEventLog::Impl {
                         {"previous_log_generation_id", saved.generation}, {"current_log_generation_id", current.generation},
                         {"previous_last_record_id", saved.last_record_id_known ? Json(std::to_string(saved.last_record_id)) : Json(nullptr)},
                         {"oldest_retained_record_id", current.oldest_record_id ? Json(std::to_string(current.oldest_record_id)) : Json(nullptr)},
-                        {"newest_record_id_estimate", current.newest_record_estimate ? Json(std::to_string(current.newest_record_estimate)) : Json(nullptr)},
+                        {"newest_retained_record_id", current.newest_record_id ? Json(std::to_string(current.newest_record_id)) : Json(nullptr)},
                         {"retained_record_count", std::to_string(current.record_count)},
                         {"estimated_lost_record_ids", saved.last_record_id_known && saved.last_record_id < std::numeric_limits<std::uint64_t>::max() &&
                             current.oldest_record_id > saved.last_record_id + 1 ?

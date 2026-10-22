@@ -223,7 +223,7 @@ DecodedWindowsEvent decode_windows_event_xml(const std::string& xml, const std::
             {"source_label_basis", "Microsoft Defender Antivirus event documentation and ASR event guidance"},
             {"raw_event_data_preserved", true}, {"event_data_fields_interpreted", false},
             {"process_and_action_attribution", {{"state", "unverified"}, {"subject_process_id", nullptr},
-                {"reason", "raw event fields and reported writer metadata are not independently verified or correlated to a process instance"}},
+                {"reason", "raw event fields and reported writer metadata are not independently verified or correlated to a process instance"}}},
             {"privacy_scope", "retained raw XML/EventData may include threat names, file paths, usernames, and security configuration values"}
         };
     }
