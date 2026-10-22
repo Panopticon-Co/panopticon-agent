@@ -1,5 +1,60 @@
 # Windows endpoint validation ledger
 
+## Build restoration and Sysmon process context — 2026-10-22
+
+Code candidate: `550113962b73f31426350358e3452c54b9defc98`, based on main
+`6898d77dcbd06202a102deca4b2e01e80eed1da7`. Repairs are in `e8831a1`; extended
+process source facts are in `5501139`. Documentation/evidence commits may follow
+without changing this tested source candidate.
+
+Development host: Windows 11 Home Single Language, version 10.0.26200, x64;
+MSVC 14.51.36231, Windows SDK 10.0.26100.0, Ninja, x64-windows vcpkg dependencies.
+This is native development-host evidence, not the dedicated VM or OS compatibility
+matrix. The separate `build-officer-telemetry-debug` and Release directories avoid
+replacing an executable held by a running agent in the earlier lab build directory.
+That running agent was not stopped or reconfigured.
+
+The baseline exposed compile failures in DNS HKEY constant initialization and COM
+declarations, BitLocker BSTR use, registry callback field arrays, Defender event
+JSON initialization, audit-policy buffer indirection, Event Log record-ID access,
+IP-interface fields absent from the SDK, and a string/JSON conditional in main.
+The repairs preserve unknown interface fields as null with reasons and fix a
+wide NUL literal in file evidence. CI now checks Debug and Release with a bounded
+per-test timeout.
+
+Real Application log regression: `oldest + retained count - 1` is not the newest
+native record ID when IDs have holes. Using it as clear/regression evidence caused
+false bookmark resets and replay. The collector now queries the actual newest ID
+and renders record IDs using an explicit Event Log value context. The live test
+also allows legacy cursor migration before injecting refusal of a delivered event.
+The corrected test records exactly two owned tokens across refusal/retry and restart.
+An unavailable Secure Boot firmware report now includes common `value: null`;
+successful observations include the interpreted boolean. Tests use checked field
+access so a missing field becomes a diagnostic rather than a Debug assertion dialog.
+
+Debug: fresh configure/build succeeded; **44/44 CTest cases passed**, 59.93 seconds.
+New regressions cover EID1 XML through canonical source facts, missing/duplicate
+fields, EID5 exclusion, exact logon/time text without invented native ticks, all
+extended string capacities at queue admission, embedded NUL/invalid UTF-8 handling,
+and byte-identical protocol-2 encrypted-journal recovery after reopen.
+Release and remote CI results are pending at this checkpoint.
+
+Evidence: [Debug summary](evidence/20261022-telemetry-context/debug-ctest.log),
+[full test output](evidence/20261022-telemetry-context/debug-test-output.log),
+[synthetic context record](evidence/20261022-telemetry-context/sysmon-context-synthetic.json),
+[pinned schema](evidence/20261022-telemetry-context/endpoint-record-1.0.schema.json).
+The synthetic record validates with Draft202012Validator against contracts snapshot
+`1d96f731a80ea57c1d610bd6ee4523889714c3b8`, not contracts master. Its SHA-256 is
+`624BF85EEEB36FF7057CCF1E2EE0275D4B9B730EBC71EB1B138C5FBD804F9E55`.
+Logs replace the workspace prefix with `<workspace>`; output is otherwise retained.
+
+Not proved: live Sysmon (Operational channel unavailable to this session), ETW/Sysmon
+exact alias binding, live process field availability, full capture recall, auth joins,
+EID8/10/22 canonical coverage, dedicated-VM behavior, fleet/chaos/soak qualification,
+Manager acceptance or engine train/serve parity. No model/engine code changed.
+See [feature parity](FEATURE_FIELD_PARITY.md) for consumer requirements. The A–AN
+Definition of Done remains unmet.
+
 WFP Security audit event semantics wave, 2026-10-22: the isolated
 `SecurityAuditSemantics` enrichment now classifies exact Security-channel,
 Security-Auditing-provider event IDs 5152, 5156 and 5157 as WFP blocked packet,
