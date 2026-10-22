@@ -5,6 +5,18 @@ see [firewall rule inventory](FIREWALL_RULES.md). Profile snapshot collection fl
 describe this profile collector only. Neither collector establishes complete
 effective firewall enforcement.
 
+The separate read-only rule worker enumerates caller-visible `INetFwRules` and
+retains bounded selected `INetFwRule`, `INetFwRule2` and `INetFwRule3` fields,
+including direction, action, enabled state, profile/protocol, ports, addresses,
+application/service, grouping and selected authorization text. It records each
+getter HRESULT and preserves unknown outputs, with per-string, per-rule, row,
+page and capture bounds. It does not mutate policy. Rule content may expose local
+executable paths, service names, network ranges, port configuration, SDDL-like
+authorization strings and package identifiers; these values are retained as
+descriptive evidence without redaction. Treat rule records as sensitive. Their
+caller-visible values do not establish Group Policy provenance, effective
+filters, or packet enforcement.
+
 An independent read-only worker emits `state / firewall_profile_state` initially
 and on a nominal five-minute schedule. Each record retains the selected native
 query results before exposing record-bound health and `state.firewall_profiles`

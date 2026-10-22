@@ -167,10 +167,15 @@ private:
         right.data(), static_cast<int>(right.size()), TRUE) == CSTR_EQUAL;
 }
 
-[[nodiscard]] bool fim_is_direct_child_path(std::wstring_view root, std::wstring_view candidate) noexcept {
+[[nodiscard]] bool fim_is_descendant_path(std::wstring_view root, std::wstring_view candidate) noexcept {
     if (candidate.size() <= root.size() + 1 || !fim_path_equal(candidate.substr(0, root.size()), root)
         || candidate[root.size()] != L'\\') return false;
-    return candidate.substr(root.size() + 1).find_first_of(L"\\/") == std::wstring_view::npos;
+    return true;
+}
+
+[[nodiscard]] bool fim_path_in_scope(std::wstring_view root, std::wstring_view candidate, bool recursive) noexcept {
+    if (!fim_is_descendant_path(root, candidate)) return false;
+    return recursive || candidate.substr(root.size() + 1).find_first_of(L"\\/") == std::wstring_view::npos;
 }
 
 [[nodiscard]] bool fim_root_matches(HANDLE root, const std::string& expected_identity, std::wstring_view expected_path) {
@@ -223,7 +228,7 @@ private:
 
 [[nodiscard]] bool fim_safe_relative(std::wstring_view value, std::size_t max_bytes) {
     if (value.empty() || value.front() == L'\\' || value.front() == L'/') return false;
-    if (value.find_first_of(L"\\/") != std::wstring_view::npos) return false;
+    if (value.back() == L'\\' || value.back() == L'/') return false;
     try { if (fim_utf8(value).size() > max_bytes) return false; } catch (...) { return false; }
     std::size_t begin = 0;
     while (begin <= value.size()) {
@@ -243,7 +248,7 @@ private:
     if (!fim_root_matches(root_handle, root_identity, root_final_path))
         return {{"state", "degraded"}, {"reason", "configured_root_identity_or_path_changed"}, {"path_refused", true}};
     const auto candidate_final = fim_final_path(file_handle);
-    if (!fim_is_direct_child_path(root_final_path, candidate_final))
+    if (!fim_path_in_scope(root_final_path, candidate_final, limits.recursive))
         return {{"state", "degraded"}, {"reason", "candidate_resolved_outside_configured_root"}, {"path_refused", true}};
     const auto current = fim_information(file_handle);
     if (fim_is_reparse(current)) return {{"state", "degraded"}, {"reason", "reparse_point_skipped"}, {"file_identity", fim_identity(current)}};
@@ -262,7 +267,7 @@ private:
         std::uint64_t remaining = size;
         while (remaining != 0) {
             if (!fim_root_matches(root_handle, root_identity, root_final_path)
-                || !fim_is_direct_child_path(root_final_path, fim_final_path(file_handle))) {
+                || !fim_path_in_scope(root_final_path, fim_final_path(file_handle), limits.recursive)) {
                 result["state"] = "degraded"; result["hash_state"] = "root_or_candidate_path_changed_before_read";
                 result["path_refused"] = true;
                 return result;
@@ -278,10 +283,10 @@ private:
         if (fim_identity(after) != fim_identity(current) || fim_file_size(after) != size
             || fim_filetime(after.ftLastWriteTime) != fim_filetime(current.ftLastWriteTime)
             || !fim_root_matches(root_handle, root_identity, root_final_path)
-            || !fim_is_direct_child_path(root_final_path, fim_final_path(file_handle))) {
+            || !fim_path_in_scope(root_final_path, fim_final_path(file_handle), limits.recursive)) {
             result["state"] = "degraded"; result["hash_state"] = "file_or_path_changed_during_hash";
             if (!fim_root_matches(root_handle, root_identity, root_final_path)
-                || !fim_is_direct_child_path(root_final_path, fim_final_path(file_handle))) result["path_refused"] = true;
+                || !fim_path_in_scope(root_final_path, fim_final_path(file_handle), limits.recursive)) result["path_refused"] = true;
         } else {
             result["sha256"] = hash.finish(); result["hash_state"] = "sha256_complete";
         }
@@ -312,6 +317,11 @@ struct FileIntegritySensor::Impl {
               source("file-integrity:v1:" + fim_sha256_text(root_utf8)), root_handle(std::move(handle)),
               health{{"root", root_utf8}, {"root_identity", root_identity}, {"source", source},
                   {"state", "unavailable"}, {"reason", "not_started"}, {"baseline_candidates", "0"},
+                  {"recursive", false}, {"directories_visited", "0"}, {"depth_refusals", "0"},
+                  {"reparse_skips", "0"}, {"directory_identity_duplicates", "0"}, {"root_change_gaps", "0"},
+                  {"baseline_in_progress", false}, {"last_baseline_terminal", false},
+                  {"last_baseline_coverage_complete", false}, {"last_baseline_candidates", "0"},
+                  {"last_baseline_directories", "0"},
                   {"notification_batches", "0"}, {"notification_candidates", "0"}, {"gaps", "0"},
                   {"malformed_buffers", "0"}, {"overflow_buffers", "0"}, {"commit_refusals", "0"},
                   {"path_refusals", "0"},
@@ -332,11 +342,16 @@ struct FileIntegritySensor::Impl {
         : callbacks(std::move(cb)), limits(bounds), disabled(roots.empty()),
           configuration{{"configured_roots", roots.size()}, {"state", roots.empty() ? "disabled" : "degraded"},
               {"reason", roots.empty() ? "no_roots_configured" : "validating_explicit_roots"},
-              {"maximum_roots", limits.maximum_roots}} {
+              {"maximum_roots", limits.maximum_roots}, {"recursive", limits.recursive},
+              {"maximum_depth", limits.maximum_depth}, {"maximum_directories", limits.maximum_directories},
+              {"maximum_baseline_candidates", limits.maximum_baseline_candidates},
+              {"maximum_candidates_per_notification_batch", limits.maximum_candidates_per_batch}} {
         if (roots.empty()) return;
         if (!callbacks.load || !callbacks.make_record || !callbacks.commit)
             throw std::invalid_argument("FIM durable acceptance callbacks are required when roots are configured");
         if (roots.size() > limits.maximum_roots || limits.maximum_roots == 0 || limits.maximum_baseline_candidates == 0
+            || limits.maximum_directories == 0 || limits.maximum_directories > limits.maximum_baseline_candidates
+            || limits.maximum_depth == 0 || limits.maximum_depth > 64
             || limits.maximum_candidates_per_batch == 0 || limits.maximum_relative_path_bytes == 0
             || limits.maximum_relative_path_bytes > 32767 || limits.native_buffer_bytes < 4096
             || limits.native_buffer_bytes > 64 * 1024 || limits.maximum_file_hash_bytes == 0
@@ -348,7 +363,10 @@ struct FileIntegritySensor::Impl {
             if (!unique.insert(root).second) throw std::invalid_argument("duplicate configured FIM root");
             auto [handle, identity, final_path] = fim_validate_root(root);
             const auto utf8 = fim_utf8(root);
-            workers.push_back(std::make_unique<Worker>(std::move(root), std::move(final_path), utf8, identity, std::move(handle)));
+            auto worker = std::make_unique<Worker>(std::move(root), std::move(final_path), utf8, identity, std::move(handle));
+            worker->health["recursive"] = limits.recursive;
+            worker->health["directories_visited"] = "1";
+            workers.push_back(std::move(worker));
         }
         configuration["state"] = "degraded";
         configuration["reason"] = "explicit_roots_validated; per-root baseline and watcher starting";
@@ -381,9 +399,26 @@ struct FileIntegritySensor::Impl {
         body["root"] = worker.root_utf8; body["root_identity"] = worker.root_identity;
         body["source"] = worker.source; body["sequence"] = std::to_string(next_sequence);
         body["lost_native_events"] = gap ? Json(nullptr) : Json("not_reported_by_source");
+        body["recursive"] = limits.recursive;
+        body["coverage_scope"] = limits.recursive ? "configured_root_subtree" : "configured_root_direct_children";
+        body["maximum_depth"] = limits.maximum_depth;
+        body["maximum_directories"] = limits.maximum_directories;
+        body["maximum_baseline_candidates"] = limits.maximum_baseline_candidates;
+        body["maximum_candidates_per_batch"] = limits.maximum_candidates_per_batch;
+        body["maximum_relative_path_bytes"] = limits.maximum_relative_path_bytes;
+        body["maximum_file_hash_bytes"] = std::to_string(limits.maximum_file_hash_bytes);
+        body["maximum_total_hash_bytes"] = std::to_string(limits.maximum_total_hash_bytes);
+        body["native_buffer_bytes"] = limits.native_buffer_bytes;
         body["full_file_coverage_verified"] = false;
         Json cursor{{"format", "windows_file_integrity_cursor_v1"}, {"version", 1},
-            {"root_identity", worker.root_identity}, {"sequence", std::to_string(next_sequence)}};
+            {"root_identity", worker.root_identity}, {"sequence", std::to_string(next_sequence)},
+            {"scope", {{"recursive", limits.recursive}, {"maximum_depth", limits.maximum_depth},
+                {"maximum_directories", limits.maximum_directories}, {"maximum_baseline_candidates", limits.maximum_baseline_candidates},
+                {"maximum_candidates_per_batch", limits.maximum_candidates_per_batch},
+                {"maximum_relative_path_bytes", limits.maximum_relative_path_bytes},
+                {"maximum_file_hash_bytes", std::to_string(limits.maximum_file_hash_bytes)},
+                {"maximum_total_hash_bytes", std::to_string(limits.maximum_total_hash_bytes)},
+                {"native_buffer_bytes", limits.native_buffer_bytes}}}};
         const auto encoded = cursor.dump();
         body["source_checkpoint_expected_revision"] = std::to_string(revision);
         body["source_checkpoint_next_cursor"] = cursor;
@@ -409,12 +444,12 @@ struct FileIntegritySensor::Impl {
         return false;
     }
 
-    void process_batch(Worker& worker, std::stop_token stop, std::span<const std::byte> bytes,
+    bool process_batch(Worker& worker, std::stop_token stop, std::span<const std::byte> bytes,
         std::uint64_t& revision, std::uint64_t& sequence, std::uint64_t& hash_budget) {
         Json candidates = Json::array();
         std::size_t offset = 0, parsed = 0;
         std::uint64_t hash_bytes = 0;
-        bool malformed = false, bound_exceeded = false;
+        bool malformed = false, bound_exceeded = false, reconciliation_needed = false;
         while (offset < bytes.size()) {
             if (++parsed > limits.maximum_candidates_per_batch) { bound_exceeded = true; break; }
             if (bytes.size() - offset < sizeof(FILE_NOTIFY_INFORMATION)) { malformed = true; break; }
@@ -427,16 +462,29 @@ struct FileIntegritySensor::Impl {
                 {"rename_pairing", info->Action == FILE_ACTION_RENAMED_OLD_NAME || info->Action == FILE_ACTION_RENAMED_NEW_NAME
                     ? "unresolved_native_old_or_new_name" : "not_applicable"},
                 {"actor", nullptr}, {"process_attribution_verified", false}};
-            if (!fim_root_matches(worker.root_handle.get(), worker.root_identity, worker.root_final_path))
+            if (!fim_root_matches(worker.root_handle.get(), worker.root_identity, worker.root_final_path)) {
+                Json gap{{"phase", "source_gap"}, {"reason", "configured_root_identity_or_path_changed_before_change_capture"},
+                    {"root_identity", worker.root_identity}, {"remaining_candidates_unknown", true}};
+                (void)accept(worker, stop, std::move(gap), true, revision, sequence);
+                { std::scoped_lock lock{worker.mutex}; worker.health["root_change_gaps"] = std::to_string(std::stoull(worker.health["root_change_gaps"].get<std::string>()) + 1); }
                 throw std::runtime_error("configured FIM root identity or final path changed before change capture");
+            }
             const auto full = fim_join(worker.root_wide, relative);
-            FimHandle candidate{CreateFileW(full.c_str(), GENERIC_READ | FILE_READ_ATTRIBUTES,
+            const DWORD hinted_attributes = GetFileAttributesW(full.c_str());
+            const DWORD desired_access = FILE_READ_ATTRIBUTES
+                | (hinted_attributes != INVALID_FILE_ATTRIBUTES && (hinted_attributes & FILE_ATTRIBUTE_DIRECTORY)
+                    ? FILE_LIST_DIRECTORY : GENERIC_READ);
+            FimHandle candidate{CreateFileW(full.c_str(), desired_access,
                 FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING,
                 FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_SEQUENTIAL_SCAN, nullptr)};
             if (!candidate.valid()) item["current_object"] = {{"state", "degraded"}, {"reason", "candidate_open_failed"}, {"native_error", GetLastError()}};
             else {
                 item["current_object"] = fim_file_observation(worker.root_handle.get(), worker.root_identity,
                     worker.root_final_path, candidate.get(), hash_budget, limits);
+                if (item["current_object"].is_object()
+                    && (item["current_object"].value("path_refused", false)
+                        || item["current_object"].value("reason", std::string{}) == "reparse_point_skipped"))
+                    reconciliation_needed = true;
             }
             if (item.contains("current_object") && item["current_object"].is_object()
                 && item["current_object"].value("path_refused", false)) {
@@ -459,64 +507,180 @@ struct FileIntegritySensor::Impl {
             std::scoped_lock lock{worker.mutex}; worker.health["malformed_buffers"] = std::to_string(std::stoull(worker.health["malformed_buffers"].get<std::string>()) + 1);
         }
         { std::scoped_lock lock{worker.mutex}; worker.health["hash_bytes"] = std::to_string(std::stoull(worker.health["hash_bytes"].get<std::string>()) + hash_bytes); }
-        if (bound_exceeded || malformed) body["loss_reason"] = bound_exceeded ? "candidate_count_bound_exceeded; remainder_unknown" : "malformed_notification_buffer; remainder_unknown";
-        if (!body["candidates"].empty() || bound_exceeded || malformed) {
-            if (!accept(worker, stop, std::move(body), bound_exceeded || malformed, revision, sequence)) return;
+        if (bound_exceeded || malformed || reconciliation_needed) {
+            body["loss_reason"] = bound_exceeded ? "candidate_count_bound_exceeded; remainder_unknown"
+                : malformed ? "malformed_notification_buffer; remainder_unknown"
+                : "candidate_path_refused_or_reparse_skipped; reconciliation_required";
+            body["rescan_started"] = true;
+        }
+        if (!body["candidates"].empty() || bound_exceeded || malformed || reconciliation_needed) {
+            if (!accept(worker, stop, std::move(body), bound_exceeded || malformed || reconciliation_needed, revision, sequence)) return false;
             std::scoped_lock lock{worker.mutex};
             worker.health["notification_batches"] = std::to_string(std::stoull(worker.health["notification_batches"].get<std::string>()) + 1);
             worker.health["notification_candidates"] = std::to_string(std::stoull(worker.health["notification_candidates"].get<std::string>()) + candidate_count);
         }
+        return bound_exceeded || malformed || reconciliation_needed;
     }
 
     bool baseline(Worker& worker, std::stop_token stop, std::uint64_t& revision, std::uint64_t& sequence,
         std::uint64_t& hash_budget) {
-        struct Dir { std::wstring path; std::wstring relative; };
-        std::vector<Dir> stack{{worker.root_wide, L""}};
+        Json begin{{"phase", "baseline_begin"}, {"coverage_scope", limits.recursive ? "configured_root_subtree" : "configured_root_direct_children"},
+            {"baseline_is_atomic", false}, {"maximum_baseline_candidates", limits.maximum_baseline_candidates},
+            {"maximum_directories", limits.maximum_directories}, {"maximum_depth", limits.maximum_depth},
+            {"reconciliation_reason", "startup_or_source_gap"}};
+        if (!accept(worker, stop, std::move(begin), false, revision, sequence)) return false;
+        { std::scoped_lock lock{worker.mutex}; worker.health["baseline_in_progress"] = true;
+          worker.health["last_baseline_terminal"] = false; worker.health["last_baseline_coverage_complete"] = false; }
+        struct Dir { std::wstring path; std::wstring relative; std::size_t depth; std::string identity; };
+        std::vector<Dir> stack{{worker.root_wide, L"", 0, worker.root_identity}};
+        std::set<std::string> visited_directories{worker.root_identity};
         std::size_t candidates = 0;
+        bool coverage_complete = true;
         while (!stack.empty() && !stop.stop_requested()) {
             auto current_dir = std::move(stack.back()); stack.pop_back();
-            if (!fim_root_matches(worker.root_handle.get(), worker.root_identity, worker.root_final_path))
-                throw std::runtime_error("configured FIM root identity or final path changed before baseline enumeration");
+            if (!fim_root_matches(worker.root_handle.get(), worker.root_identity, worker.root_final_path)) {
+                Json gap{{"phase", "source_gap"}, {"reason", "configured_root_identity_or_path_changed_during_baseline"},
+                    {"root_identity", worker.root_identity}, {"remaining_candidates_unknown", true}};
+                if (!accept(worker, stop, std::move(gap), true, revision, sequence)) return false;
+                { std::scoped_lock lock{worker.mutex}; worker.health["root_change_gaps"] = std::to_string(std::stoull(worker.health["root_change_gaps"].get<std::string>()) + 1); }
+                { std::scoped_lock lock{worker.mutex}; worker.health["baseline_in_progress"] = false; }
+                update(worker, "blind", "configured root identity or final path changed during baseline");
+                return false;
+            }
+            FimHandle held_directory;
+            std::wstring current_directory_final = worker.root_final_path;
+            if (!current_dir.relative.empty()) {
+                held_directory = fim_open_directory_no_reparse(current_dir.path);
+                if (!held_directory.valid()) {
+                    coverage_complete = false;
+                    Json gap{{"phase", "baseline_gap"}, {"reason", "directory_reopen_refused"},
+                        {"relative_directory", fim_utf8(current_dir.relative)}, {"native_error", GetLastError()},
+                        {"remaining_subtree_unknown", true}};
+                    if (!accept(worker, stop, std::move(gap), true, revision, sequence)) return false;
+                    continue;
+                }
+                const auto current_info = fim_information(held_directory.get());
+                const auto current_final = fim_final_path(held_directory.get());
+                if (fim_is_reparse(current_info) || fim_identity(current_info) != current_dir.identity
+                    || !fim_is_descendant_path(worker.root_final_path, current_final)) {
+                    coverage_complete = false;
+                    Json gap{{"phase", "baseline_gap"}, {"reason", "directory_identity_or_path_changed_before_enumeration"},
+                        {"relative_directory", fim_utf8(current_dir.relative)}, {"expected_identity", current_dir.identity},
+                        {"actual_identity", fim_identity(current_info)}, {"remaining_subtree_unknown", true}};
+                    if (!accept(worker, stop, std::move(gap), true, revision, sequence)) return false;
+                    continue;
+                }
+                current_directory_final = current_final;
+            }
             const auto search_path = current_dir.path + L"\\*";
             WIN32_FIND_DATAW found{};
             FimFindHandle find{FindFirstFileW(search_path.c_str(), &found)};
             if (find_handle_invalid(find)) {
                 const DWORD error = GetLastError();
-                if (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND) continue;
-                throw std::runtime_error("bounded FIM baseline directory enumeration failed");
+                if (error == ERROR_FILE_NOT_FOUND) continue;
+                if (error == ERROR_PATH_NOT_FOUND && current_dir.relative.empty()) continue;
+                coverage_complete = false;
+                Json gap{{"phase", "baseline_gap"}, {"reason", "directory_enumeration_open_failed"},
+                    {"relative_directory", fim_utf8(current_dir.relative)}, {"native_error", error},
+                    {"remaining_subtree_unknown", true}};
+                if (!accept(worker, stop, std::move(gap), true, revision, sequence)) return false;
+                update(worker, "degraded", "baseline directory could not be enumerated", error);
+                continue;
             }
             do {
-                if (stop.stop_requested()) return false;
+                if (stop.stop_requested()) {
+                    std::scoped_lock lock{worker.mutex}; worker.health["baseline_in_progress"] = false;
+                    return false;
+                }
                 if (wcscmp(found.cFileName, L".") == 0 || wcscmp(found.cFileName, L"..") == 0) continue;
-                if ((found.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) continue;
+                if (++candidates > limits.maximum_baseline_candidates) {
+                    Json gap{{"phase", "baseline_gap"}, {"reason", "baseline_candidate_count_bound_exceeded"},
+                        {"candidates_seen", std::to_string(candidates - 1)}, {"remaining_root_candidates_unknown", true}};
+                    if (!accept(worker, stop, std::move(gap), true, revision, sequence)) return false;
+                    { std::scoped_lock lock{worker.mutex}; worker.health["baseline_in_progress"] = false;
+                      worker.health["last_baseline_candidates"] = std::to_string(candidates - 1); }
+                    return true;
+                }
                 const std::wstring relative = current_dir.relative.empty() ? found.cFileName : current_dir.relative + L"\\" + found.cFileName;
                 if (!fim_safe_relative(relative, limits.maximum_relative_path_bytes)) {
+                    coverage_complete = false;
                     Json refused{{"phase", "baseline_candidate"}, {"relative_path", nullptr}, {"state", "degraded"},
                         {"reason", "relative_path_bound_or_format_refused"}, {"full_file_coverage_verified", false}};
                     if (!accept(worker, stop, std::move(refused), true, revision, sequence)) return false;
                     continue;
                 }
-                if (++candidates > limits.maximum_baseline_candidates) {
-                    Json gap{{"phase", "baseline_gap"}, {"reason", "baseline_candidate_count_bound_exceeded"},
-                        {"candidates_seen", std::to_string(candidates - 1)}, {"remaining_root_candidates_unknown", true}};
-                    if (!accept(worker, stop, std::move(gap), true, revision, sequence)) return false;
-                    return true;
-                }
                 const auto child_path = current_dir.path + L"\\" + found.cFileName;
-                if ((found.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0) {
-                    auto directory_check = fim_open_directory_no_reparse(child_path);
-                    if (!directory_check.valid()) continue;
-                    const auto directory_info = fim_information(directory_check.get());
-                    if (fim_is_reparse(directory_info) || (directory_info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0) continue;
+                if ((found.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) {
+                    coverage_complete = false;
+                    { std::scoped_lock lock{worker.mutex}; worker.health["reparse_skips"] = std::to_string(std::stoull(worker.health["reparse_skips"].get<std::string>()) + 1); }
+                    Json skipped{{"phase", "baseline_skip"}, {"relative_path", fim_utf8(relative)},
+                        {"reason", "reparse_point_not_followed"}, {"reconciliation_required", true}};
+                    if (!accept(worker, stop, std::move(skipped), true, revision, sequence)) return false;
+                    continue;
                 }
-                FimHandle child{CreateFileW(child_path.c_str(), GENERIC_READ | FILE_READ_ATTRIBUTES,
+                const bool is_directory = (found.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+                FimHandle child{CreateFileW(child_path.c_str(), (is_directory ? FILE_LIST_DIRECTORY : GENERIC_READ) | FILE_READ_ATTRIBUTES,
                     FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING,
                     FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_SEQUENTIAL_SCAN, nullptr)};
                 if (!child.valid()) {
+                    coverage_complete = false;
                     Json failed{{"phase", "baseline_candidate"}, {"relative_path", fim_utf8(relative)},
                         {"state", "degraded"}, {"reason", "candidate_open_failed"}, {"native_error", GetLastError()}};
                     if (!accept(worker, stop, std::move(failed), false, revision, sequence)) return false;
                     continue;
+                }
+                const auto child_info = fim_information(child.get());
+                if (fim_is_reparse(child_info)) {
+                    coverage_complete = false;
+                    { std::scoped_lock lock{worker.mutex}; worker.health["reparse_skips"] = std::to_string(std::stoull(worker.health["reparse_skips"].get<std::string>()) + 1); }
+                    Json skipped{{"phase", "baseline_skip"}, {"relative_path", fim_utf8(relative)},
+                        {"reason", "opened_object_is_reparse_point"}, {"reconciliation_required", true}};
+                    if (!accept(worker, stop, std::move(skipped), true, revision, sequence)) return false;
+                    continue;
+                }
+                const auto candidate_final = fim_final_path(child.get());
+                if (!fim_is_descendant_path(current_directory_final, candidate_final)) {
+                    coverage_complete = false;
+                    Json gap{{"phase", "baseline_skip"}, {"relative_path", fim_utf8(relative)},
+                        {"reason", "candidate_resolved_outside_enumerated_directory"},
+                        {"reconciliation_required", true}};
+                    if (!accept(worker, stop, std::move(gap), true, revision, sequence)) return false;
+                    continue;
+                }
+                if ((child_info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0 && limits.recursive) {
+                    const auto identity = fim_identity(child_info);
+                    const auto final = fim_final_path(child.get());
+                    if (!fim_is_descendant_path(worker.root_final_path, final)) {
+                        coverage_complete = false;
+                        Json gap{{"phase", "baseline_skip"}, {"relative_path", fim_utf8(relative)},
+                            {"reason", "directory_resolved_outside_configured_root"}, {"reconciliation_required", true}};
+                        if (!accept(worker, stop, std::move(gap), true, revision, sequence)) return false;
+                    } else if (visited_directories.contains(identity)) {
+                        coverage_complete = false;
+                        { std::scoped_lock lock{worker.mutex}; worker.health["directory_identity_duplicates"] = std::to_string(std::stoull(worker.health["directory_identity_duplicates"].get<std::string>()) + 1); }
+                        Json gap{{"phase", "baseline_skip"}, {"relative_path", fim_utf8(relative)},
+                            {"reason", "directory_identity_cycle_or_alias_skipped"}, {"file_identity", identity}, {"reconciliation_required", true}};
+                        if (!accept(worker, stop, std::move(gap), true, revision, sequence)) return false;
+                    } else if (current_dir.depth + 1 > limits.maximum_depth) {
+                        coverage_complete = false;
+                        { std::scoped_lock lock{worker.mutex}; worker.health["depth_refusals"] = std::to_string(std::stoull(worker.health["depth_refusals"].get<std::string>()) + 1); }
+                        Json gap{{"phase", "baseline_gap"}, {"reason", "maximum_directory_depth_reached"},
+                            {"relative_path", fim_utf8(relative)}, {"maximum_depth", limits.maximum_depth}, {"remaining_subtree_unknown", true}};
+                        if (!accept(worker, stop, std::move(gap), true, revision, sequence)) return false;
+                    } else if (visited_directories.size() >= limits.maximum_directories) {
+                        coverage_complete = false;
+                        Json gap{{"phase", "baseline_gap"}, {"reason", "maximum_directory_count_reached"},
+                            {"relative_path", fim_utf8(relative)}, {"maximum_directories", limits.maximum_directories}, {"remaining_subtree_unknown", true}};
+                        if (!accept(worker, stop, std::move(gap), true, revision, sequence)) return false;
+                        { std::scoped_lock lock{worker.mutex}; worker.health["baseline_in_progress"] = false;
+                          worker.health["last_baseline_candidates"] = std::to_string(candidates);
+                          worker.health["last_baseline_directories"] = std::to_string(visited_directories.size()); }
+                        return true;
+                    } else {
+                        visited_directories.insert(identity);
+                        stack.push_back({child_path, relative, current_dir.depth + 1, identity});
+                        { std::scoped_lock lock{worker.mutex}; worker.health["directories_visited"] = std::to_string(visited_directories.size()); }
+                    }
                 }
                 Json row{{"phase", "baseline_candidate"}, {"relative_path", fim_utf8(relative)},
                     {"current_object", fim_file_observation(worker.root_handle.get(), worker.root_identity,
@@ -531,10 +695,29 @@ struct FileIntegritySensor::Impl {
                 { std::scoped_lock lock{worker.mutex}; worker.health["baseline_candidates"] = std::to_string(candidates); }
             } while (FindNextFileW(find_handle_value(find), &found));
             const auto error = GetLastError();
-            if (error != ERROR_NO_MORE_FILES && error != ERROR_FILE_NOT_FOUND)
-                throw std::runtime_error("FIM baseline iteration did not finish cleanly");
+            if (error != ERROR_NO_MORE_FILES && error != ERROR_FILE_NOT_FOUND) {
+                Json gap{{"phase", "baseline_gap"}, {"reason", "directory_enumeration_incomplete"},
+                    {"relative_directory", fim_utf8(current_dir.relative)}, {"native_error", error},
+                    {"remaining_root_candidates_unknown", true}};
+                if (!accept(worker, stop, std::move(gap), true, revision, sequence)) return false;
+                update(worker, "degraded", "baseline directory enumeration incomplete", error);
+                return true;
+            }
         }
-        return !stop.stop_requested();
+        if (stop.stop_requested()) {
+            std::scoped_lock lock{worker.mutex}; worker.health["baseline_in_progress"] = false;
+            return false;
+        }
+        Json manifest{{"phase", "baseline_manifest"}, {"enumeration_complete", coverage_complete}, {"coverage_complete", coverage_complete},
+            {"baseline_is_atomic", false},
+            {"candidate_count", candidates}, {"directories_visited", visited_directories.size()},
+            {"full_file_coverage_verified", false}};
+        if (!accept(worker, stop, std::move(manifest), false, revision, sequence)) return false;
+        { std::scoped_lock lock{worker.mutex}; worker.health["baseline_in_progress"] = false;
+          worker.health["last_baseline_terminal"] = true; worker.health["last_baseline_coverage_complete"] = coverage_complete;
+          worker.health["last_baseline_candidates"] = std::to_string(candidates);
+          worker.health["last_baseline_directories"] = std::to_string(visited_directories.size()); }
+        return true;
     }
 
     // Accessors kept private to this translation unit to make the RAII handle
@@ -579,6 +762,14 @@ struct FileIntegritySensor::Impl {
                     || !previous["root_identity"].is_string())
                     throw std::runtime_error("invalid FIM checkpoint format or version");
                 const bool same_root = previous["root_identity"].get<std::string>() == worker.root_identity;
+                const Json expected_scope{{"recursive", limits.recursive}, {"maximum_depth", limits.maximum_depth},
+                    {"maximum_directories", limits.maximum_directories}, {"maximum_baseline_candidates", limits.maximum_baseline_candidates},
+                    {"maximum_candidates_per_batch", limits.maximum_candidates_per_batch},
+                    {"maximum_relative_path_bytes", limits.maximum_relative_path_bytes},
+                    {"maximum_file_hash_bytes", std::to_string(limits.maximum_file_hash_bytes)},
+                    {"maximum_total_hash_bytes", std::to_string(limits.maximum_total_hash_bytes)},
+                    {"native_buffer_bytes", limits.native_buffer_bytes}};
+                const bool same_scope = same_root && previous.contains("scope") && previous["scope"] == expected_scope;
                 if (same_root) {
                     if (!previous.contains("sequence") || !previous["sequence"].is_string())
                         throw std::runtime_error("invalid FIM checkpoint sequence");
@@ -587,7 +778,8 @@ struct FileIntegritySensor::Impl {
                         throw std::runtime_error("invalid FIM checkpoint sequence encoding");
                     sequence = std::stoull(encoded_sequence);
                 }
-                Json gap{{"phase", "source_gap"}, {"reason", same_root ? "worker_restart_changes_may_have_been_missed" : "configured_root_identity_changed"},
+                Json gap{{"phase", "source_gap"}, {"reason", !same_root ? "configured_root_identity_changed"
+                    : same_scope ? "worker_restart_changes_may_have_been_missed" : "configured_recursive_coverage_scope_changed"},
                     {"previous_checkpoint", saved->value}, {"native_overflow_or_restart_loss", nullptr}, {"current_root_identity", worker.root_identity}};
                 if (!accept(worker, stop, std::move(gap), true, revision, sequence)) return;
             }
@@ -597,7 +789,7 @@ struct FileIntegritySensor::Impl {
                 if (request_pending) return false;
                 ResetEvent(change_event.get());
                 overlapped.Offset = 0; overlapped.OffsetHigh = 0; overlapped.Internal = 0; overlapped.InternalHigh = 0;
-                if (ReadDirectoryChangesW(watch.get(), buffer.data(), static_cast<DWORD>(buffer.size()), FALSE,
+                if (ReadDirectoryChangesW(watch.get(), buffer.data(), static_cast<DWORD>(buffer.size()), limits.recursive ? TRUE : FALSE,
                     FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_DIR_NAME | FILE_NOTIFY_CHANGE_ATTRIBUTES
                     | FILE_NOTIFY_CHANGE_SIZE | FILE_NOTIFY_CHANGE_LAST_WRITE | FILE_NOTIFY_CHANGE_CREATION,
                     nullptr, &overlapped, nullptr)) { request_pending = true; return true; }
@@ -607,16 +799,28 @@ struct FileIntegritySensor::Impl {
                 return false;
             };
             if (!arm()) throw std::runtime_error("ReadDirectoryChangesW could not arm");
-            update(worker, "degraded", "direct-child watcher armed; bounded baseline is non-atomic and may reveal gaps");
+            update(worker, "degraded", limits.recursive ? "recursive subtree watcher armed; bounded baseline is non-atomic and may reveal gaps"
+                : "direct-child watcher armed; bounded baseline is non-atomic and may reveal gaps");
             auto hash_budget = limits.maximum_total_hash_bytes;
             if (!baseline(worker, stop, revision, sequence, hash_budget)) {
                 drain_request();
-                update(worker, "disabled", "endpoint_shutdown_during_baseline; unaccepted candidates remain unknown");
+                if (stop.stop_requested()) update(worker, "disabled", "endpoint_shutdown_during_baseline; unaccepted candidates remain unknown");
+                else update(worker, "blind", "baseline ended after root/path or durable source failure");
                 return;
             }
             while (!stop.stop_requested()) {
                 const DWORD wait = WaitForSingleObject(change_event.get(), 1000);
-                if (wait == WAIT_TIMEOUT) continue;
+                if (wait == WAIT_TIMEOUT) {
+                    if (!fim_root_matches(worker.root_handle.get(), worker.root_identity, worker.root_final_path)) {
+                        Json gap{{"phase", "source_gap"}, {"reason", "configured_root_identity_or_path_changed"},
+                            {"root_identity", worker.root_identity}, {"remaining_candidates_unknown", true}};
+                        (void)accept(worker, stop, std::move(gap), true, revision, sequence);
+                        { std::scoped_lock lock{worker.mutex}; worker.health["root_change_gaps"] = std::to_string(std::stoull(worker.health["root_change_gaps"].get<std::string>()) + 1); }
+                        update(worker, "blind", "configured root identity or final path changed");
+                        break;
+                    }
+                    continue;
+                }
                 if (wait != WAIT_OBJECT_0) throw std::runtime_error("ReadDirectoryChangesW wait failed");
                 DWORD returned = 0;
                 const BOOL completed_ok = GetOverlappedResult(watch.get(), &overlapped, &returned, FALSE);
@@ -650,7 +854,10 @@ struct FileIntegritySensor::Impl {
                     request_pending = false;
                     if (!arm()) throw std::runtime_error("ReadDirectoryChangesW rearm failed");
                     hash_budget = limits.maximum_total_hash_bytes;
-                    process_batch(worker, stop, std::span<const std::byte>{completed}, revision, sequence, hash_budget);
+                    if (process_batch(worker, stop, std::span<const std::byte>{completed}, revision, sequence, hash_budget)) {
+                        hash_budget = limits.maximum_total_hash_bytes;
+                        if (!baseline(worker, stop, revision, sequence, hash_budget)) break;
+                    }
                 }
             }
         } catch (const std::exception& error) {
@@ -684,8 +891,9 @@ nlohmann::json FileIntegritySensor::snapshot() const {
     const char* state = impl_->disabled ? "disabled" : active ? "degraded" : blind ? "blind" : all_disabled ? "disabled" : "unavailable";
     return {{"state", state}, {"configuration", impl_->configuration}, {"roots", std::move(roots)},
         {"full_file_coverage_verified", false},
-        {"scope", "only direct children of configured drive roots; nested directories are not traversed; reparse points skipped"},
-        {"resource_scope", "at most configured roots workers; 64 KiB maximum native notification buffer per worker; bounded baseline candidates and hash reads; Win32 calls, hashing and stop joins have no hard deadline"}};
+        {"scope", impl_->limits.recursive ? "bounded descendants beneath explicit configured drive roots; reparse points and repeated directory identities skipped"
+            : "direct children of explicit configured drive roots; reparse points skipped"},
+        {"resource_scope", "at most configured roots workers; 64 KiB maximum native notification buffer per worker; bounded baseline entries, directory count, depth, path bytes and hash reads; Win32 calls, hashing and stop joins have no hard deadline"}};
 }
 
 } // namespace panopticon::officer::collectors

@@ -1,6 +1,7 @@
 #include "persistence_native.hpp"
 #include <tinyxml2.h>
 #include <cmath>
+#include <initializer_list>
 #include <stdexcept>
 
 namespace panopticon::officer::state {
@@ -130,11 +131,79 @@ Json detail::persistence_task_xml(std::string_view xml) {
         result["reason"] = "unqualified_task_namespace_or_multiple_roots"; return result;
     }
     result["reported_version"] = root->Attribute("version") ? Json(root->Attribute("version")) : Json(nullptr);
+    // Add a deliberately narrow structural summary while preserving the complete
+    // bounded source sections below. Values such as command arguments, account
+    // names, trigger expressions and SDDL remain only in the existing raw XML;
+    // this summary reports object kinds and field presence, never execution or
+    // effective authorization.
+    Json summary{{"state", "healthy"}, {"principal_count", 0}, {"action_count", 0},
+        {"trigger_count", 0}, {"actions", Json::array()}, {"triggers", Json::array()},
+        {"principal_fields", Json::array()}, {"settings_fields_present", Json::array()},
+        {"unknown_action_count", 0}, {"unknown_trigger_count", 0}, {"limits", {{"actions", 128}, {"triggers", 128}, {"principals", 16}}}};
+    const auto append_presence = [](Json& fields, const tinyxml2::XMLElement* parent,
+        std::initializer_list<const char*> names) {
+        if (!parent) return;
+        for (const auto* name : names) if (parent->FirstChildElement(name)) fields.push_back(name);
+    };
+    for (const auto* child = root->FirstChildElement(); child; child = child->NextSiblingElement()) {
+        const std::string_view section{child->Name()};
+        if (section == "Principals") {
+            std::size_t count = summary["principal_count"].get<std::size_t>();
+            for (const auto* principal = child->FirstChildElement("Principal"); principal; principal = principal->NextSiblingElement("Principal")) {
+                if (count >= 16) { summary["state"] = "degraded"; summary["principal_bound_exceeded"] = true; break; }
+                ++count;
+                Json fields = Json::array();
+                append_presence(fields, principal, {"UserId", "GroupId", "LogonType", "RunLevel", "DisplayName", "ProcessTokenSidType", "RequiredPrivileges"});
+                summary["principal_fields"].push_back({{"id_present", principal->Attribute("id") != nullptr}, {"fields_present", std::move(fields)}});
+            }
+            summary["principal_count"] = count;
+        } else if (section == "Actions") {
+            std::size_t count = summary["action_count"].get<std::size_t>();
+            std::size_t unknown = summary["unknown_action_count"].get<std::size_t>();
+            for (const auto* action = child->FirstChildElement(); action; action = action->NextSiblingElement()) {
+                if (count >= 128) { summary["state"] = "degraded"; summary["action_bound_exceeded"] = true; break; }
+                ++count;
+                const std::string_view kind{action->Name()};
+                const bool recognized = kind == "Exec" || kind == "ComHandler" || kind == "SendEmail" || kind == "ShowMessage";
+                if (!recognized) ++unknown;
+                summary["actions"].push_back({{"kind", kind.size() <= 128 ? Json(std::string(kind)) : Json(nullptr)},
+                    {"kind_byte_length", kind.size()}, {"recognized_task_schema_action", recognized}});
+            }
+            summary["action_count"] = count; summary["unknown_action_count"] = unknown;
+        } else if (section == "Triggers") {
+            std::size_t count = summary["trigger_count"].get<std::size_t>();
+            std::size_t unknown = summary["unknown_trigger_count"].get<std::size_t>();
+            for (const auto* trigger = child->FirstChildElement(); trigger; trigger = trigger->NextSiblingElement()) {
+                if (count >= 128) { summary["state"] = "degraded"; summary["trigger_bound_exceeded"] = true; break; }
+                ++count;
+                const std::string_view kind{trigger->Name()};
+                const bool recognized = kind == "BootTrigger" || kind == "RegistrationTrigger" || kind == "LogonTrigger" ||
+                    kind == "IdleTrigger" || kind == "EventTrigger" || kind == "TimeTrigger" || kind == "DailyTrigger" ||
+                    kind == "WeeklyTrigger" || kind == "MonthlyTrigger" || kind == "MonthlyDOWTrigger" || kind == "SessionStateChangeTrigger";
+                if (!recognized) ++unknown;
+                Json fields = Json::array();
+                append_presence(fields, trigger, {"Enabled", "StartBoundary", "EndBoundary", "ExecutionTimeLimit", "Repetition", "UserId", "Delay", "Subscription"});
+                summary["triggers"].push_back({{"kind", kind.size() <= 128 ? Json(std::string(kind)) : Json(nullptr)}, {"kind_byte_length", kind.size()},
+                    {"recognized_task_schema_trigger", recognized},
+                    {"id_present", trigger->Attribute("id") != nullptr}, {"fields_present", std::move(fields)}});
+            }
+            summary["trigger_count"] = count; summary["unknown_trigger_count"] = unknown;
+        } else if (section == "Settings") {
+            append_presence(summary["settings_fields_present"], child, {"MultipleInstancesPolicy", "DisallowStartIfOnBatteries",
+                "StopIfGoingOnBatteries", "AllowHardTerminate", "StartWhenAvailable", "RunOnlyIfNetworkAvailable",
+                "WakeToRun", "Enabled", "Hidden", "ExecutionTimeLimit", "Priority", "RestartOnFailure"});
+        }
+    }
+    if (summary["unknown_action_count"] != 0 || summary["unknown_trigger_count"] != 0)
+        summary["state"] = "degraded";
+    summary["limits_applied"] = true;
+    result["definition_summary"] = std::move(summary);
     for (const auto* child = root->FirstChildElement(); child; child = child->NextSiblingElement()) {
         tinyxml2::XMLPrinter printer; child->Accept(&printer);
         result["sections"].push_back({{"qualified_name", child->Name()}, {"xml", printer.CStr()}});
     }
-    result["reason"] = "unassembled_definition_sections; qualified_names_and_source_xml_retained";
+    result["scope"] = "bounded task-definition structure and source XML; configured actions/triggers/principals do not establish execution, identity, or effective authorization";
+    result["reason"] = "structural_summary_and_source_sections_retained; field values remain in source XML";
     return result;
 }
 }

@@ -24,6 +24,7 @@ add_library(officer-core STATIC
     src/state/thread_inventory.cpp
     src/state/browser_inventory.cpp
     src/state/defender_preferences.cpp
+    src/state/dns_state.cpp
     src/state/module_inventory.cpp
     src/state/memory_inventory.cpp
     src/state/process_token.cpp
@@ -39,23 +40,28 @@ add_library(officer-core STATIC
     src/state/firewall_exclusions.cpp
     src/state/firewall_rules.cpp
     src/state/security_center.cpp
+    src/state/security_product_inventory.cpp
     src/state/defender_status.cpp
     src/state/device_guard.cpp
+    src/state/volume_encryption.cpp
     src/state/persistence_inventory.cpp
     src/state/scheduled_task_inventory.cpp
     src/state/wmi_subscription_inventory.cpp
     src/state/startup_inventory.cpp
     src/state/registry_persistence.cpp
     src/state/identity_inventory.cpp
+    src/state/remote_access_inventory.cpp
     src/state/software_inventory.cpp
     src/runtime/service_host.cpp
+    src/deployment/update_package.cpp
+    src/configuration/policy.cpp
 )
 
 target_include_directories(officer-core PUBLIC include)
 target_compile_features(officer-core PUBLIC cxx_std_20)
 target_link_libraries(officer-core
     PUBLIC nlohmann_json::nlohmann_json
-    PRIVATE bcrypt advapi32 iphlpapi ws2_32 netapi32 ole32 oleaut32 wbemuuid taskschd shell32 secur32 wtsapi32 msi tinyxml2::tinyxml2
+    PRIVATE bcrypt crypt32 advapi32 iphlpapi ws2_32 netapi32 ole32 oleaut32 wbemuuid taskschd shell32 secur32 wtsapi32 userenv msi tinyxml2::tinyxml2
 )
 
 add_library(officer-collectors STATIC
@@ -65,9 +71,14 @@ add_library(officer-collectors STATIC
     src/collectors/sysmon_process_decoder.cpp
     src/collectors/sysmon_telemetry_decoder.cpp
     src/collectors/windows_event_decoder.cpp
+    src/collectors/security_audit_semantics.cpp
+    src/collectors/powershell_script_telemetry.cpp
     src/collectors/windows_event_log.cpp
     src/collectors/usn_decoder.cpp
     src/collectors/usn_journal.cpp
+    src/collectors/network_state_change.cpp
+    src/collectors/service_state_change.cpp
+    src/collectors/registry_change_watch.cpp
     src/collectors/file_integrity.cpp
 )
 
@@ -75,7 +86,7 @@ target_include_directories(officer-collectors PUBLIC include)
 target_compile_features(officer-collectors PUBLIC cxx_std_20)
 target_link_libraries(officer-collectors
     PUBLIC officer-core
-    PRIVATE advapi32 tdh wevtapi bcrypt ole32 tinyxml2::tinyxml2
+    PRIVATE advapi32 tdh wevtapi bcrypt ole32 iphlpapi ws2_32 tinyxml2::tinyxml2
 )
 
 add_library(officer-delivery STATIC
@@ -100,6 +111,7 @@ add_library(officer-response STATIC
     src/response/process_actions.cpp
     src/response/network_evidence.cpp
     src/response/file_evidence.cpp
+    src/forensics/file_acquisition.cpp
     src/response/isolation.cpp
     src/response/transport.cpp
 )
@@ -108,7 +120,7 @@ target_include_directories(officer-response PUBLIC include)
 target_compile_features(officer-response PUBLIC cxx_std_20)
 target_link_libraries(officer-response
     PUBLIC officer-core officer-delivery
-    PRIVATE advapi32 iphlpapi ws2_32 fwpuclnt crypt32
+    PRIVATE advapi32 iphlpapi ws2_32 fwpuclnt crypt32 bcrypt
 )
 
 add_executable(officer-agent

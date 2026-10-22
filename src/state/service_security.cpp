@@ -7,6 +7,7 @@
 #include <memory>
 #include <vector>
 #include <algorithm>
+#include <utility>
 
 namespace panopticon::officer::state {
 namespace {
@@ -59,9 +60,32 @@ Json acl(std::span<const std::byte> buffer, DWORD position, bool present, std::s
         if (sizeof(ACE_HEADER) > header.AclSize - cursor) { invalid_array = true; break; }
         ACE_HEADER entry{}; std::memcpy(&entry, buffer.data() + position + cursor, sizeof(entry));
         if (entry.AceSize < sizeof(ACE_HEADER) || entry.AceSize % alignof(DWORD) || entry.AceSize > header.AclSize - cursor) { invalid_array = true; break; }
-        entries.push_back({{"reported_type", std::to_string(entry.AceType)}, {"reported_flags", std::to_string(entry.AceFlags)},
+        Json ace{{"reported_type", std::to_string(entry.AceType)}, {"reported_flags", std::to_string(entry.AceFlags)},
             {"reported_size", std::to_string(entry.AceSize)}, {"binary_hex", hex(buffer.subspan(position + cursor, entry.AceSize))},
-            {"interpretation", "opaque ACE; no effective access or actor decision"}});
+            {"interpretation", "opaque ACE; no effective access or actor decision"}};
+        const bool has_mask = entry.AceSize >= sizeof(ACE_HEADER) + sizeof(ACCESS_MASK) &&
+            (entry.AceType == ACCESS_ALLOWED_ACE_TYPE || entry.AceType == ACCESS_DENIED_ACE_TYPE ||
+             entry.AceType == SYSTEM_AUDIT_ACE_TYPE || entry.AceType == ACCESS_ALLOWED_OBJECT_ACE_TYPE ||
+             entry.AceType == ACCESS_DENIED_OBJECT_ACE_TYPE || entry.AceType == SYSTEM_AUDIT_OBJECT_ACE_TYPE);
+        if (has_mask) {
+            ACCESS_MASK mask = 0;
+            std::memcpy(&mask, buffer.data() + position + cursor + sizeof(ACE_HEADER), sizeof(mask));
+            Json rights = Json::array();
+            const std::pair<ACCESS_MASK, const char*> known[] = {
+                {SERVICE_QUERY_CONFIG, "SERVICE_QUERY_CONFIG"}, {SERVICE_CHANGE_CONFIG, "SERVICE_CHANGE_CONFIG"},
+                {SERVICE_QUERY_STATUS, "SERVICE_QUERY_STATUS"}, {SERVICE_ENUMERATE_DEPENDENTS, "SERVICE_ENUMERATE_DEPENDENTS"},
+                {SERVICE_START, "SERVICE_START"}, {SERVICE_STOP, "SERVICE_STOP"},
+                {SERVICE_PAUSE_CONTINUE, "SERVICE_PAUSE_CONTINUE"}, {SERVICE_INTERROGATE, "SERVICE_INTERROGATE"},
+                {SERVICE_USER_DEFINED_CONTROL, "SERVICE_USER_DEFINED_CONTROL"}, {DELETE, "DELETE"},
+                {READ_CONTROL, "READ_CONTROL"}, {WRITE_DAC, "WRITE_DAC"}, {WRITE_OWNER, "WRITE_OWNER"}};
+            ACCESS_MASK recognized = 0;
+            for (const auto& [bit, label] : known) if (mask & bit) { rights.push_back(label); recognized |= bit; }
+            ace["reported_access_mask"] = std::to_string(mask);
+            ace["known_right_bits"] = std::move(rights);
+            ace["unclassified_access_mask_bits"] = std::to_string(mask & ~recognized);
+            ace["rights_scope"] = "ACE mask evidence only; trustee, inheritance, generic mapping, owner semantics and effective access are not resolved";
+        }
+        entries.push_back(std::move(ace));
         cursor += entry.AceSize;
     }
     value["aces"] = invalid_array ? invalid("ace_count_or_size_outside_acl") : fact(std::move(entries));

@@ -2,10 +2,13 @@
 #include "panopticon/officer/core/entity_id.hpp"
 #include "persistence_native.hpp"
 #include <shlobj.h>
+#include <userenv.h>
+#include <bcrypt.h>
 #include <algorithm>
 #include <array>
 #include <filesystem>
 #include <stdexcept>
+#include <string_view>
 
 namespace panopticon::officer::state {
 namespace {
@@ -26,6 +29,10 @@ struct KnownPath {
     std::wstring value;
     HRESULT status = E_FAIL;
 };
+struct ProfilesDirectoryPath {
+    std::wstring value;
+    DWORD error = ERROR_SUCCESS;
+};
 
 Json wide(const std::wstring& value) { return text(value.data(), value.size()); }
 KnownPath known_folder(REFKNOWNFOLDERID id) {
@@ -34,6 +41,28 @@ KnownPath known_folder(REFKNOWNFOLDERID id) {
     std::unique_ptr<wchar_t, decltype(&CoTaskMemFree)> owned(raw, CoTaskMemFree);
     if (SUCCEEDED(result.status) && raw) result.value = raw;
     else if (SUCCEEDED(result.status)) result.status = E_UNEXPECTED;
+    return result;
+}
+
+ProfilesDirectoryPath profiles_directory() {
+    ProfilesDirectoryPath result;
+    DWORD required = 0;
+    (void)GetProfilesDirectoryW(nullptr, &required);
+    auto error = GetLastError();
+    if (error != ERROR_INSUFFICIENT_BUFFER || required < 2 || required > 32768) {
+        result.error = error == ERROR_SUCCESS ? ERROR_INVALID_DATA : error;
+        return result;
+    }
+    std::vector<wchar_t> buffer(required, L'\0');
+    if (!GetProfilesDirectoryW(buffer.data(), &required)) {
+        result.error = GetLastError();
+        return result;
+    }
+    if (required == 0 || required > buffer.size() || buffer[0] == L'\0') {
+        result.error = ERROR_INVALID_DATA;
+        return result;
+    }
+    result.value.assign(buffer.data(), required - (buffer[required - 1] == L'\0' ? 1 : 0));
     return result;
 }
 
@@ -53,12 +82,72 @@ bool under_root(std::wstring path, std::wstring root) {
 Json query_failure(const char* api, DWORD error) { return failure(api, error, "Win32"); }
 
 struct Inventory {
-    Pager pager;
     BrowserInventoryLimits bounds;
+    std::function<bool(Json)> privacy_consumer;
+    std::array<std::byte, 32> privacy_salt{};
+    bool privacy_salt_ready = false;
+    bool redact_profile_paths = false;
+    std::string active_scope_token;
+    std::string active_user_scope_token;
+    Pager pager;
     std::size_t directories = 0, manifests = 0, profiles = 0;
+    std::size_t user_profile_entries_examined = 0, user_profile_candidates = 0, user_profiles_scanned = 0, user_profiles_skipped = 0;
+    std::size_t user_profile_refusals = 0, user_profile_candidates_omitted = 0;
+    std::string user_profile_discovery_state = "not_attempted";
+    std::string user_profile_dedup_state = "unknown";
     bool complete = true;
     Inventory(const std::function<bool(Json)>& consumer, BrowserInventoryLimits limits, const std::function<bool()>& cancel)
-        : pager(limits.pages, "browser_extension_inventory", consumer, cancel, "browser_inventory_state_version"), bounds(limits) {}
+        : bounds(limits), privacy_consumer([this, sink = consumer](Json row) mutable { return deliver_row(std::move(row), sink); }),
+          redact_profile_paths(limits.owned_inert_fixture_roots.empty()),
+          pager(limits.pages, "browser_extension_inventory", privacy_consumer, cancel, "browser_inventory_state_version") {
+        privacy_salt_ready = BCryptGenRandom(nullptr, reinterpret_cast<PUCHAR>(privacy_salt.data()),
+            static_cast<ULONG>(privacy_salt.size()), BCRYPT_USE_SYSTEM_PREFERRED_RNG) == 0;
+    }
+
+    std::string token_for_path(std::string_view path) const {
+        if (!privacy_salt_ready || path.empty()) return {};
+        std::string material(reinterpret_cast<const char*>(privacy_salt.data()), privacy_salt.size());
+        material.append(path);
+        std::string error;
+        const auto digest = core::sha256_hex(material, error);
+        return digest ? digest->substr(0, 32) : std::string{};
+    }
+
+    std::string token_for_path(const std::wstring& path) const {
+        const auto encoded = wide(path);
+        if (!encoded.is_string()) return {};
+        return token_for_path(encoded.get_ref<const std::string&>());
+    }
+
+    void redact_row_paths(Json& value) const {
+        if (value.is_object()) {
+            for (auto it = value.begin(); it != value.end(); ++it) {
+                const auto& key = it.key();
+                if ((key == "profile_path" || key == "manifest_path" || key == "metadata_index_path" || key == "path" || key == "root_path") && it->is_string())
+                    *it = nullptr;
+                else redact_row_paths(*it);
+            }
+        } else if (value.is_array()) {
+            for (auto& child : value) redact_row_paths(child);
+        }
+    }
+
+    bool deliver_row(Json row, const std::function<bool(Json)>& sink) {
+        if (!redact_profile_paths) return sink(std::move(row));
+        std::string token = active_scope_token;
+        if (row.is_object() && row.contains("profile_path") && row["profile_path"].is_string())
+            token = token_for_path(row["profile_path"].get_ref<const std::string&>());
+        redact_row_paths(row);
+        if (row.is_object()) {
+            row["profile_scope_token"] = token.empty() ? Json(nullptr) : Json(token);
+            row["profile_path_retained"] = false;
+            row["profile_path_token_scope"] = "per-capture salted SHA-256; not stable across captures";
+            row["profile_path_token_available"] = !token.empty();
+            row["user_profile_scope_token"] = active_user_scope_token.empty() ? Json(nullptr) : Json(active_user_scope_token);
+            row["user_profile_scope_token_available"] = !active_user_scope_token.empty();
+        }
+        return sink(std::move(row));
+    }
 
     void refusal(const char* kind, const char* api, DWORD error, const std::wstring& path, bool missing_is_absent = false) {
         const bool missing = error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND || error == ERROR_NOT_FOUND;
@@ -401,7 +490,7 @@ struct Inventory {
         return omitted_addons == 0;
     }
 
-    bool scan_root(const char* browser, const std::wstring& root, bool firefox) {
+    bool scan_root(const char* browser, const std::wstring& root, bool firefox, const std::wstring& expected_profile_final = L"") {
         if (!pager.active()) return false;
         Handle root_handle; DWORD error = ERROR_SUCCESS;
         if (!open_directory(root, L"", root_handle, error)) {
@@ -410,6 +499,10 @@ struct Inventory {
         }
         std::wstring root_final;
         if (!final_path(root_handle.value, root_final, error)) { refusal("browser_root_refusal", "GetFinalPathNameByHandleW/root", error, root); return false; }
+        if (!expected_profile_final.empty() && !under_root(root_final, expected_profile_final)) {
+            refusal("browser_root_refusal", "browser data root escaped verified profile directory", ERROR_ACCESS_DENIED, root);
+            return false;
+        }
         std::vector<std::wstring> profile_names;
         bool enumerated = enumerate_children(root, root_final, profile_names, "browser_profile_enumeration");
         std::sort(profile_names.begin(), profile_names.end());
@@ -417,11 +510,140 @@ struct Inventory {
         for (const auto& profile_name : profile_names) {
             if (!pager.active()) return false;
             const auto profile = root + L"\\" + profile_name;
+            const auto previous_scope = active_scope_token;
+            active_scope_token = token_for_path(profile);
             const bool ok = firefox ? scan_firefox_profile(profile, root_final) : scan_chromium_profile(profile, root_final, browser);
+            active_scope_token = previous_scope;
             local_complete = ok && local_complete;
         }
         pager.add({{"entry_kind", "browser_root_summary"}, {"browser", browser}, {"root_path", wide(root)}, {"profile_candidates", profile_names.size()},
             {"enumeration_complete", local_complete}, {"inventory_complete", false}});
+        return local_complete;
+    }
+
+    bool scan_all_profile_directories(const KnownPath& current_profile) {
+        const auto profiles_root = profiles_directory();
+        if (profiles_root.value.empty()) {
+            user_profile_discovery_state = "unavailable";
+            ++user_profile_refusals; complete = false;
+            pager.add({{"entry_kind", "browser_profiles_root_refusal"},
+                {"query", failure("GetProfilesDirectoryW", profiles_root.error, "Win32")},
+                {"profile_path_retained", false}, {"scope", "configured Windows profile root unavailable"}});
+            return false;
+        }
+        Handle root_handle; DWORD error = ERROR_SUCCESS;
+        if (!open_directory(profiles_root.value, L"", root_handle, error)) {
+            user_profile_discovery_state = "unavailable"; ++user_profile_refusals; complete = false;
+            refusal("browser_profiles_root_refusal", "open configured Windows profiles directory", error, profiles_root.value);
+            return false;
+        }
+        std::wstring profiles_final;
+        if (!final_path(root_handle.value, profiles_final, error)) {
+            user_profile_discovery_state = "unavailable"; ++user_profile_refusals; complete = false;
+            refusal("browser_profiles_root_refusal", "GetFinalPathNameByHandleW/profiles root", error, profiles_root.value);
+            return false;
+        }
+
+        std::wstring current_final;
+        if (SUCCEEDED(current_profile.status)) {
+            Handle current_handle;
+            if (!open_directory(current_profile.value, L"", current_handle, error) || !final_path(current_handle.value, current_final, error)) {
+                user_profile_dedup_state = "unavailable";
+                complete = false;
+                pager.add({{"entry_kind", "browser_current_profile_dedup_refusal"},
+                    {"query", failure("open/resolve FOLDERID_Profile", error, "Win32")},
+                    {"profile_path_retained", false}, {"duplicate_discovery_possible", true}});
+            } else user_profile_dedup_state = "resolved";
+        } else {
+            user_profile_dedup_state = "unavailable";
+            complete = false;
+            pager.add({{"entry_kind", "browser_current_profile_dedup_refusal"},
+                {"query", failure("SHGetKnownFolderPath/FOLDERID_Profile", static_cast<std::uint32_t>(current_profile.status), "HRESULT")},
+                {"profile_path_retained", false}, {"duplicate_discovery_possible", true}});
+        }
+
+        std::vector<std::wstring> names;
+        const bool enumerated = enumerate_children(profiles_root.value, profiles_final, names, "browser_user_profile_enumeration");
+        std::sort(names.begin(), names.end());
+        user_profile_discovery_state = "partial";
+        bool local_complete = enumerated && user_profile_dedup_state == "resolved";
+        if (names.size() > bounds.user_profile_candidates) {
+            user_profile_candidates_omitted = names.size() - bounds.user_profile_candidates;
+            names.resize(bounds.user_profile_candidates);
+            ++pager.fields_refused; local_complete = false; complete = false;
+            pager.add({{"entry_kind", "browser_user_profile_bound"},
+                {"candidate_limit", bounds.user_profile_candidates},
+                {"omitted_candidate_count", user_profile_candidates_omitted},
+                {"profile_path_retained", false}, {"state", "degraded"}});
+        }
+
+        for (const auto& name : names) {
+            if (!pager.active()) { local_complete = false; break; }
+            ++user_profile_entries_examined;
+            if (_wcsicmp(name.c_str(), L"Default") == 0 || _wcsicmp(name.c_str(), L"Default User") == 0 ||
+                _wcsicmp(name.c_str(), L"All Users") == 0 || _wcsicmp(name.c_str(), L"Public") == 0) {
+                ++user_profiles_skipped;
+                continue;
+            }
+            const auto profile_path = profiles_root.value + L"\\" + name;
+            Handle profile_handle; DWORD profile_error = ERROR_SUCCESS;
+            if (!open_directory(profile_path, profiles_final, profile_handle, profile_error)) {
+                ++user_profile_candidates; ++user_profile_refusals;
+                local_complete = false; complete = false;
+                refusal("browser_user_profile_refusal", "open/verify profile directory candidate", profile_error, profile_path);
+                continue;
+            }
+            std::wstring profile_final;
+            if (!final_path(profile_handle.value, profile_final, profile_error)) {
+                ++user_profile_candidates; ++user_profile_refusals;
+                local_complete = false; complete = false;
+                refusal("browser_user_profile_refusal", "GetFinalPathNameByHandleW/profile candidate", profile_error, profile_path);
+                continue;
+            }
+            if (!current_final.empty() && _wcsicmp(profile_final.c_str(), current_final.c_str()) == 0) {
+                ++user_profiles_skipped;
+                pager.add({{"entry_kind", "browser_user_profile_candidate"}, {"profile_path", wide(profile_path)},
+                    {"candidate_state", "current_caller_covered_by_known_folders"}, {"account_identity_verified", false},
+                    {"account_sid", nullptr}, {"profile_path_retained", false}});
+                continue;
+            }
+            if (++user_profile_candidates > bounds.user_profile_candidates) {
+                --user_profile_candidates;
+                ++user_profile_candidates_omitted; ++pager.fields_refused;
+                local_complete = false; complete = false;
+                continue;
+            }
+            pager.add({{"entry_kind", "browser_user_profile_candidate"}, {"profile_path", wide(profile_path)},
+                {"candidate_index", user_profile_candidates}, {"candidate_state", "directory_observed"},
+                {"account_identity_verified", false}, {"account_sid", nullptr}, {"loaded_user_hive_required", false},
+                {"profile_path_retained", false}});
+            ++user_profiles_scanned;
+            const auto prior_scope = active_scope_token;
+            const auto prior_user_scope = active_user_scope_token;
+            active_scope_token = token_for_path(profile_path);
+            active_user_scope_token = active_scope_token;
+            const std::array<std::pair<const wchar_t*, const char*>, 3> chromium_roots{{
+                {L"AppData\\Local\\Google\\Chrome\\User Data", "Chrome"},
+                {L"AppData\\Local\\Microsoft\\Edge\\User Data", "Edge"},
+                {L"AppData\\Local\\Chromium\\User Data", "Chromium"}}};
+            for (const auto& browser : chromium_roots) {
+                if (!pager.active()) { local_complete = false; break; }
+                local_complete = scan_root(browser.second, profile_path + L"\\" + browser.first, false, profile_final) && local_complete;
+            }
+            if (pager.active())
+                local_complete = scan_root("Firefox", profile_path + L"\\AppData\\Roaming\\Mozilla\\Firefox\\Profiles", true, profile_final) && local_complete;
+            active_scope_token = prior_scope;
+            active_user_scope_token = prior_user_scope;
+        }
+        pager.add({{"entry_kind", "browser_user_profile_discovery_summary"},
+            {"source", "GetProfilesDirectoryW plus direct non-reparse directories"},
+            {"profile_directory_entries_examined", user_profile_entries_examined},
+            {"noncurrent_profile_candidates", user_profile_candidates}, {"profile_directories_scanned", user_profiles_scanned},
+            {"built_in_or_current_directories_skipped", user_profiles_skipped}, {"profile_directory_refusals", user_profile_refusals},
+            {"candidate_limit_omitted", user_profile_candidates_omitted}, {"current_profile_dedup_state", user_profile_dedup_state},
+            {"account_sid_mapping", "not performed"}, {"profile_path_retained", false},
+            {"enumeration_complete", local_complete}});
+        user_profile_discovery_state = local_complete ? "observed_with_limits" : "partial";
         return local_complete;
     }
 };
@@ -433,7 +655,8 @@ Json collect_browser_inventory_pages(const std::function<bool(Json)>& consumer, 
     const auto& p = limits.pages;
     if (!consumer || !p.page_entries || p.page_entries > 4096 || p.encoded_bytes < 4096 || p.encoded_bytes > 512 * 1024 ||
         !p.total_entries || p.total_entries > 65536 || !p.pages || p.pages > 1024 || !p.soft_budget_ms || p.soft_budget_ms > 300000 ||
-        !limits.profiles || limits.profiles > 256 || !limits.directories || limits.directories > 65536 || !limits.manifests || limits.manifests > 65536 ||
+        !limits.profiles || limits.profiles > 256 || !limits.user_profile_candidates || limits.user_profile_candidates > 256 ||
+        !limits.directories || limits.directories > 65536 || !limits.manifests || limits.manifests > 65536 ||
         !limits.directory_depth || limits.directory_depth > 16 || !limits.file_bytes || limits.file_bytes > 4 * 1024 * 1024 ||
         !limits.parse_depth || limits.parse_depth > 128 || !limits.metadata_string_bytes || limits.metadata_string_bytes > 64 * 1024 ||
         limits.owned_inert_fixture_roots.size() > 16)
@@ -453,6 +676,9 @@ Json collect_browser_inventory_pages(const std::function<bool(Json)>& consumer, 
     } else {
     const auto local = known_folder(FOLDERID_LocalAppData);
     const auto roaming = known_folder(FOLDERID_RoamingAppData);
+    const auto current_profile = known_folder(FOLDERID_Profile);
+    if (SUCCEEDED(current_profile.status))
+        inventory.active_user_scope_token = inventory.token_for_path(current_profile.value);
     auto record_folder_failure = [&](const char* label, const KnownPath& folder) {
         if (SUCCEEDED(folder.status)) return;
         ++inventory.pager.failures; inventory.complete = false;
@@ -473,18 +699,32 @@ Json collect_browser_inventory_pages(const std::function<bool(Json)>& consumer, 
         const auto root = roaming.value + L"\\Mozilla\\Firefox\\Profiles";
         inventory.complete = inventory.scan_root("Firefox", root, true) && inventory.complete;
     }
+    if (inventory.pager.active())
+        inventory.complete = inventory.scan_all_profile_directories(current_profile) && inventory.complete;
     }
     auto result = inventory.pager.finish(
         limits.owned_inert_fixture_roots.empty()
-            ? "current caller known-folder-derived Chrome, Edge, Chromium and Firefox profile metadata; extension JSON only; browser-managed records and native file metadata are non-atomic; no code, credentials, browsing data, execution or signer reads"
+            ? "current caller known-folder-derived browser roots plus bounded direct profile-directory candidates under GetProfilesDirectoryW using conventional AppData-relative roots; profile directories are not mapped to accounts; extension JSON only"
             : "explicit caller-owned inert fixture roots only; bounded extension JSON metadata; not production browser inventory",
         inventory.complete);
-    result["browser_limits"] = {{"profiles", limits.profiles}, {"directories", limits.directories}, {"manifests", limits.manifests},
+    result["browser_limits"] = {{"profiles", limits.profiles}, {"user_profile_candidates", limits.user_profile_candidates},
+        {"directories", limits.directories}, {"manifests", limits.manifests},
         {"directory_depth", limits.directory_depth}, {"file_bytes", limits.file_bytes}, {"parse_depth", limits.parse_depth},
         {"metadata_string_bytes", limits.metadata_string_bytes}};
+    result["all_profile_discovery"] = {{"state", inventory.user_profile_discovery_state},
+        {"source", "GetProfilesDirectoryW direct directory enumeration; no ProfileList SID association"},
+        {"profile_directory_entries_examined", std::to_string(inventory.user_profile_entries_examined)},
+        {"noncurrent_profile_candidates", std::to_string(inventory.user_profile_candidates)},
+        {"profile_directories_scanned", std::to_string(inventory.user_profiles_scanned)},
+        {"built_in_or_current_directories_skipped", std::to_string(inventory.user_profiles_skipped)},
+        {"directory_refusals", std::to_string(inventory.user_profile_refusals)},
+        {"candidate_limit_omitted", std::to_string(inventory.user_profile_candidates_omitted)},
+        {"current_profile_dedup_state", inventory.user_profile_dedup_state},
+        {"account_sid_mapping", "not performed"}, {"effective_user_access", "current process token only"},
+        {"raw_profile_paths_retained", false}, {"scope_tokens", "per-capture salted SHA-256 pseudonyms; not stable across captures"}};
     result["resource_scope"] = "bounded profile/directory/manifest candidates, file bytes, JSON depth, application copies/pages; native directory APIs and filesystem calls lack hard deadline/allocation guarantees";
     result["content_scope"] = "extension manifest.json and Firefox extensions.json metadata only; browser executables, extension code, credentials, cookies, history and network are not read";
-    result["coverage_claim"] = "observed metadata candidates only; does not prove extension installation, running state, signer, all browser products, all users or complete inventory";
+    result["coverage_claim"] = "observed browser metadata candidates beneath current-caller known folders and bounded conventional AppData paths for direct profile directories; no account SID mapping, relocated-path discovery, inaccessible-data coverage, extension installation/running/signer proof, all-browser-products or complete-inventory claim";
     result["fixture_roots_used"] = !limits.owned_inert_fixture_roots.empty();
     return result;
 }

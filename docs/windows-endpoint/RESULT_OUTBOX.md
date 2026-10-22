@@ -51,9 +51,15 @@ live backlog delivery claim is made. Replay tombstones suppress repeated executi
 the inbox preserves committed outcomes and conservative recovery of interrupted intent.
 
 The coordinated durable poll now redelivers before acceptance, and the inbox
-preserves intent/outcome. Its recovery reports indeterminate without repeating
-interrupted OS actions. Open P0 gaps include action-specific reconciliation,
-leases/fencing/cancellation and mixed-version rollout. Full native HTTPS
+preserves intent/outcome. Interrupted `ACQUIRE_FILE` commands alone can be
+reconciled against the authenticated acquisition manifest, requiring exact
+command id/correlation, capture id, source identity, and exact request
+parameters; a matching partial capture may resume, while missing or mismatched
+evidence remains indeterminate. No replacement DPAPI key is provisioned during
+recovery. Other interrupted actions remain indeterminate and are never replayed.
+This recovery is source-reviewed only and has no restart fault test yet. Open P0
+gaps include broader action-specific reconciliation, leases/fencing/cancellation
+and mixed-version rollout. Full native HTTPS
 result-outbox/redelivery integration and abrupt OS-action crash/disk
 fault/soak qualification remain open. The separate outbox has the journal's default
 16-GiB plaintext retention ceiling, not a shared physical-disk reserve or fleet

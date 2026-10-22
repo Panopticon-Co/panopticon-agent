@@ -185,6 +185,122 @@ Json firmware() {
     if (!GetFirmwareType(&type)) return failed("GetFirmwareType", GetLastError());
     return observed({{"type_value", static_cast<int>(type)}, {"type", type == FirmwareTypeUefi ? "uefi" : type == FirmwareTypeBios ? "bios" : "unknown"}}, "GetFirmwareType");
 }
+Json firmware_variable_privilege() {
+    HANDLE raw_token = nullptr;
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &raw_token))
+        return failed("OpenProcessToken/TOKEN_QUERY", GetLastError(), "caller token privilege state unknown; no privilege was enabled");
+    struct TokenCloser { HANDLE value; ~TokenCloser() { if (value) CloseHandle(value); } } token{raw_token};
+    LUID required{};
+    if (!LookupPrivilegeValueW(nullptr, L"SeSystemEnvironmentPrivilege", &required))
+        return failed("LookupPrivilegeValueW/SE_SYSTEM_ENVIRONMENT_NAME", GetLastError(), "firmware-read privilege identity unavailable; no privilege was enabled");
+    DWORD bytes = 0;
+    GetTokenInformation(token.value, TokenPrivileges, nullptr, 0, &bytes);
+    const auto sizing_error = GetLastError();
+    if (!bytes || bytes > 64u * 1024 || sizing_error != ERROR_INSUFFICIENT_BUFFER)
+        return failed("GetTokenInformation/TokenPrivileges-size", sizing_error, "bounded caller privilege list unavailable; no privilege was enabled");
+    std::vector<std::byte> storage(bytes);
+    if (!GetTokenInformation(token.value, TokenPrivileges, storage.data(), bytes, &bytes))
+        return failed("GetTokenInformation/TokenPrivileges", GetLastError(), "caller privilege list unavailable; no privilege was enabled");
+    const auto* privileges = reinterpret_cast<const TOKEN_PRIVILEGES*>(storage.data());
+    if (storage.size() < offsetof(TOKEN_PRIVILEGES, Privileges) ||
+        privileges->PrivilegeCount > (storage.size() - offsetof(TOKEN_PRIVILEGES, Privileges)) / sizeof(LUID_AND_ATTRIBUTES))
+        return failed("GetTokenInformation/TokenPrivileges", ERROR_INVALID_DATA, "caller privilege list exceeds returned buffer; no privilege was enabled");
+    for (DWORD index = 0; index < privileges->PrivilegeCount; ++index) {
+        const auto& item = privileges->Privileges[index];
+        if (item.Luid.LowPart == required.LowPart && item.Luid.HighPart == required.HighPart)
+            return observed({{"present", true}, {"enabled", (item.Attributes & SE_PRIVILEGE_ENABLED) != 0},
+                {"attributes", item.Attributes}, {"privilege", "SE_SYSTEM_ENVIRONMENT_NAME"}}, "GetTokenInformation/TokenPrivileges");
+    }
+    return observed({{"present", false}, {"enabled", false}, {"privilege", "SE_SYSTEM_ENVIRONMENT_NAME"}}, "GetTokenInformation/TokenPrivileges");
+}
+Json secure_boot_firmware_variable(const Json& registry_report, const Json& firmware_report) {
+    constexpr wchar_t global_variable_guid[] = L"{8BE4DF61-93CA-11D2-AA0D-00E098032B8C}";
+    const auto privilege = firmware_variable_privilege();
+    const bool firmware_type_ok = firmware_report.value("state", std::string{}) == "healthy" &&
+        firmware_report.contains("value") && firmware_report["value"].is_object() &&
+        firmware_report["value"].contains("type_value");
+    const auto firmware_type_value = firmware_type_ok ? firmware_report["value"]["type_value"].get<int>() : static_cast<int>(FirmwareTypeUnknown);
+    const auto firmware_type = static_cast<FIRMWARE_TYPE>(firmware_type_value);
+    Json result{{"state", "unavailable"}, {"source", "GetFirmwareEnvironmentVariableExW"},
+        {"variable_name", "SecureBoot"}, {"vendor_guid", "{8BE4DF61-93CA-11D2-AA0D-00E098032B8C}"},
+        {"firmware_type", firmware_type_ok ? firmware_report["value"]["type"] : Json(nullptr)},
+        {"firmware_type_value", firmware_type_ok ? Json(firmware_type_value) : Json(nullptr)},
+        {"firmware_type_error_code", firmware_type_ok ? Json(nullptr) : firmware_report.value("error_code", Json(nullptr))},
+        {"caller_privilege", privilege}, {"api_return_bytes", nullptr}, {"api_error_code", nullptr},
+        {"variable_attributes", nullptr}, {"raw_value_byte", nullptr}, {"secure_boot_enabled", nullptr},
+        {"registry_comparison", "not_comparable"}, {"registry_disagreement", nullptr},
+        {"privilege_enabled_by_collector", false}, {"firmware_mutation_attempted", false},
+        {"secure_boot_variable_format", "one-byte BOOLEAN-like value; only 0 and 1 interpreted"}};
+    if (!firmware_type_ok) {
+        result["reason"] = "firmware type query failed; firmware-variable support and Secure Boot state unknown";
+        return result;
+    }
+    if (firmware_type == FirmwareTypeBios) {
+        result["state"] = "unsupported";
+        result["reason"] = "Windows booted in legacy BIOS mode; UEFI SecureBoot variable is not applicable";
+        return result;
+    }
+    if (firmware_type != FirmwareTypeUefi) {
+        result["reason"] = "firmware type is unknown; SecureBoot variable was not queried";
+        return result;
+    }
+    BYTE value = 0;
+    DWORD attributes = 0;
+    SetLastError(ERROR_SUCCESS);
+    const DWORD bytes = GetFirmwareEnvironmentVariableExW(L"SecureBoot", global_variable_guid,
+        &value, sizeof(value), &attributes);
+    result["api_return_bytes"] = bytes;
+    if (!bytes) {
+        const DWORD error = GetLastError();
+        result["api_error_code"] = std::to_string(error);
+        if (error == ERROR_NOACCESS) {
+            result["state"] = "blind";
+            result["reason"] = privilege["state"] == "healthy" && privilege.value("enabled", false)
+                ? "UEFI variable read denied despite caller token privilege enabled; firmware state unknown"
+                : "UEFI variable read denied; required caller privilege is absent, disabled, or access is denied; no privilege was enabled";
+        } else if (error == ERROR_INVALID_FUNCTION) {
+            result["state"] = "unavailable";
+            result["reason"] = "firmware API reports variable access unsupported for this boot installation; Secure Boot state unknown";
+        } else if (error == ERROR_ENVVAR_NOT_FOUND) {
+            result["reason"] = "UEFI SecureBoot variable is undefined; this does not prove Secure Boot is disabled";
+        } else {
+            result["reason"] = "UEFI SecureBoot variable query failed; raw Win32 error retained and state unknown";
+        }
+        return result;
+    }
+    result["state"] = "degraded";
+    result["variable_attributes"] = attributes;
+    if (bytes != sizeof(value)) {
+        result["reason"] = "UEFI SecureBoot variable returned an unexpected byte length; value not interpreted";
+        return result;
+    }
+    result["raw_value_byte"] = value;
+    if (value > 1) {
+        result["reason"] = "UEFI SecureBoot variable contains an unknown value; raw byte retained";
+        return result;
+    }
+    result["state"] = "healthy";
+    result["secure_boot_enabled"] = value == 1;
+    result["reason"] = "UEFI variable query succeeded; reports firmware variable value only and is not attestation";
+    if (registry_report.value("state", std::string{}) == "healthy" && registry_report.contains("value") && registry_report["value"].is_number_unsigned()) {
+        const auto registry_value = registry_report["value"].get<std::uint64_t>();
+        if (registry_value <= 1) {
+            const bool agrees = registry_value == value;
+            result["registry_comparison"] = agrees ? "agree" : "disagree";
+            result["registry_disagreement"] = !agrees;
+            if (!agrees) result["state"] = "degraded";
+        }
+    } else if (registry_report.value("state", std::string{}) == "healthy" && registry_report.contains("value") && registry_report["value"].is_number_integer()) {
+        const auto registry_value = registry_report["value"].get<std::int64_t>();
+        if (registry_value >= 0 && registry_value <= 1) {
+            const bool agrees = static_cast<BYTE>(registry_value) == value;
+            result["registry_comparison"] = agrees ? "agree" : "disagree";
+            result["registry_disagreement"] = !agrees;
+            if (!agrees) result["state"] = "degraded";
+        }
+    }
+    return result;
+}
 Json join() {
     LPWSTR value = nullptr;
     NETSETUP_JOIN_STATUS status = NetSetupUnknownStatus;
@@ -524,15 +640,18 @@ Json collect_host_inventory() {
     const auto started = GetTickCount64();
     constexpr auto current_version = L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion";
     constexpr auto bios = L"HARDWARE\\DESCRIPTION\\System\\BIOS";
+    auto firmware_report = firmware();
+    auto secure_boot_registry = registry_dword(L"SYSTEM\\CurrentControlSet\\Control\\SecureBoot\\State", L"UEFISecureBootEnabled");
     Json fields{{"hostname", name(ComputerNamePhysicalDnsHostname)}, {"fqdn", name(ComputerNamePhysicalDnsFullyQualified)},
         {"os_version", version()}, {"os_product_name", registry_string(current_version, L"ProductName")},
         {"os_edition_id", registry_string(current_version, L"EditionID")}, {"os_display_version", registry_string(current_version, L"DisplayVersion")},
         {"os_update_revision", registry_dword(current_version, L"UBR")}, {"architecture", architecture()}, {"memory", memory()},
-        {"firmware", firmware()}, {"manufacturer", registry_string(bios, L"SystemManufacturer")},
+        {"firmware", firmware_report}, {"manufacturer", registry_string(bios, L"SystemManufacturer")},
         {"model", registry_string(bios, L"SystemProductName")}, {"bios_vendor", registry_string(bios, L"BIOSVendor")},
         {"bios_version", registry_string(bios, L"BIOSVersion")}, {"bios_release_date", registry_string(bios, L"BIOSReleaseDate")},
         {"domain_or_workgroup", join()}, {"network_adapters", adapters()},
-        {"secure_boot_registry_report", registry_dword(L"SYSTEM\\CurrentControlSet\\Control\\SecureBoot\\State", L"UEFISecureBootEnabled")},
+        {"secure_boot_registry_report", secure_boot_registry},
+        {"secure_boot_firmware_variable_report", secure_boot_firmware_variable(secure_boot_registry, firmware_report)},
         {"tpm", tpm()}, {"entra_join", entra()},
         {"storage", storage()}, {"system_audit_policy", audit_policy()},
         {"virtualization", missing("virtualization inventory not implemented")}};

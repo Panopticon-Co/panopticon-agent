@@ -453,6 +453,52 @@ void DurableJournal::append_checkpointed(const std::string& line, const std::str
     check(db, sqlite3_step(save.get())); transaction.commit();
 }
 
+void DurableJournal::advance_checkpoint(const std::string& source, const std::string& checkpoint,
+    std::uint64_t expected) {
+    validate_source(source);
+    if (checkpoint.empty() || checkpoint.size() > 16384 || expected == std::numeric_limits<std::uint64_t>::max())
+        throw std::invalid_argument("invalid source checkpoint or exhausted revision");
+    const auto marker = "checkpoint-only:" + digest(checkpoint);
+    std::scoped_lock lock{impl_->mutex};
+    auto* db = impl_->db.get();
+    Transaction transaction{db};
+    auto existing = prepare(db, "SELECT revision,value,record_digest,bytes FROM source_checkpoints WHERE source=?");
+    bind_text(db, existing.get(), 1, source);
+    const auto rc = sqlite3_step(existing.get());
+    check(db, rc);
+    const auto revision = rc == SQLITE_ROW ? checkpoint_revision(text_column(existing.get(), 0)) : 0;
+    const auto old_bytes = rc == SQLITE_ROW ? static_cast<std::uint64_t>(sqlite3_column_int64(existing.get(), 3)) : 0;
+    if (revision != expected) {
+        if (revision == expected + 1 && text_column(existing.get(), 2) == marker &&
+            protect(column(existing.get(), 1), "source:" + source, false) == checkpoint) {
+            transaction.commit();
+            return;
+        }
+        throw std::runtime_error("source checkpoint revision conflict; retained cursor preserved");
+    }
+    existing.reset();
+    if (!revision) {
+        auto count = prepare(db, "SELECT COUNT(*) FROM source_checkpoints");
+        check(db, sqlite3_step(count.get()));
+        if (sqlite3_column_int64(count.get(), 0) >= 64) throw std::runtime_error("source checkpoint count limit");
+    }
+    const auto retained = impl_->retained();
+    if (retained < old_bytes || checkpoint.size() > impl_->config.retained_payload_limit ||
+        retained - old_bytes > impl_->config.retained_payload_limit - checkpoint.size())
+        throw std::runtime_error("source checkpoint retention quota exhausted; cursor unchanged");
+    const auto encrypted = protect(checkpoint, "source:" + source, true);
+    impl_->admit_growth(encrypted.size());
+    auto save = prepare(db, "INSERT INTO source_checkpoints VALUES (?,?,?,?,?) ON CONFLICT(source) DO UPDATE SET "
+        "revision=excluded.revision,value=excluded.value,record_digest=excluded.record_digest,bytes=excluded.bytes");
+    bind_text(db, save.get(), 1, source);
+    bind_text(db, save.get(), 2, std::to_string(expected + 1));
+    check(db, sqlite3_bind_blob(save.get(), 3, encrypted.data(), static_cast<int>(encrypted.size()), SQLITE_TRANSIENT));
+    bind_text(db, save.get(), 4, marker);
+    check(db, sqlite3_bind_int64(save.get(), 5, static_cast<sqlite3_int64>(checkpoint.size())));
+    check(db, sqlite3_step(save.get()));
+    transaction.commit();
+}
+
 std::optional<JournalBatch> DurableJournal::peek(std::size_t max_events, std::size_t max_bytes) {
     if (!max_events || max_events > 1000 || !max_bytes || max_bytes > 8u * 1024 * 1024)
         throw std::invalid_argument("invalid journal batch limits");

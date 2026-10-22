@@ -93,15 +93,22 @@ Json configuration(SC_HANDLE manager, const wchar_t* name, std::uint64_t& failur
             const auto code = GetLastError();
             fact = failed("QueryServiceConfig2W/held service handle", code);
             fact["native_query_succeeded"] = false;
+            fact["os_applicability"] = code == ERROR_INVALID_LEVEL || code == ERROR_CALL_NOT_IMPLEMENTED
+                ? "native_api_level_unavailable_on_this_os_or_service" : "not_inferred_from_query_failure";
             if (code == ERROR_INSUFFICIENT_BUFFER) {
                 fact["required_bytes"] = std::to_string(needed); fact["bound_exceeded"] = needed > bytes.size();
             }
             ++failures;
             auto count = std::stoull(summary[info.name]["failed_native_queries"].get<std::string>());
             summary[info.name]["failed_native_queries"] = std::to_string(count + 1);
+            if (code == ERROR_INVALID_LEVEL || code == ERROR_CALL_NOT_IMPLEMENTED) {
+                count = std::stoull(summary[info.name]["unavailable_level_hints"].get<std::string>());
+                summary[info.name]["unavailable_level_hints"] = std::to_string(count + 1);
+            }
         } else {
             fact = detail::service_optional_configuration(bytes, info.level);
             fact["native_query_succeeded"] = true;
+            fact["os_applicability"] = "native_query_succeeded_on_this_os";
             auto count = std::stoull(summary[info.name]["successful_native_queries"].get<std::string>());
             summary[info.name]["successful_native_queries"] = std::to_string(count + 1);
             if (fact["state"] != "healthy") {
@@ -256,7 +263,8 @@ Json collect_service_inventory_pages(const std::function<bool(Json)>& consumer, 
     std::vector<std::byte> native(limits.enumeration_bytes); DWORD resume = 0;
     Json rows = Json::array(), enumeration_failure = nullptr, optional_summary = Json::object();
     for (const auto& info : optional_levels) optional_summary[info.name] = {
-        {"successful_native_queries", "0"}, {"failed_native_queries", "0"}, {"uninterpreted_or_invalid_results", "0"}};
+        {"successful_native_queries", "0"}, {"failed_native_queries", "0"}, {"uninterpreted_or_invalid_results", "0"},
+        {"unavailable_level_hints", "0"}};
     std::size_t encoded = 2, pages = 0, delivered = 0;
     std::uint64_t failures = 0, native_calls = 0, optional_not_attempted = 0;
     std::uint64_t security_success = 0, security_failed = 0, security_opens_failed = 0, security_not_attempted = 0, security_invalid = 0;
@@ -265,7 +273,7 @@ Json collect_service_inventory_pages(const std::function<bool(Json)>& consumer, 
     const auto flush = [&]() {
         if (pages >= limits.pages) { bounded = true; stopped = true; return false; }
         const auto count = rows.size();
-        Json page{{"state", "degraded"}, {"service_state_version", "1.3"}, {"page_index", std::to_string(pages)},
+        Json page{{"state", "degraded"}, {"service_state_version", "1.4"}, {"page_index", std::to_string(pages)},
             {"entries", std::move(rows)}, {"inventory_complete", false}, {"consistency", "non_atomic"},
             {"collection_started_uptime_ms", std::to_string(started)}};
         ++pages;
@@ -336,7 +344,7 @@ Json collect_service_inventory_pages(const std::function<bool(Json)>& consumer, 
             : (query["failed_native_queries"] != "0" || query["uninterpreted_or_invalid_results"] != "0"
                 || optional_not_attempted || !complete || bounded || refused) ? "degraded" : "healthy";
     }
-    return {{"state", "degraded"}, {"service_state_version", "1.3"}, {"format", "paged_service_inventory_v1"},
+    return {{"state", "degraded"}, {"service_state_version", "1.4"}, {"format", "paged_service_inventory_v1"},
         {"inventory_complete", false}, {"consistency", "non_atomic"}, {"enumeration_complete", complete && !bounded && !refused},
         {"bound_exceeded", bounded}, {"consumer_refused", refused}, {"pages_produced", std::to_string(pages)},
         {"entries_delivered", std::to_string(delivered)}, {"query_failure_count", std::to_string(failures)},

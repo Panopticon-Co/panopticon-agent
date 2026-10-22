@@ -65,3 +65,32 @@ not qualify full network EDR coverage or the endpoint Definition of Done.
 Native API semantics: [GetExtendedTcpTable](https://learn.microsoft.com/en-us/windows/win32/api/iphlpapi/nf-iphlpapi-getextendedtcptable),
 [GetExtendedUdpTable](https://learn.microsoft.com/en-us/windows/win32/api/iphlpapi/nf-iphlpapi-getextendedudptable),
 [MIB_TCPROW_OWNER_PID](https://learn.microsoft.com/en-us/windows/win32/api/tcpmib/ns-tcpmib-mib_tcprow_owner_pid).
+
+## Sampled process-instance evidence (source-only 2026-10-22)
+
+Each decoded socket row now retains the native owner PID and a separate
+`sampled_owner_process_instance` result. For each distinct table/PID pair, the
+collector opens a limited-query process handle, rechecks `GetProcessId` on that
+held handle, and obtains native creation FILETIME with `GetProcessTimes`. When
+the enrolled host and native boot identities are available, the shared process
+identity algorithm produces the exact host/boot/PID/creation-time entity ID.
+Unknown boot identity remains explicitly unscoped; query refusal, PID 0, and the
+4,096 unique table/PID query bound remain unavailable rather than being joined
+by PID alone. If host identity is absent, no process-entity query is performed
+and the sampled identity status is unavailable; the collector never substitutes
+a synthetic host identifier to manufacture an entity key. A capture with no
+decoded socket rows likewise reports the sampling summary as unavailable rather
+than claiming process identity coverage from an empty sample.
+
+This is not proof that the process instance owned the socket at the instant of
+the preceding IP Helper table read. The OS APIs do not provide an atomic
+table-row/process-handle transaction or a socket object lifetime identifier.
+The row's original `process_reference` stays null; sampled evidence is a
+separate field with query time and an explicit non-atomic association scope.
+The counters describe rows with exact/unavailable samples among decoded/attempted
+rows, including rows later refused by
+the page consumer; they are not counts of durable attribution. This slice has
+not been built or real-Windows validated. Final validation must include rapid
+PID reuse/exit, protected processes, missing boot identity, process churn,
+multi-table PID changes, query-bound behavior, journal refusal, and schema and
+resource effects.

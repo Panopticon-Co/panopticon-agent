@@ -12,9 +12,9 @@
 
 namespace panopticon::officer::response {
 
-// The same closed, 7-action vocabulary as response_engine.contract.ACTIONS
+// The closed response vocabulary as response_engine.contract.ACTIONS
 // (Manager/Python) and panopticon-linux-agent's action_type. Do not add an
-// 8th action or a generic/arbitrary-exec action -- see
+// generic/arbitrary-exec action -- see
 // docs/RESPONSE_ENGINE_STATE.md in panopticon-manager for why this is
 // closed by design.
 enum class ActionType : std::uint8_t {
@@ -23,6 +23,7 @@ enum class ActionType : std::uint8_t {
     collect_network_connections,
     collect_file,
     quarantine_file,
+    acquire_file,
     isolate_host,
     release_host_isolation,
 };
@@ -51,8 +52,11 @@ struct Command {
     ActionType action{};
     std::int64_t expires_at_epoch_seconds = 0;
     ProcessTarget process_target;
-    // Populated only for collect_file / quarantine_file; empty otherwise.
+    // Populated only for file actions; empty otherwise.
     std::string file_target_path;
+    // ACQUIRE_FILE supplies an explicit durable capture id and byte cap.
+    std::string file_capture_id;
+    std::uint64_t file_maximum_bytes = 0;
     std::string canonical_wire_json;
 };
 

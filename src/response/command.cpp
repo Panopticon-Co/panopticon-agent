@@ -95,6 +95,26 @@ bool is_positive_integer(const json& value) {
     return value.is_number_integer() && !value.is_boolean() && value.get<std::int64_t>() > 0;
 }
 
+std::optional<std::uint64_t> bounded_positive_u64(const json& value, std::uint64_t maximum) {
+    if (value.is_boolean() || !value.is_number_integer()) return std::nullopt;
+    std::uint64_t number = 0;
+    if (value.is_number_unsigned()) number = value.get<std::uint64_t>();
+    else {
+        const auto signed_number = value.get<std::int64_t>();
+        if (signed_number <= 0) return std::nullopt;
+        number = static_cast<std::uint64_t>(signed_number);
+    }
+    if (number == 0 || number > maximum) return std::nullopt;
+    return number;
+}
+
+bool is_capture_id(const std::string& value) {
+    return !value.empty() && value.size() <= 96 && std::all_of(value.begin(), value.end(), [](unsigned char c) {
+        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+               (c >= '0' && c <= '9') || c == '_' || c == '-';
+    });
+}
+
 // Validate keys during parsing: checking the resulting object is too late,
 // because JSON DOM construction has already replaced duplicate members.
 std::optional<json> parse_unambiguous_json(std::string_view payload, std::string& error_message) {
@@ -200,6 +220,7 @@ std::optional<Command> parse_command_json(const std::string_view payload, std::s
     else if (action_name == "COLLECT_NETWORK_CONNECTIONS") action = ActionType::collect_network_connections;
     else if (action_name == "COLLECT_FILE") action = ActionType::collect_file;
     else if (action_name == "QUARANTINE_FILE") action = ActionType::quarantine_file;
+    else if (action_name == "ACQUIRE_FILE") action = ActionType::acquire_file;
     else if (action_name == "ISOLATE_HOST") action = ActionType::isolate_host;
     else if (action_name == "RELEASE_HOST_ISOLATION") action = ActionType::release_host_isolation;
     else {
@@ -209,6 +230,7 @@ std::optional<Command> parse_command_json(const std::string_view payload, std::s
 
     const bool is_process_action = action == ActionType::kill_process || action == ActionType::collect_process_info;
     const bool is_file_action = action == ActionType::collect_file || action == ActionType::quarantine_file;
+    const bool is_acquire_file_action = action == ActionType::acquire_file;
     const json target = document.contains("target") && !document["target"].is_null() ? document["target"] : json::object();
     if (!target.is_object()) {
         error_message = "command target must be an object";
@@ -217,6 +239,8 @@ std::optional<Command> parse_command_json(const std::string_view payload, std::s
 
     ProcessTarget process_target{host_id, 0, 0};
     std::string file_path;
+    std::string file_capture_id;
+    std::uint64_t file_maximum_bytes = 0;
     if (schema_version == "2" && !is_process_action) {
         error_message = "schema-2 currently defines boot-bound process actions only";
         return std::nullopt;
@@ -268,13 +292,29 @@ std::optional<Command> parse_command_json(const std::string_view payload, std::s
             return std::nullopt;
         }
         file_path = target["path"].get<std::string>();
+    } else if (is_acquire_file_action) {
+        constexpr std::uint64_t maximum_acquisition_bytes = 4ull * 1024 * 1024 * 1024;
+        if (target.size() != 3U || !target.contains("path") || !is_bounded_string(target["path"], 4096) ||
+            !target.contains("capture_id") || !target["capture_id"].is_string() ||
+            !is_capture_id(target["capture_id"].get<std::string>()) || !target.contains("maximum_bytes")) {
+            error_message = "file acquisition target must contain only path, capture_id, and maximum_bytes";
+            return std::nullopt;
+        }
+        const auto maximum = bounded_positive_u64(target["maximum_bytes"], maximum_acquisition_bytes);
+        if (!maximum) {
+            error_message = "file acquisition maximum_bytes must be a positive integer no greater than 4 GiB";
+            return std::nullopt;
+        }
+        file_path = target["path"].get<std::string>();
+        file_capture_id = target["capture_id"].get<std::string>();
+        file_maximum_bytes = *maximum;
     } else if (!target.empty()) {
         error_message = "this action does not accept a target";
         return std::nullopt;
     }
 
     return Command{command_id,       agent_id,      host_id, schema_version, correlation_id, action,
-                   expires_at->first, process_target, file_path, document.dump()};
+                   expires_at->first, process_target, file_path, file_capture_id, file_maximum_bytes, document.dump()};
 }
 
 std::optional<std::vector<Command>> parse_command_poll_response(const std::string_view payload,
@@ -389,7 +429,8 @@ CommandReceipt CommandGate::validate_and_mark(const Command& received) {
     }
     if (received.action != ActionType::kill_process && received.action != ActionType::collect_process_info &&
         received.action != ActionType::collect_network_connections && received.action != ActionType::collect_file &&
-        received.action != ActionType::quarantine_file && received.action != ActionType::isolate_host &&
+        received.action != ActionType::quarantine_file && received.action != ActionType::acquire_file &&
+        received.action != ActionType::isolate_host &&
         received.action != ActionType::release_host_isolation) {
         return {received.command_id, received.correlation_id, ReceiptCode::unsupported_action,
                 "action is not implemented"};

@@ -22,6 +22,28 @@ correlation is not established. Security event labels require the matching
 Security-Auditing provider/channel; selected authentication/account/group/audit/
 task/process events and SCM events have source-native labels. PowerShell 4104
 is explicitly an unassembled fragment. These labels are not detection rules.
+For exact provider `Microsoft-Windows-TaskScheduler` on
+`Microsoft-Windows-TaskScheduler/Operational`, event IDs 106, 141 and 142 are
+labelled `task_registered`, `task_registration_deleted` and `task_deleted` per
+Microsoft's WEF guidance. That source does not define EventData field templates,
+so those fields remain uninterpreted and writer PID/TID/Security UserID do not
+establish an initiating actor or process. See [Microsoft's WEF guidance](https://learn.microsoft.com/en-us/windows/security/operating-system-security/device-management/use-windows-event-forwarding-to-assist-intrusion-detection) and [persistence state](PERSISTENCE_STATE.md).
+For the exact DNS Client Operational provider/channel, event 3008 is labelled
+`dns_query_completed` per Microsoft's WEF example. DNS EventData remains raw;
+completion is not interpreted as success, and event writer PID/TID do not
+establish the DNS requester. See [DNS state](DNS_STATE.md).
+For exact provider `Microsoft-Windows-WMI-Activity` on
+`Microsoft-Windows-WMI-Activity/Operational`, event 5857 is labelled
+`wmi_provider_started` and 5858 `wmi_client_operation_reported`, following
+[Microsoft's WMI troubleshooting guidance](https://learn.microsoft.com/en-us/troubleshoot/windows-server/system-management-components/troubleshoot-wmi-high-cpu-issues) and [5858 guidance](https://learn.microsoft.com/en-us/troubleshoot/windows-client/system-management-components/wmi-activity-event-5858-logged-with-resultcode-0x80041032). EventData stays raw; reported User/ClientProcessId values are not verified actor/process attribution and are not correlated to permanent subscription inventory. See [persistence state](PERSISTENCE_STATE.md).
+For exact Defender Operational provider/channel events, selected malware
+detection/remediation, ASR, real-time-protection, engine, configuration and
+tamper-protection IDs receive source-role labels. Raw EventData remains
+uninterpreted and actor/action outcome is not independently verified. The event
+stream does not establish which security product is active or healthy; separate
+posture capture is required. See [Defender telemetry](DEFENDER_TELEMETRY.md),
+[Microsoft event guidance](https://learn.microsoft.com/en-us/defender-endpoint/troubleshoot-microsoft-defender-antivirus),
+and [ASR event guidance](https://learn.microsoft.com/en-us/defender-endpoint/attack-surface-reduction-windows-events).
 
 Native SystemTime is validated through Windows calendar round-trip and retained
 at 100 ns precision if representable by the signed nanosecond envelope clock.
@@ -47,7 +69,20 @@ at the oldest retained channel record, with an explicit unknown pre-retention
 history gap. Saved bookmarks resume strictly after the last accepted event.
 Native subscription/seek/read refusals retain an ordinary source gap and preserve
 the checkpoint; a formerly checkpointed unavailable source is blind. No recovery
-path silently switches to future-only collection. Explicit XML render refusal,
+path silently switches to future-only collection. Cursor schema v2 wraps the
+native bookmark with the channel log creation time and last accepted native
+record ID. Existing native-XML cursors are treated as legacy and atomically
+migrated with a generation-unknown gap. Before subscription and every five
+seconds, the worker compares generation, oldest retained record, and retained
+record-count estimate with its committed cursor. A changed/unknown generation,
+record-ID regression, overwritten interval, malformed cursor, or stale native
+bookmark emits a per-channel durable lifecycle gap and resets to the oldest
+retained record when continuity cannot be proven. Gap and replacement cursor
+share one source-checkpoint transaction. Event-ID repetition/regression under
+the same generation is recorded as a gap and the offending body is not retained.
+Native loss counts/ranges remain unknown or approximate: the Event Log API does
+not prove provider-side loss, and record-count/newest-ID arithmetic is only an
+estimate. Explicit XML render refusal,
 conversion failure or bound excess creates a checkpointed gap counting one
 unretained delivered body, with native error and unknown provider loss count.
 
@@ -60,10 +95,11 @@ are scoped object-lifetime counters; provider loss remains unknown. An active
 subscription stays degraded because audit/provider policy and continuity remain
 unverified. Disabled and denied sources do not become healthy empty sources.
 
-Missing: audit policy enablement coverage, native log-generation identity and
-clear/rollover reconciliation, bookmark stale recovery policy, selective query/
+Missing: audit policy enablement coverage and native continuity qualification
+under actual clear/rollover/retention faults, selective query/
 retention/privacy policy, script assembly, actor/lifecycle correlation, task/WMI
-state and remediation, DNS request/result semantics, subscription watchdog and
+state and remediation, DNS process/requester attribution and query/result
+interpretation beyond the event-3008 source label, subscription watchdog and
 hard native API deadlines, bounded native library allocations, source fairness,
 resource/storm/soak/OS/service-account/VM qualification. Periodic health is not
 durable full-disk fault intent. A native bookmark alone does not qualify exact

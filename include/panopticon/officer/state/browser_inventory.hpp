@@ -18,7 +18,8 @@ struct BrowserInventoryFixtureRoot {
 
 struct BrowserInventoryLimits {
     NativeInventoryLimits pages;
-    std::size_t profiles = 32;
+    std::size_t profiles = 256;
+    std::size_t user_profile_candidates = 64;
     std::size_t directories = 4096;
     std::size_t manifests = 4096;
     std::size_t directory_depth = 5;
@@ -28,9 +29,10 @@ struct BrowserInventoryLimits {
     std::vector<BrowserInventoryFixtureRoot> owned_inert_fixture_roots;
 };
 
-// Reads only extension manifest/metadata files for the current caller. Browser
-// state, activation, signer status and full installation coverage are not
-// inferred. Pages are delivered synchronously to consumer.
+// Reads only extension manifest/metadata files for current-caller and bounded
+// conventional profile-directory candidates. Candidate directories are not
+// mapped to verified accounts. Production rows omit raw profile paths and use
+// per-capture salted profile scope tokens. Pages are delivered synchronously.
 [[nodiscard]] nlohmann::json collect_browser_inventory_pages(
     const std::function<bool(nlohmann::json)>& consumer,
     BrowserInventoryLimits limits = {}, const std::function<bool()>& cancelled = {});

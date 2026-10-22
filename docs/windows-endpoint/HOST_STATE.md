@@ -183,6 +183,10 @@ Primary API references:
 - [GetAdaptersAddresses](https://learn.microsoft.com/en-us/windows/win32/api/iphlpapi/nf-iphlpapi-getadaptersaddresses)
 - [NetGetJoinInformation](https://learn.microsoft.com/en-us/windows/win32/api/lmjoin/nf-lmjoin-netgetjoininformation)
 - [GetFirmwareType](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-getfirmwaretype)
+- [GetFirmwareEnvironmentVariableExW](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-getfirmwareenvironmentvariableexw)
+- [Get-SecureBootUEFI variable names](https://learn.microsoft.com/en-us/powershell/module/secureboot/get-securebootuefi?view=windowsserver2025-ps)
+- [Confirm-SecureBootUEFI Boolean result and platform limits](https://learn.microsoft.com/en-us/powershell/module/secureboot/confirm-securebootuefi?view=windowsserver2022-ps)
+- [UEFI 2.10 Boot Manager SecureBoot variable semantics](https://uefi.org/specs/UEFI/2.10/03_Boot_Manager.html)
 - [Tbsi_GetDeviceInfo](https://learn.microsoft.com/en-us/windows/win32/api/tbs/nf-tbs-tbsi_getdeviceinfo)
 - [TPM_DEVICE_INFO](https://learn.microsoft.com/en-us/windows/win32/api/tbs/ns-tbs-tpm_device_info)
 - [NetGetAadJoinInformation](https://learn.microsoft.com/en-us/windows/win32/api/lmjoin/nf-lmjoin-netgetaadjoininformation)
@@ -193,3 +197,27 @@ Primary API references:
 - [GetVolumeInformationW](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getvolumeinformationw)
 - [GetDiskFreeSpaceExW](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getdiskfreespaceexw)
 - [SetThreadErrorMode](https://learn.microsoft.com/en-us/windows/win32/api/errhandlingapi/nf-errhandlingapi-setthreaderrormode)
+
+## Secure Boot firmware evidence (source-only)
+
+Host inventory now queries the UEFI global-variable namespace's `SecureBoot`
+variable with read-only `GetFirmwareEnvironmentVariableExW`, after recording
+the boot firmware type through `GetFirmwareType`. Microsoft documents firmware
+variable reads as requiring the caller's `SE_SYSTEM_ENVIRONMENT_NAME` privilege;
+the collector inspects its existing process token and never enables or adjusts
+that privilege. Microsoft documents the Secure Boot query result as Boolean;
+the queried UEFI variable is expected to contain one byte. Only 0 and 1 are
+interpreted, while other lengths/values retain raw query evidence and remain
+unknown. Returned UEFI attributes and the exact API return length/error are
+preserved. No other Secure Boot key database variables are read because their
+structured EFI signature-list payloads are not parsed here.
+
+The prior `UEFISecureBootEnabled` registry report remains a distinct field. When
+both sources return comparable 0/1 values, inventory reports agreement or
+disagreement; a mismatch degrades the firmware report rather than choosing a
+winner. Legacy BIOS is marked unsupported for this firmware variable. An
+undefined variable does not mean Secure Boot is disabled; access denial is
+blind; other errors remain unavailable with their Win32 code. Neither source
+establishes measured-boot attestation, key trust, or effective platform policy.
+Source change only: no build, component tests, live Windows run, privilege matrix,
+or VM qualification was performed.

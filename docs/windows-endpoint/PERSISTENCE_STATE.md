@@ -26,6 +26,28 @@ unknown-namespace XML refuses structural interpretation while retaining bounded
 original XML. A held proxy does not prove immutable task/file/process identity.
 Service-hidden inaccessible objects can remain silently omitted.
 
+The bounded task-definition parser now adds a typed structural summary alongside
+the unchanged full XML sections: action and trigger element kinds/counts,
+recognized versus unknown kinds, principal field-presence indicators, and a
+closed set of selected task-setting presence flags. It deliberately does not
+duplicate account IDs, command arguments, trigger expressions, or other values
+already present in the raw definition. Limits are 128 actions, 128 triggers,
+and 16 principals; exceeding a limit degrades the summary. This improves
+capability visibility for configured execution/persistence surfaces but does not
+establish that a task ran, which process ran it, whether a principal is effective,
+or whether the native definition was observed atomically. This source change has
+not been built or tested; no new Windows runtime evidence exists.
+
+The independent `Microsoft-Windows-TaskScheduler/Operational` event source
+retains rendered XML and ordered raw EventData. Its decoder assigns source labels
+only for provider `Microsoft-Windows-TaskScheduler` events 106 (task registered),
+141 (task registration deleted) and 142 (task deleted), following Microsoft's
+Windows Event Forwarding intrusion-detection guidance. That guidance does not
+define EventData field templates, so no task path, actor, or process is derived
+from those fields. Writer PID/TID and Security UserID are retained metadata, not
+verified attribution. These labels describe source event categories; they do not
+establish task execution, persistence intent, or effective authorization.
+
 WMI queries local ROOT\subscription and ROOT\cimv2 independently for __EventFilter,
 __EventConsumer subclasses and __FilterToConsumerBinding. Bounded MOF retains
 unknown/third-party consumer configuration. Selected fields preserve exact native
@@ -34,6 +56,16 @@ CreatorSID bytes and unresolved Filter/Consumer references. Neither references
 nor consumers are activated. CreatorSID is reported security data, not an
 authenticated actor/process. Other namespaces/providers remain unobserved.
 Next(1000,1) retains returned objects before WBEM_S_FALSE; timeout is not EOF.
+
+The separate `Microsoft-Windows-WMI-Activity/Operational` log retains raw
+rendered XML and ordered EventData. For exact provider
+`Microsoft-Windows-WMI-Activity`, event 5857 is labelled
+`wmi_provider_started` and 5858 is labelled
+`wmi_client_operation_reported`, based on Microsoft's WMI troubleshooting
+guidance. No EventData fields are interpreted: reported User/ClientProcessId
+values do not independently verify an actor or process instance. These event
+labels do not prove execution by a permanent subscription or link an event to
+the local filter/consumer inventory.
 
 Startup queries Run/RunOnce/Policies Explorer Run in HKLM, collector HKCU and
 loaded HKU SID hives, explicitly across 32/64 views. Allowlisted Winlogon

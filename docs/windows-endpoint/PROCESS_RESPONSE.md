@@ -89,3 +89,64 @@ Windows API contracts: [TerminateProcess](https://learn.microsoft.com/en-us/wind
 [IsProcessCritical](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-isprocesscritical),
 [GetProcessInformation](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getprocessinformation)
 and [protection-level values](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/ns-processthreadsapi-process_protection_level_information).
+
+## Bounded file hash evidence
+
+`COLLECT_FILE` now hashes bytes read from a held Windows file handle rather
+than reopening a canonicalized pathname through the C++ stream library. The
+configured root and target are opened with reparse-point inspection; the root
+must be a directory, the target must be a regular non-reparse file, and the
+target handle's normalized final path must remain below the held root handle's
+final path. The target handle allows readers but not new writers or deleters.
+The handler reads at most 16 MiB in bounded chunks, checks for unexpected extra
+bytes, then compares volume/file identity, size, last-write time and normalized
+path on that same handle. A mismatch or unsupported identity query fails
+closed. Raw content is cleared from bounded process buffers on success or error;
+only the handle-resolved path, size and SHA-256 enter the response evidence.
+
+This closes the prior path-reopen race for collection and rejects target/root
+reparse points. Existing writable handles can still modify the file; before-and-after
+identity and metadata checks detect common changes but do not provide a
+filesystem snapshot or prove content stability against a writer that changes
+bytes and restores metadata. This source change is not built or exercised on
+Windows yet.
+
+## Quarantine movement and partial outcomes
+
+`QUARANTINE_FILE` now holds the source handle with read, delete and security
+rights while refusing new write/delete opens. It verifies a stable volume/file
+identity, a non-reparse regular file, and the held final path beneath the held
+collection-root handle. The destination must be an accessible non-reparse
+directory on the same volume; cross-volume copy/delete fallback is refused.
+The handler applies a protected DACL to the source handle before moving it:
+Everyone is denied write, execute, delete and security-descriptor changes,
+while the source owner and SYSTEM retain read access. A handle-relative
+`FileRenameInfo` operation moves it atomically with replacement disabled, so
+an existing destination is never overwritten.
+
+Before source mutation, a unique metadata staging file recording the original
+path and stable file identity is created with `CREATE_NEW`, protected, written
+and flushed. It is an intent record, not proof that the move completed. After
+the source rename, that file is atomically renamed to its final metadata name
+without replacement; the durable command result records completion.
+The optional `QuarantineOutcome` reports `refused`, `failed`, `partial` or
+`completed` and explicit source-security, source-removal, destination-protection
+and metadata-flush facts. If protection succeeds but source rename fails, the
+source remains at its original path with the restrictive DACL and the typed
+state is `partial`. If the source moved but metadata promotion fails, the
+source is in quarantine and the pending metadata file remains; the state is
+also `partial`. The response dispatcher must translate either partial state
+to `indeterminate`, never success or a claim of no action. Successful
+serialized results are prepared before mutation and emitted only after both
+the source rename and metadata rename succeed.
+
+Metadata file contents are flushed before rename, but Windows directory-entry
+power-loss durability is not proved here. The durable command inbox/outbox
+records its result after the handler; a crash before that commit must recover
+conservatively as indeterminate. The configured quarantine parent directory
+is not itself made tamper-proof, so privileged or parent-directory access can
+still remove/replace artifacts. The DACL does not revoke access already held
+through an open handle or an existing image mapping. ACL changes can also be
+reverted by an administrator or kernel-level actor. This implementation has not been built,
+tested or exercised on Windows, and response dispatcher integration plus
+runtime crash/ACL/volume/permission validation remain pending.

@@ -1,19 +1,42 @@
 # Windows browser extension metadata inventory
 
 `collect_browser_inventory_pages(consumer, limits, cancelled)` is a read-only,
-current-caller collector for extension metadata under the caller's native known
-folders. It emits normal `NativeInventoryLimits` pages using
+bounded collector for extension metadata. It scans the current process user's
+native known folders and, when permitted, direct profile-directory candidates
+under the configured Windows profiles directory. It emits normal
+`NativeInventoryLimits` pages using
 `browser_inventory_state_version` and the `browser_extension_inventory`
 source. The caller must consume each page synchronously; returning `false`
 stops collection.
 
-The source roots come from `SHGetKnownFolderPath` for Local AppData and Roaming
-AppData. The collector checks Chrome, Edge and Chromium `User Data` folders
-under Local AppData and Firefox `Profiles` under Roaming AppData. It does not
-expand environment variables, scan other users or infer paths from process
-configuration. An absent known-folder-derived browser root or extension index
-is represented as a healthy absent source; access, enumeration and native API
-errors remain unavailable refusals with their Win32 or HRESULT code.
+For the current process identity, source roots come from
+`SHGetKnownFolderPath` for Local AppData and Roaming AppData. The collector
+checks Chrome, Edge and Chromium `User Data` folders under Local AppData and
+Firefox `Profiles` under Roaming AppData. It additionally calls
+`GetProfilesDirectoryW` and examines at most `user_profile_candidates` direct,
+non-reparse directory entries, skipping conventional built-in names and the
+current profile when its final path can be resolved. For other candidates it
+checks only conventional relative locations for Chrome, Edge, Chromium, and
+Firefox. A directory name is not mapped to a Windows account or SID, and the
+process token remains the only authority used to read metadata. Access and
+enumeration failures remain explicit refusals; the collector does not load user
+hives, enable privileges, or bypass ACLs. An absent known-folder-derived
+browser root or extension index is represented as a healthy absent source.
+
+The profile scan is intentionally a candidate discovery mechanism, not an
+all-user inventory. It cannot discover relocated browser data roots, nonstandard
+installations, profiles outside the configured profiles directory, or data
+denied to the current process identity. Candidate ordering is lexical after a
+bounded native enumeration; reaching the bound reports omissions and degrades
+coverage. Current-profile deduplication can be unavailable, in which case a
+duplicate candidate may be observed and is reported.
+
+Production pages omit raw profile and metadata paths. They carry random
+per-capture salted SHA-256 path pseudonyms to correlate records within that
+capture; these tokens are not stable between captures. If the system RNG is
+unavailable, paths are still omitted and tokens are null. Other metadata such
+as extension identifiers, names, permissions, file identities, and hashes is
+still retained as described below and may be sensitive.
 
 For Chromium-family profiles it enumerates the fixed `Extensions/<id>/<version>/manifest.json`
 layout. For Firefox it reads the profile's `extensions.json` metadata index.
@@ -53,18 +76,18 @@ Callers are responsible for providing inert, caller-owned fixture trees.
 The collector reads only extension metadata JSON. It does not inspect browser
 executables, extension scripts/binaries, credentials, cookies, history, or
 network state. It does not verify signatures, prove extensions are installed
-or running, identify all browser products, enumerate all users, or claim full
-coverage. Firefox records do not have a separate per-extension manifest hash:
+or running, identify all browser products, map profile candidates to accounts,
+or claim all-user or full coverage. Firefox records do not have a separate
+per-extension manifest hash:
 each row carries the SHA-256 and native file evidence for the shared
 `extensions.json` index from which its fields were selected.
 
 ## Integration
 
-Add `src/state/browser_inventory.cpp` to `officer-core` in CMake and expose
-`browser_inventory.hpp` to the Windows collector/dispatch layer. Call the
-collector with the shared page consumer and propagate the collector's summary
-as that source's coverage result. The implementation is intentionally not
-registered in `main.cpp` or a shared capability ledger; those integration
-changes are owned by the parent task.
+`src/state/browser_inventory.cpp` is registered in `officer-core`; the
+independent runtime worker commits canonical pages/manifests and capture
+freshness. The discovery summary and coverage limits are durable in the source
+manifest. No build, test, or runtime validation was run for this wave; those
+checks remain part of final integration.
 
-Integration status: independent runtime worker, canonical durable pages/manifests and capture freshness are wired. The combined Windows executable compiles; no new runtime test was run for this source.
+Integration status: independent runtime worker, canonical durable pages/manifests and capture freshness are wired. This profile-discovery wave has not been built, tested, or run; validation is deferred to final integration.

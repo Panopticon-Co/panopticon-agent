@@ -18,6 +18,7 @@ bool read(const Json& object, const char* key, std::uint64_t& value) {
 struct Source { const char* key; std::array<const char*, 8> prefixes; };
 constexpr Source sources[]{
     {"host_inventory", {"A.host", "state.tpm_device", "state.entra_default_join", "state.storage_volumes", "state.system_audit_policy", "W.enterprise_identity", "Y.posture"}},
+    {"security_audit_policy_inventory", {"state.security_audit_policy_detail"}},
     {"process_inventory", {"state.process_inventory"}},
     {"thread_inventory", {"state.thread_inventory", "C.thread_handle"}},
     {"module_inventory", {"state.module_inventory"}},
@@ -30,7 +31,10 @@ constexpr Source sources[]{
     {"firewall_profile_state", {"state.firewall_profiles", "state.firewall_exclusions.", "P.firewall"}},
     {"firewall_rule_inventory", {"state.firewall_rule_inventory", "P.firewall"}},
     {"security_center_state", {"state.security_center", "Q.security_product"}},
+    {"security_product_inventory", {"state.security_product_inventory", "Q.security_product"}},
     {"defender_status", {"state.defender_status", "Q.security_product"}},
+    {"dns_state_inventory", {"state.dns_state_inventory", "O.dns"}},
+    {"remote_access_inventory", {"state.remote_access_inventory", "U.remote_access"}},
     {"device_guard_state", {"state.device_guard_state"}},
     {"scheduled_task_inventory", {"state.scheduled_task_inventory"}},
     {"wmi_subscription_inventory", {"state.wmi_subscription_inventory"}},
@@ -105,7 +109,7 @@ void apply_state_capture_freshness(Json& health, std::uint64_t now) {
     // refusal must not erase fresh Defender reports on Server (or the reverse).
     if (health.contains("defender_status") && health.contains("capabilities") && health["capabilities"].is_array()) {
         bool available = false, blind = false;
-        for (const auto* key : {"security_center_state", "defender_status", "defender_preferences_inventory"}) {
+        for (const auto* key : {"security_center_state", "security_product_inventory", "defender_status", "defender_preferences_inventory"}) {
             const auto found = health.find(key);
             if (found == health.end() || !found->is_object()) continue;
             available |= found->contains("state") && positive(found->at("state"));
@@ -130,7 +134,7 @@ void apply_state_capture_freshness(Json& health, std::uint64_t now) {
             {"L.scheduled_task", {"scheduled_task_inventory"}, "Microsoft-Windows-TaskScheduler/Operational"},
             {"M.wmi", {"wmi_subscription_inventory"}, "Microsoft-Windows-WMI-Activity/Operational"},
             {"D.user_session", {"account_inventory", "local_group_inventory", "logon_session_inventory", "terminal_session_inventory"}, nullptr},
-            {"U.remote_access", {"terminal_session_inventory", "logon_session_inventory"}, nullptr},
+            {"U.remote_access", {"terminal_session_inventory", "logon_session_inventory", "remote_access_inventory"}, nullptr},
             {"Z.software", {"msi_product_inventory", "uninstall_registry_inventory"}, nullptr}
         };
         for (const auto& group : groups) {

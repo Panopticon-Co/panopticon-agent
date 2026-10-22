@@ -16,6 +16,7 @@ struct ResponseConfig {
     std::string bootstrap_token_path;   // One-shot enrollment token file; only read if identity_path is missing.
     std::string replay_ledger_path;     // Durable command-id ledger.
     std::string file_collection_root;   // Allow-listed root for COLLECT_FILE / QUARANTINE_FILE.
+    std::string forensic_store_root;    // Explicit encrypted store root for ACQUIRE_FILE.
     std::string quarantine_root;        // Destination root for QUARANTINE_FILE.
     std::string manager_exception_host; // Numeric address the isolation filter must keep reachable.
     std::uint16_t manager_exception_port = 0;

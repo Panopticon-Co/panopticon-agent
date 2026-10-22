@@ -40,6 +40,8 @@ public:
     [[nodiscard]] bool enqueue(const std::string& ndjson_line);
     [[nodiscard]] bool enqueue_checkpointed(const std::string& line, const std::string& source,
         const std::string& checkpoint, std::uint64_t expected_revision);
+    [[nodiscard]] bool advance_checkpoint(const std::string& source, const std::string& checkpoint,
+        std::uint64_t expected_revision);
     [[nodiscard]] std::optional<SourceCheckpoint> source_checkpoint(const std::string& source) const {
         return journal_.source_checkpoint(source);
     }

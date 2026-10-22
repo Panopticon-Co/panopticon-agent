@@ -1,5 +1,136 @@
 # Windows endpoint validation ledger
 
+WFP Security audit event semantics wave, 2026-10-22: the isolated
+`SecurityAuditSemantics` enrichment now classifies exact Security-channel,
+Security-Auditing-provider event IDs 5152, 5156 and 5157 as WFP blocked packet,
+permitted connection and blocked connection source events, using Microsoft's
+event-specific audit documentation. Original rendered XML/EventData are
+preserved; no fields or endpoints are interpreted, and process/actor attribution
+is not performed. Existing Security subscription and policy configuration remain
+unchanged. Source-only; no build, tests or Windows runtime validation. Policy
+enablement, event volume, provider/version coverage and attribution remain
+unverified. See [WFP audit events](WFP_AUDIT_EVENTS.md).
+
+Task Scheduler Operational event semantics wave, 2026-10-22: the existing
+`Microsoft-Windows-TaskScheduler/Operational` pull source now labels only exact
+provider events 106, 141 and 142 as task registered, task registration deleted
+and task deleted, following Microsoft's WEF guidance. Raw rendered XML and
+ordered EventData remain preserved; field templates are not defined by that
+source and actor/process attribution is unverified. The existing channel,
+bookmark, journal and health path is unchanged. Static review only; no build,
+tests or Windows runtime validation. Channel availability and provider-version
+compatibility remain unverified. See [native event logs](WINDOWS_EVENT_LOG.md).
+
+WMI-Activity event semantics wave, 2026-10-22: the existing
+`Microsoft-Windows-WMI-Activity/Operational` source now classifies only exact
+provider events 5857 and 5858 as provider started and client operation reported,
+based on Microsoft Learn troubleshooting guidance. Rendered XML and ordered raw
+EventData remain intact; no event fields are interpreted, and reported user or
+client process identifiers are not verified attribution. Existing subscription,
+bookmark, durability and health paths are unchanged. Static review only; no
+build, tests or Windows runtime validation. Provider/version compatibility and
+the classification's operational coverage remain unverified. See [native event
+logs](WINDOWS_EVENT_LOG.md).
+
+Recursive configured-root FIM wave, 2026-10-22: changed explicit roots to use a
+bounded iterative subtree baseline and recursive ReadDirectoryChangesW by
+default, retaining an API opt-out for direct-child scope. Directory identity
+deduplication, reparse skips, depth/directory/entry/path bounds, scope-bound
+checkpoint gaps, root-change/overflow gaps and bounded rescan evidence are
+implemented in source. No build, test or Windows runtime validation was run;
+native subtree behavior, traversal/handle races, checkpoint migration,
+durability and bounds remain unverified. See [FIM](FILE_INTEGRITY.md).
+
+DNS Client event semantics wave, 2026-10-22: the native decoder now classifies
+only exact provider `Microsoft-Windows-DNS-Client`, channel
+`Microsoft-Windows-DNS-Client/Operational`, event ID 3008 as
+`dns_query_completed`. Rendered XML and ordered EventData remain unchanged; no
+EventData field is interpreted and process attribution remains explicitly
+unverified. Microsoft's WEF guide identifies this channel/event as “Query
+Completed” and uses `QueryOptions`/`QueryResults` filters. Decoder changes use
+the existing DNS channel's durable bookmark, refusal and health flow; no new
+runtime path or health counters were added. No tests/build/runtime were run.
+The DNS channel is currently disabled in the documented host validation and
+enabled-channel semantics/provider-version compatibility remain unverified.
+The DNS state/configuration collector itself does not acquire query names or
+answers; the separate DNS Client Operational source may retain query content,
+including QueryResults, in raw XML/EventData. The decoder does not interpret or
+attribute that content. This creates raw-data privacy/retention considerations
+even while no DNS event content or requester identity has been runtime-verified.
+See [DNS state](DNS_STATE.md).
+
+Browser profile-directory discovery wave, 2026-10-22: added bounded direct
+candidate discovery beneath `GetProfilesDirectoryW` and conventional
+AppData-relative Chrome/Edge/Chromium/Firefox paths, retaining only current
+process-token access and explicitly declining account/SID mapping. Production
+pages omit profile paths and carry per-capture salted pseudonyms when the RNG is
+available. Pages and manifest remain on the independent durable browser worker.
+No build, test, or runtime validation was run per the deferred final validation
+plan; Windows profile discovery, ACL behavior, linkage, privacy output and
+durable recovery remain unverified. See [browser inventory](BROWSER_INVENTORY.md).
+
+Local SMB server state wave, 2026-10-22: added a periodic durable state source
+for caller-visible `NetSessionEnum` level 10 and `NetFileEnum` level 3 results.
+The collector validates native row arrays and bounded string pointers, emits
+separate partition completeness and query refusal evidence, and is connected to
+the existing paged state worker and `U.remote_access` coverage. Static review
+only: no build, tests or Windows runtime were run, so API layout/linking,
+permissions, pagination behavior, durability and host compatibility remain
+unverified. This does not provide outbound SMB, RDP/WinRM, authentication-event
+or process-actor visibility. See [remote access state](REMOTE_ACCESS_STATE.md).
+
+Signed configuration build wiring, 2026-10-22: `src/configuration/policy.cpp`
+is now included in `officer-core`, with its Crypt32 and BCrypt dependencies.
+This is build-integrated but not runtime-integrated: no independent trust root
+is provisioned and startup or collector behavior does not consume policy. No
+build or tests were run in this update; link correctness and Windows behavior
+remain unverified.
+
+Registry change-notification wave, 2026-10-22: added an independent
+`RegNotifyChangeKeyValue` source for five selected 64-bit-view HKLM/current-caller
+subtrees and a separate bounded durable consumer. Notification records preserve
+root provenance, receipt time and collector-local sequence; queue overflow is
+summarized into durable gap records and health reports subscription/error/drop
+state. The source reads no values, identifies no changed descendant or actor,
+does not run reconciliation, and cannot count OS-coalesced changes. Native API
+deadline/shutdown behavior, queue-gap durability, restart behavior, Windows
+compatibility, compilation and runtime coverage remain unverified. No build,
+tests or runtime actions were run per validation deferral.
+
+Unvalidated implementation wave in progress, 2026-10-22: wired the Windows
+IP Helper interface/unicast-address/route notification source into the runtime
+and CMake. The runtime registers subscriptions before querying three bounded,
+non-atomic tables, journals a begin record, each snapshot, a capture manifest,
+continuous callback records and explicit callback loss gaps. It blocks further
+drains while durable acceptance of the current immutable record is pending and
+deregisters before shutdown drain. This source and the concurrently added
+PowerShell, DNS, WFP isolation, signed configuration, Security audit semantics,
+forensic acquisition and further work have not been built or run. No
+component-test, real-Windows, restart/replay, queue-loss, journal-refusal or
+security claim is established for those unvalidated changes. The user deferred
+testing to one consolidated final stage after implementation; no tests are run
+in this wave.
+
+Response durability follow-up, 2026-10-22: `ACQUIRE_FILE` interrupted-command
+recovery now consults only an authenticated capture manifest and requires the
+original command id and correlation, capture id, exact requested/effective byte
+limits, and source path, identity, metadata, and root identity to match. A verified partial capture may
+resume; terminal evidence can complete the retained result. Missing or
+mismatched evidence, unavailable DPAPI key, or other action types remain
+indeterminate without replay. Existing DACLs are only inspected. This change is
+static-review only; no build, test, restart injection, or Windows runtime was
+run, so the recovery path and its crash windows are unverified.
+
+SCM service status-change wave, 2026-10-22: added `NotifyServiceStatusChangeW`
+per-service subscriptions with bounded periodic service-name reconciliation.
+The runtime now durably records source begin, reconciliation snapshots,
+notifications and explicit gaps for callback/refusal/enumeration loss, retaining
+one immutable pending record on journal refusal and draining after subscription
+cancellation. Coverage remains degraded by design and blind when gaps or
+subscription failures are reported. Source, CMake, runtime and documentation
+are unbuilt and untested; no Windows behavior, callback re-arm, service churn,
+durable loss, or shutdown claim is verified.
+
 Standalone endpoint breadth wave, 2026-10-22: implemented browser profile extension
 metadata (current caller profile only), browser/Office registry context, read-only
 Defender preference WMI telemetry, explicitly configured direct-child FIM, and
@@ -1391,3 +1522,225 @@ build-verify-x64\officer-journal-tests.exe --benchmark
 First short commit benchmark, before transactional health-counter additions: 1,000 unique observations, 1,008,890 plaintext bytes, one producer, user-scoped DPAPI per observation, FULL/WAL SQLite commit. Elapsed 0.603 s; 1,659 events/s; median commit 0.511 ms; p95 0.641 ms; max 2.076 ms; journal files 3,348,656 bytes. This sub-second development run does not establish sustained throughput, CPU/RSS, callback safety, ingestion latency or storm/offline budgets. It falls below the proposed 2,000 events/s sustained workload target and supports further encryption/commit batching and collector isolation work. Benchmark artifacts are isolated under a test-owned temporary directory and removed after the run.
 
 Open qualification gates: exact canonical process instances and source relationships, new contracts/Manager/Detection/Response/Console E2E, source loss/bookmarks, current host state, real forensics, response leases/outcomes, IPv6 isolation/recovery, service/installer/update, signed drivers where justified, OS/security configuration matrix, attack simulations, disk-full/corruption/reboot/power-loss, 24-hour offline, sustained/burst resource budgets and 7-day soak. No completion claim.
+
+WFP isolation hardening wave, 2026-10-22: replaced the IPv4-only nontransactional
+filter sequence with transactional IPv4/IPv6 ALE connect/receive-accept blocks,
+one-family numeric Manager address exception scoped to its TCP destination port,
+atomic filter replacement and cleanup of prior broad v1 exception filters. The
+compiled behavior has not been runtime tested. BFE/reboot persistence, signed
+offline recovery, third-party coexistence and real adapter behavior remain open.
+See ISOLATION.md. No tests or guest run were performed; both remain deferred to
+final integration.
+
+WFP isolation ownership reconciliation increment, 2026-10-22: source now
+queries deterministic v2 filter keys before replacement/release and refuses to
+delete a key assigned to a different sublayer. Legacy filter cleanup checks
+the expected legacy sublayer; pre-existing sublayer key collisions are checked
+against expected display name/weight; `FWP_E_ALREADY_EXISTS` during add is now
+an operation failure rather than presumed success. Static diff review only;
+no build, tests, Windows VM, BFE restart, or packet/connect enforcement run.
+This prevents accidental key collision and silent false-success in code, but
+does not establish provider-level cryptographic ownership, third-party WFP
+coexistence, reboot persistence, BFE recovery, or actual isolation behavior.
+See [isolation](ISOLATION.md).
+
+PowerShell telemetry integration wave, 2026-10-22: the channel/policy observer
+is exposed in endpoint health and native PowerShell event records now carry a
+compact provider-guarded semantic object while retaining the generic full XML
+and EventData. The observer does not enable channels or policy; its HKCU scope is
+the endpoint process caller. A misleading point-in-time `policy_changed=false`
+field was removed because no policy change watcher exists. Changes are not yet
+built/tested/runtime verified in this deferred-test wave. See
+POWERSHELL_SCRIPT_TELEMETRY.md.
+
+Security audit semantics integration wave, 2026-10-22: the native event XML
+decoder now appends a provider/channel-guarded `security_audit_semantics`
+object for requested Security events, retaining the original rendered XML and
+ordered EventData. Field roles remain source claims; actor and process
+verification are explicitly not performed. A read-only system audit-policy
+query is implemented as a separate five-minute worker. It commits a begin
+record before the synchronous API call, then bounded pages and a manifest;
+committed manifest status feeds health and the generic state-capture freshness
+path. `AuditQuerySystemPolicy` has no hard deadline or cancellation here: the
+worker avoids gating startup, while an indefinitely blocked API call can delay
+shutdown join. This integration is not built, fixture-tested or run on Windows
+in this deferred-validation wave. Existing Security subscription/recovery
+evidence predates the new semantics and worker and does not qualify them.
+Required follow-up includes event/version/field-role fixtures, derived/page
+bound checks, native API access and partial-result checks, live Security record
+retention, API-hang/shutdown behavior, and OS/VM/resource qualification. See
+SECURITY_AUDIT_SEMANTICS.md.
+
+AJ update package core wave, 2026-10-22: added an isolated Windows CNG/Crypt32
+manifest verifier and fixed-root package staging core, registered in
+`officer-core`. It accepts only a bounded canonical signed manifest from a
+caller-pinned ECDSA P-256 SPKI key; binds product, generation, version,
+architecture, size and SHA-256; rejects stale/forked generations; hashes while
+copying from a held source handle; and durably replaces stage/previous/rollback
+metadata under an interprocess lock. It never installs or executes package
+contents. Static review hardened opened root/file ACL checks, service-identity
+ownership allowlists, reparse rejection, source share-mode stability, and retry
+reconciliation after content promotion but metadata refusal. This slice has not
+been built, component-tested or run on Windows. Trust-root provisioning,
+ACL provisioning/runtime qualification, authenticated command integration,
+installer/MSI, startup recovery and rollback execution remain absent. See
+UPDATE_PACKAGE.md.
+
+Network state-change callback hardening, 2026-10-22: the IP Helper callback
+queue now uses constructor-validated fixed-capacity ring storage allocated
+before subscriptions begin. Callback time is retained as native FILETIME; UTC
+formatting and JSON encoding occur on drain, removing string formatting and
+dynamic queue growth from callback execution. A failed partial subscription
+cancellation also prevents a second start against retained native handles.
+This is source review only: no build, component test, or Windows runtime check
+was run. Callback cancellation/lifetime, high-rate churn, ring wraparound,
+schema/journal admission, restart and provider-loss limits remain unqualified.
+See NETWORK_STATE_CHANGES.md.
+
+Windows Event Log lifecycle reconciliation wave, 2026-10-22: source code now stores
+v2 cursors containing the native bookmark, channel creation-time generation and
+last accepted record ID. It checks generation and retention metadata on resume
+and every five seconds, emits per-channel durable gaps on detected generation
+changes, unknown generation identity, ID regression, estimated retention loss,
+malformed cursors and stale bookmarks, and atomically binds lifecycle gaps to
+replacement cursors. Legacy native XML bookmarks are migrated with an explicit
+unknown-generation gap. Loss estimates are not proof of exact provider loss.
+This change was not built, component-tested, or run on Windows per deferred
+validation instruction; actual clear/recreate/rollover/retention behavior and
+native API compatibility remain unverified. See WINDOWS_EVENT_LOG.md.
+
+Service inventory bounded security metadata wave, 2026-10-22: the existing durable
+SCM pages already capture service owner/group/DACL, nine optional configuration
+levels (including failure actions, SID type, launch protection and triggers),
+and property/query counters. This source-only additive change extracts raw
+service access masks from bounded standard ACE layouts, annotates recognized
+rights while retaining unknown bits, and adds per-level current-OS query
+applicability hints without treating query errors as empty configuration. No
+build, component test, or Windows runtime validation was run. Trustee resolution,
+generic mapping, effective access, SACL/labels, and privilege/OS matrix evidence
+remain unverified. See SERVICE_STATE.md.
+
+AJ publisher trust-bundle lifecycle wave, 2026-10-22: added a source-level
+`PublisherTrustStore` with caller-provisioned bootstrap ECDSA P-256 pins, a
+closed canonical signed keyset, monotonic generation/fork/replay checks, bounded
+activation/retirement/revocation intervals, 24-hour planned rotation overlap,
+fixed-root ACL/reparse validation, per-root locking and atomic write-through
+state. Snapshot explicitly returns unknown when uninitialized and unavailable on
+read/signature/expiry/policy failure, with no active keys in either case. No
+build, tests, or Windows runtime/power-loss validation were performed. The
+existing UpdatePackageStore still consumes static pins; bootstrap provisioning,
+automatic active-key binding, crash recovery qualification, installer/command
+authorization and production trust operations remain open. See UPDATE_PACKAGE.md.
+
+AJ active trust integration wave, 2026-10-22: `UpdatePackageStore` gained a
+trust-store constructor. Under the shared root lock it verifies new package
+manifests using only the currently active keys from an authenticated,
+non-expired snapshot and fails closed on unknown/unavailable/expired trust.
+Package high-water state now retains the exact signed bundle associated with
+current and previous manifests so their signatures and issue-time key intervals
+can be checked across publisher rotation and rollback. Existing static-pin
+construction is deprecated and remains a compatibility-only fixed pin mode.
+The change is source-level only: no build/tests/runtime/fault validation.
+Bootstrap provisioning, trust bundle command authentication, installer wiring,
+and trust-store/power-loss qualification remain open. See UPDATE_PACKAGE.md.
+
+Durable source-supervision baseline wave, 2026-10-22: replaced the live
+supervisor's volatile-only comparison history with encrypted per-source
+checkpoint writes in the existing FULL/WAL journal. Gap transitions are
+checkpointed immediately; otherwise-quiet status is checkpointed at most every
+30 seconds without creating telemetry. A detected transition/counter gap
+commits the canonical gap record and new checkpoint atomically; refused commits
+retain identical pending bytes and revision for retry. Checkpoints are scoped
+to collector generation, so a new agent process starts an unknown continuity
+interval rather than subtracting process-lifetime counters across restart.
+Source-level changes only. No build, unit tests, restart/fault injection, or
+real-Windows validation were performed. Final validation must cover duplicate
+retry after ambiguous commit, CAS conflicts, DPAPI refusal/corruption, journal
+quota/disk-full, process restart, native counter reset/query loss, shutdown and
+accepted canonical gap readback. This does not recover provider events missed
+while stopped or prove exact source continuity. See DURABLE_SOURCE_SUPERVISION.md.
+
+Scheduled-task structure summary wave, 2026-10-22: added a bounded parser projection from the already-retained task XML for action/trigger kinds and counts, principal-field presence, and selected settings-field presence. Raw XML is unchanged; identity values, command arguments, and trigger expressions are not duplicated. Limits are 128 actions, 128 triggers, and 16 principals, with degraded summaries when exceeded. Characterization assertions were added but not run. No build or Windows runtime validation was performed; execution, actor attribution, effective authorization, and atomicity remain unverified. See PERSISTENCE_STATE.md.
+
+Socket process-instance sampling, 2026-10-22: socket rows now carry a separate
+held-handle sample using owner-PID verification and native process creation
+FILETIME. A bounded per-capture cache is scoped by native table and PID; absent
+boot identity, query refusal, PID 0, and bound exhaustion remain unverified or
+unavailable. This does not establish atomic table-row attribution. Source change
+only: no build, component tests, Windows runtime, PID-reuse, or workload
+qualification was run. Required final scenarios include PID exit/reuse during
+and between table queries, missing boot identity, protected-process refusal,
+cache-bound exhaustion, page/journal refusal, resource load, and accepted schema
+readback. See SOCKET_STATE.md.
+
+Security product registration wave, 2026-10-22: added a read-only IWSCProductList source for firewall, antivirus and antispyware provider registrations. It preserves exact category/item/getter HRESULTs, bounds products per category and BSTR copies, retains reported product name/GUID/state/signature status/timestamp/remediation path/default flag, and marks registration data as unverified product claims. A dedicated five-minute worker persists immutable pending records until journal acceptance; freshness and Q.security_product coverage include the new independent source. No build, component tests or Windows runtime validation were performed. WSC documents no supported Server contract; product binary/signer, effective protection, tamper enforcement, provider completeness, native deadlines, durability/replay, and OS/resource qualification remain open. See SECURITY_PRODUCTS.md.
+
+Firewall rule-inventory boundedness/privacy review, 2026-10-22: static review
+confirmed the existing independent `INetFwPolicy2::get_Rules` worker already
+retains selected base/extension rule fields with per-query HRESULTs, bounded
+string copies, per-row and page encoding limits, row/page count limits, explicit
+native/page/refusal status, and COM RAII. It emits durable begin/pages/manifest
+records and record-bound health separately from profile state; no policy setter
+is called. This review made no code change and ran no build/tests/runtime. Native
+COM allocation and getter deadlines remain unbounded/unqualified; caller-visible
+values do not establish effective Group Policy or packet enforcement. Paths,
+services, addresses, ports and authorization/package text remain sensitive and
+are retained without redaction. See [firewall rule inventory](FIREWALL_RULES.md).
+
+Quarantine safety wave, 2026-10-22: `QUARANTINE_FILE` now opens and retains
+source/root handles, rejects reparse targets and root redirection, verifies
+file identity and root containment, and refuses cross-volume destinations.
+It protects the held file DACL before a same-volume handle-relative atomic
+rename with replacement disabled. Metadata is staged with `CREATE_NEW`, its
+bytes are flushed, and it is promoted with a no-clobber rename. A new typed
+`QuarantineOutcome` distinguishes refused, failed, partial and completed states
+and preserves whether source security changed, the source moved, destination
+protection was applied, and metadata was flushed. No build, tests or Windows
+runtime validation were run. Dispatch must map partial states to indeterminate;
+directory-entry power-loss durability, quarantine-parent ACL protection,
+recovery/replay, and actual Windows permissions/volume behavior remain open.
+See PROCESS_RESPONSE.md.
+
+
+Volume encryption WMI wave, 2026-10-22: added a bounded read-only local query of
+`Win32_EncryptableVolume` in `ROOT\CIMV2\Security\MicrosoftVolumeEncryption`.
+The independent five-minute worker commits a status record before exposing
+`state.volume_encryption` health. It retains at most 64 volume rows and separately
+records HRESULTs, provider `ReturnValue`, and output getter statuses for
+`GetProtectionStatus`, `GetConversionStatus`, and `GetEncryptionMethod`; no
+state-changing BitLocker method is called. Source-only static review; no build,
+tests or Windows runtime validation. WMI/provider/service/privilege availability,
+locked volumes, method/output variations, hardware encryption, key protectors,
+recovery escrow, physical-volume association, and synchronous WMI call deadlines
+remain unqualified. See [volume encryption](VOLUME_ENCRYPTION.md).
+
+## Secure Boot firmware-variable source increment — 2026-10-22
+
+Host inventory now independently records `GetFirmwareType`, current caller
+`SE_SYSTEM_ENVIRONMENT_NAME` privilege state, and the read-only UEFI global
+`SecureBoot` variable through `GetFirmwareEnvironmentVariableExW`. It retains API
+return length/error and UEFI attributes; only the documented one-byte 0/1 form
+is interpreted. The existing registry value remains separate and a comparable
+disagreement is surfaced. No privilege adjustment or firmware mutation is
+performed. Microsoft Learn references are in `HOST_STATE.md`. This is source
+inspection only: no build, tests, or Windows runtime validation were run.
+Firmware API absence, undefined variables, access denial, and unknown values are
+kept distinct; no attestation or key-database validation is claimed.
+
+## Source-only integration snapshot — 2026-10-22
+
+The current publication candidate consolidates the documented source changes
+for endpoint state, durable source supervision, event labeling, typed response
+and file evidence, isolation, signed configuration/update primitives, and
+network/socket state. Source review confirmed that the QUARANTINE_FILE caller
+now passes the typed outcome and maps partial mutation to an indeterminate
+receipt; this is not a runtime result. Socket owner-process samples use a held
+process handle and native creation time, but preserve non-atomic association
+and report unavailable when host identity or eligible rows are absent.
+
+No configure, build, component test, full test suite, or Windows VM validation
+was run for this snapshot. The USN volume rediscovery change is partial and
+unqualified. Sysmon EID 8/10 interaction events are not wired end-to-end, and
+RDP/WinRM listener inventory is not implemented. All source-only additions
+must remain labeled unbuilt/unverified until the deferred consolidated
+validation phase. The approved A–AN Definition of Done is not met.

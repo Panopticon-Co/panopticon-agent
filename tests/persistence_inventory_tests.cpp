@@ -23,9 +23,18 @@ void decoders() {
         {reinterpret_cast<const std::byte*>(expand.data()), (expand.size() - 1) * sizeof(wchar_t)});
     require(unterminated["state"] == "degraded" && unterminated["value"].is_null() && unterminated["raw_bytes_hex"].is_string(), "unterminated text guessed or discarded");
     require(state::detail::persistence_registry_data(REG_SZ, std::span(bytes).first(3))["reason"] == "odd_utf16_byte_length", "odd registry bytes decoded");
-    const auto task = state::detail::persistence_task_xml("<Task xmlns=\"http://schemas.microsoft.com/windows/2004/02/mit/task\" version=\"1.4\"><Actions><Exec><Command>x.exe</Command></Exec></Actions><Actions><ComHandler><ClassId>unknown</ClassId></ComHandler></Actions><Unknown>opaque</Unknown></Task>");
-    require(task["sections"].size() == 3 && task["sections"][1]["xml"].get<std::string>().find("ComHandler") != std::string::npos,
+    const auto task = state::detail::persistence_task_xml("<Task xmlns=\"http://schemas.microsoft.com/windows/2004/02/mit/task\" version=\"1.4\"><Principals><Principal id=\"Author\"><UserId>S-1-5-18</UserId><LogonType>ServiceAccount</LogonType></Principal></Principals><Triggers><BootTrigger><Enabled>true</Enabled><Delay>PT1M</Delay></BootTrigger><CustomTrigger/></Triggers><Actions><Exec><Command>x.exe</Command></Exec></Actions><Actions><ComHandler><ClassId>unknown</ClassId></ComHandler></Actions><Settings><WakeToRun>true</WakeToRun></Settings><Unknown>opaque</Unknown></Task>");
+    require(task["sections"].size() == 6 && task["sections"][3]["xml"].get<std::string>().find("ComHandler") != std::string::npos,
         "duplicate or unknown task sections overwritten");
+    require(task["definition_summary"]["principal_count"] == 1 && task["definition_summary"]["principal_fields"][0]["fields_present"].size() == 2,
+        "task principal presence was not summarized without copying identity values");
+    require(task["definition_summary"]["action_count"] == 2 && task["definition_summary"]["unknown_action_count"] == 0,
+        "task action types were not summarized");
+    require(task["definition_summary"]["trigger_count"] == 2 && task["definition_summary"]["unknown_trigger_count"] == 1,
+        "task trigger types or unknown types were not summarized");
+    require(task["definition_summary"]["settings_fields_present"].size() == 1 &&
+        task["definition_summary"]["settings_fields_present"][0] == "WakeToRun",
+        "task settings presence was not summarized");
     require(state::detail::persistence_task_xml("<Task><Actions/></Task>")["reason"] == "unqualified_task_namespace_or_multiple_roots", "unqualified XML assigned task semantics");
     require(state::detail::persistence_task_xml("<Task")["reason"] == "invalid_xml", "malformed task XML accepted");
     require(state::detail::persistence_task_xml("<!DOCTYPE Task><Task/>")["reason"] == "embedded_nul_or_doctype", "DTD assigned semantics");

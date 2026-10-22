@@ -76,6 +76,11 @@ public:
     // readers; an identical retry of the most recent commit is idempotent.
     void append_checkpointed(const std::string& line, const std::string& source,
         const std::string& checkpoint, std::uint64_t expected_revision);
+    // CAS-advance durable source metadata when a sample produces no event.
+    // This lets supervision retain its comparison baseline across restart
+    // without manufacturing a telemetry record for every quiet sample.
+    void advance_checkpoint(const std::string& source, const std::string& checkpoint,
+        std::uint64_t expected_revision);
     [[nodiscard]] std::optional<SourceCheckpoint> source_checkpoint(const std::string& source) const;
     [[nodiscard]] std::optional<JournalBatch> peek(std::size_t max_events, std::size_t max_bytes);
     // Bounded read-only diagnostic paging across protocols, never an ACK batch.

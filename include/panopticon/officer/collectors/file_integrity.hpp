@@ -18,11 +18,16 @@ namespace panopticon::officer::collectors {
 struct FileIntegrityLimits {
     std::size_t maximum_roots = 8;
     std::size_t maximum_baseline_candidates = 10000;
+    std::size_t maximum_directories = 2048;
+    std::size_t maximum_depth = 16;
     std::size_t maximum_candidates_per_batch = 256;
     std::size_t maximum_relative_path_bytes = 2048;
     std::uint64_t maximum_file_hash_bytes = 16ull * 1024 * 1024;
     std::uint64_t maximum_total_hash_bytes = 256ull * 1024 * 1024;
     std::size_t native_buffer_bytes = 64 * 1024;
+    // Recursive traversal and notifications are opt-out. Every root remains
+    // explicitly configured; subtrees are bounded and reparse points skipped.
+    bool recursive = true;
 };
 
 struct FileIntegrityCallbacks {
@@ -37,9 +42,9 @@ struct FileIntegrityCallbacks {
 };
 
 // Monitors only explicitly configured absolute local paths. Empty roots create
-// a disabled sensor. Current coverage is limited to direct children of each
-// configured root; reparse points are never followed during root admission or
-// baseline observation.
+// a disabled sensor. Recursive mode is bounded by depth, directory and entry
+// limits; reparse points are never followed during root admission or baseline
+// observation. Notifications are subtree-scoped only when recursive is true.
 class FileIntegritySensor {
 public:
     explicit FileIntegritySensor(std::vector<std::string> absolute_roots,

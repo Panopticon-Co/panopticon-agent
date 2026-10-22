@@ -1,4 +1,6 @@
 #include "panopticon/officer/collectors/windows_event_log.hpp"
+#include "panopticon/officer/collectors/powershell_script_telemetry.hpp"
+#include "panopticon/officer/collectors/security_audit_semantics.hpp"
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
@@ -65,13 +67,16 @@ DecodedWindowsEvent decode_windows_event_xml(const std::string& xml, const std::
         {"native_binary_bytes_retained", false}, {"process_reference", nullptr}, {"actor_verified", false},
         {"decode_state", "degraded"}, {"provider_name", nullptr}, {"event_record_id", nullptr},
         {"event_data", Json::array()}, {"semantic_family", "unclassified"}};
+    const auto attach_security_semantics = [&]() {
+        if (requested == "Security") data["security_audit_semantics"] = SecurityAuditSemantics::enrich(data);
+    };
     tinyxml2::XMLDocument document;
     if (xml.size() > 196608 || xml.find('\0') != std::string::npos || document.Parse(xml.data(),xml.size()) != tinyxml2::XML_SUCCESS) {
-        data["validation_error"] = "xml_uninterpreted"; return result;
+        data["validation_error"] = "xml_uninterpreted"; attach_security_semantics(); return result;
     }
     const auto* root = document.RootElement();
     if (!root || std::string_view{root->Name()} != "Event" || root->NextSiblingElement()) {
-        data["validation_error"] = "event_root_uninterpreted"; return result;
+        data["validation_error"] = "event_root_uninterpreted"; attach_security_semantics(); return result;
     }
     const auto* system = child(root,"System"); const auto* provider = child(system,"Provider");
     bool ambiguous = system && system->NextSiblingElement("System");
@@ -103,10 +108,13 @@ DecodedWindowsEvent decode_windows_event_xml(const std::string& xml, const std::
     data["channel_matches_request"] = data["native_channel"] == requested;
     if (requested == "Security" && data["provider_name"] == "Microsoft-Windows-Security-Auditing") data["semantic_family"] = "security_audit";
     else if (requested.find("PowerShell") != std::string::npos) data["semantic_family"] = "powershell";
-    else if (requested.find("TaskScheduler") != std::string::npos) data["semantic_family"] = "task_scheduler";
-    else if (requested.find("WMI-Activity") != std::string::npos) data["semantic_family"] = "wmi_activity";
+    else if (requested == "Microsoft-Windows-TaskScheduler/Operational" &&
+        data["provider_name"] == "Microsoft-Windows-TaskScheduler") data["semantic_family"] = "task_scheduler";
+    else if (requested == "Microsoft-Windows-WMI-Activity/Operational" &&
+        data["provider_name"] == "Microsoft-Windows-WMI-Activity") data["semantic_family"] = "wmi_activity";
     else if (requested.find("Windows Defender") != std::string::npos) data["semantic_family"] = "defender";
-    else if (requested.find("DNS-Client") != std::string::npos) data["semantic_family"] = "dns_client";
+    else if (requested == "Microsoft-Windows-DNS-Client/Operational" &&
+        data["provider_name"] == "Microsoft-Windows-DNS-Client") data["semantic_family"] = "dns_client";
     else if (requested == "System") data["semantic_family"] = "system";
     // Source-native event classification only. These labels do not infer an
     // actor, authentication outcome beyond the provider event, or a detection.
@@ -159,9 +167,103 @@ DecodedWindowsEvent decode_windows_event_xml(const std::string& xml, const std::
             if (*id == 7040) data["semantic_event"] = "service_start_type_changed";
             if (*id == 7036) data["semantic_event"] = "service_state_reported";
             if (*id == 7034) data["semantic_event"] = "service_terminated_unexpectedly";
+        } else if (requested == "Microsoft-Windows-TaskScheduler/Operational" &&
+            data["provider_name"] == "Microsoft-Windows-TaskScheduler") {
+            // Microsoft WEF identifies these exact Task Scheduler Operational
+            // event IDs and labels. Its guidance does not define EventData
+            // templates, so fields remain uninterpreted below.
+            if (*id == 106) data["semantic_event"] = "task_registered";
+            if (*id == 141) data["semantic_event"] = "task_registration_deleted";
+            if (*id == 142) data["semantic_event"] = "task_deleted";
+        } else if (data["semantic_family"] == "wmi_activity") {
+            // Microsoft documents these Operational event examples: 5857 is
+            // provider-start information; 5858 reports a WMI client operation.
+            // Keep event fields raw because templates vary and are not decoded.
+            if (*id == 5857) data["semantic_event"] = "wmi_provider_started";
+            if (*id == 5858) data["semantic_event"] = "wmi_client_operation_reported";
+        } else if (requested == "Microsoft-Windows-Windows Defender/Operational" &&
+            data["provider_name"] == "Microsoft-Windows-Windows Defender") {
+            // Microsoft documents these Defender Operational IDs. Only the
+            // source event role is labeled; raw fields remain uninterpreted.
+            switch (*id) {
+            case 1116: data["semantic_event"] = "defender_threat_detected"; break;
+            case 1117: data["semantic_event"] = "defender_remediation_action_reported"; break;
+            case 1121: data["semantic_event"] = "defender_asr_block_reported"; break;
+            case 1122: data["semantic_event"] = "defender_asr_audit_reported"; break;
+            case 1129: data["semantic_event"] = "defender_asr_user_override_reported"; break;
+            case 3002: data["semantic_event"] = "defender_realtime_protection_failure"; break;
+            case 3007: data["semantic_event"] = "defender_realtime_protection_recovered"; break;
+            case 5000: data["semantic_event"] = "defender_realtime_protection_enabled"; break;
+            case 5001: data["semantic_event"] = "defender_realtime_protection_disabled"; break;
+            case 5007: data["semantic_event"] = "defender_configuration_changed"; break;
+            case 5008: data["semantic_event"] = "defender_engine_failure"; break;
+            case 5013: data["semantic_event"] = "defender_tamper_protection_blocked_change"; break;
+            }
+        } else if (data["semantic_family"] == "dns_client" && *id == 3008) {
+            // Microsoft WEF's sample query identifies Operational event 3008
+            // as "Query Completed". Keep all EventData uninterpreted here.
+            data["semantic_event"] = "dns_query_completed";
         }
     }
+    if (requested == "Microsoft-Windows-WMI-Activity/Operational" &&
+        data["provider_name"] == "Microsoft-Windows-WMI-Activity" && data["channel_matches_request"] == true) {
+        data["wmi_activity_semantics"] = {
+            {"event_role", data["semantic_family"] == "wmi_activity" ? data["semantic_event"] : Json(nullptr)},
+            {"source_label_basis", "Microsoft Learn WMI troubleshooting guidance documents Operational events 5857 and 5858"},
+            {"raw_event_data_preserved", true}, {"event_data_fields_interpreted", false},
+            {"attribution", {{"state", "unverified"}, {"subject_process_id", nullptr},
+                {"reported_security_user_id", data["security_user_id"]},
+                {"reason", "WMI event User and ClientProcessId fields, when present, remain source-reported and are not independently verified or correlated to a process instance"}}}
+        };
+    }
+    if (requested == "Microsoft-Windows-Windows Defender/Operational" &&
+        data["provider_name"] == "Microsoft-Windows-Windows Defender" && data["channel_matches_request"] == true) {
+        data["defender_operational_semantics"] = {
+            {"event_role", data["semantic_family"] == "defender" ? data["semantic_event"] : Json(nullptr)},
+            {"source_label_basis", "Microsoft Defender Antivirus event documentation and ASR event guidance"},
+            {"raw_event_data_preserved", true}, {"event_data_fields_interpreted", false},
+            {"process_and_action_attribution", {{"state", "unverified"}, {"subject_process_id", nullptr},
+                {"reason", "raw event fields and reported writer metadata are not independently verified or correlated to a process instance"}},
+            {"privacy_scope", "retained raw XML/EventData may include threat names, file paths, usernames, and security configuration values"}
+        };
+    }
+    if (requested == "Microsoft-Windows-TaskScheduler/Operational" &&
+        data["provider_name"] == "Microsoft-Windows-TaskScheduler" && data["channel_matches_request"] == true) {
+        data["task_scheduler_semantics"] = {
+            {"event_role", data["semantic_family"] == "task_scheduler" ? data["semantic_event"] : Json(nullptr)},
+            {"source_label_basis", "Microsoft Windows Event Forwarding intrusion detection guidance: Task Scheduler Operational events 106, 141, and 142"},
+            {"raw_event_data_preserved", true}, {"event_data_fields_interpreted", false},
+            {"actor_attribution", {{"state", "unverified"}, {"subject_process_id", nullptr},
+                {"reported_event_writer_pid", data["execution"]["reported_writer_pid"]},
+                {"reported_security_user_id", data["security_user_id"]},
+                {"reason", "the cited source does not define EventData field templates; event writer metadata is not verified as the initiating actor or process"}}}
+        };
+    }
+    if (requested == "Microsoft-Windows-DNS-Client/Operational" &&
+        data["provider_name"] == "Microsoft-Windows-DNS-Client" && data["channel_matches_request"] == true) {
+        data["dns_client_semantics"] = {
+            {"event_role", data["semantic_event"] == "dns_query_completed" ? Json("dns_query_completed") : Json(nullptr)},
+            {"source_label_basis", "Microsoft-Windows-DNS-Client Operational event 3008; query completion label only"},
+            {"raw_event_data_preserved", true}, {"event_data_fields_interpreted", false},
+            {"process_attribution", {{"state", "unverified"}, {"subject_process_id", nullptr},
+                {"reported_event_writer_pid", data["execution"]["reported_writer_pid"]},
+                {"reason", "event writer PID/TID are not verified as the DNS requester; no process instance or caller attribution is established"}}}
+        };
+    }
+    if (requested == "Microsoft-Windows-PowerShell/Operational" || requested == "Windows PowerShell") {
+        const auto source = decode_powershell_event_xml(xml, requested);
+        data["powershell_source_semantics"] = {
+            {"semantic_event", source.value("semantic_event", nlohmann::json(nullptr))},
+            {"decode_state", source.value("decode_state", std::string("degraded"))},
+            {"channel_matches_request", source.value("channel_matches_request", false)},
+            {"process_attribution", source.value("process_attribution", nlohmann::json::object())},
+            {"token_attribution", source.value("token_attribution", nlohmann::json::object())},
+            {"script_block_assembled", false},
+            {"script_block_fragment", source.value("script_block_fragment", nlohmann::json(nullptr))}
+        };
+    }
     if (!ambiguous && system && provider && id && record && result.event_time && data["channel_matches_request"] == true && !data.contains("event_data_bound_exceeded")) data["decode_state"] = "healthy";
+    attach_security_semantics();
     return result;
 }
 }

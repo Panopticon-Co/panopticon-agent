@@ -4,10 +4,13 @@
 #include <windows.h>
 #include <winevt.h>
 #include <algorithm>
+#include <charconv>
+#include <limits>
 #include <mutex>
 #include <set>
 #include <stdexcept>
 #include <thread>
+#include <utility>
 namespace panopticon::officer::collectors {
 namespace {
 using Json = nlohmann::json;
@@ -18,6 +21,11 @@ struct Evt {
     void close() { if (value) { EvtClose(value); value = nullptr; } }
     Evt(const Evt&) = delete;
     Evt& operator=(const Evt&) = delete;
+    Evt(Evt&& other) noexcept : value(std::exchange(other.value, nullptr)) {}
+    Evt& operator=(Evt&& other) noexcept {
+        if (this != &other) { close(); value = std::exchange(other.value, nullptr); }
+        return *this;
+    }
 };
 struct Signal {
     HANDLE value = CreateEventW(nullptr, TRUE, FALSE, nullptr);
@@ -67,6 +75,84 @@ std::optional<bool> channel_enabled(const std::wstring& channel) {
     if (enabled.Type != EvtVarTypeBoolean) return std::nullopt;
     return enabled.BooleanVal != FALSE;
 }
+
+std::uint64_t log_info_u64(EVT_HANDLE log, EVT_LOG_PROPERTY_ID property, EVT_VARIANT_TYPE expected) {
+    EVT_VARIANT value{}; DWORD required = 0;
+    if (!EvtGetLogInfo(log, property, sizeof(value), &value, &required))
+        throw NativeError("EvtGetLogInfo", GetLastError());
+    if (value.Type != expected) throw NativeError("EvtGetLogInfo unexpected property type", ERROR_INVALID_DATA);
+    return expected == EvtVarTypeFileTime ? value.FileTimeVal : value.UInt64Val;
+}
+
+struct ChannelLogInfo {
+    std::string generation;
+    std::uint64_t oldest_record_id{};
+    std::uint64_t record_count{};
+    std::uint64_t newest_record_estimate{};
+};
+
+ChannelLogInfo channel_log_info(const std::wstring& channel) {
+    Evt log{EvtOpenLog(nullptr, channel.c_str(), EvtOpenChannelPath)};
+    if (!log.value) throw NativeError("EvtOpenLog", GetLastError());
+    const auto creation = log_info_u64(log.value, EvtLogCreationTime, EvtVarTypeFileTime);
+    ChannelLogInfo result;
+    result.generation = creation ? std::to_string(creation) : "unknown";
+    result.record_count = log_info_u64(log.value, EvtLogNumberOfLogRecords, EvtVarTypeUInt64);
+    result.oldest_record_id = log_info_u64(log.value, EvtLogOldestRecordNumber, EvtVarTypeUInt64);
+    if (result.record_count && result.oldest_record_id &&
+        result.record_count - 1 <= std::numeric_limits<std::uint64_t>::max() - result.oldest_record_id)
+        result.newest_record_estimate = result.oldest_record_id + result.record_count - 1;
+    return result;
+}
+
+struct BookmarkCursor {
+    bool versioned{};
+    bool invalid{};
+    std::string native_xml;
+    std::string generation;
+    std::uint64_t last_record_id{};
+    bool last_record_id_known{};
+};
+
+BookmarkCursor decode_cursor(const std::string& value) {
+    if (value.empty() || value.front() != '{') {
+        BookmarkCursor legacy; legacy.native_xml = value; return legacy;
+    }
+    try {
+        const auto json = Json::parse(value);
+        if (!json.is_object() || json.value("format", std::string{}) != "panopticon_winevt_cursor_v2") {
+            BookmarkCursor invalid; invalid.invalid = true; return invalid;
+        }
+        BookmarkCursor cursor;
+        cursor.versioned = true;
+        cursor.native_xml = json.at("bookmark_xml").get<std::string>();
+        cursor.generation = json.at("log_generation").get<std::string>();
+        cursor.last_record_id_known = json.at("last_record_id_known").get<bool>();
+        if (cursor.last_record_id_known) {
+            const auto& raw = json.at("last_record_id");
+            const auto text = raw.get<std::string>();
+            const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), cursor.last_record_id);
+            if (error != std::errc{} || end != text.data() + text.size())
+                throw std::runtime_error("invalid record ID in Event Log cursor");
+        }
+        return cursor;
+    } catch (...) { BookmarkCursor invalid; invalid.invalid = true; return invalid; }
+}
+
+std::string encode_cursor(const std::string& bookmark, const ChannelLogInfo& log,
+                          std::uint64_t last_record_id, bool last_record_id_known) {
+    return Json{{"format", "panopticon_winevt_cursor_v2"}, {"bookmark_xml", bookmark},
+        {"log_generation", log.generation}, {"oldest_record_id", std::to_string(log.oldest_record_id)},
+        {"last_record_id", std::to_string(last_record_id)}, {"last_record_id_known", last_record_id_known}}.dump();
+}
+
+std::uint64_t native_event_record_id(EVT_HANDLE event) {
+    EVT_VARIANT value{}; DWORD required = 0;
+    if (!EvtGetEventInfo(event, EvtEventRecordId, sizeof(value), &value, &required))
+        throw NativeError("EvtGetEventInfo record ID", GetLastError());
+    if (value.Type != EvtVarTypeUInt64) throw NativeError("EvtGetEventInfo record ID type", ERROR_INVALID_DATA);
+    return value.UInt64Val;
+}
 }
 struct WindowsEventLog::Impl {
     struct Worker {
@@ -77,7 +163,9 @@ struct WindowsEventLog::Impl {
         explicit Worker(std::string value) : channel(std::move(value)), health{{"channel", channel}, {"state", "unavailable"},
             {"reason", "not subscribed"}, {"durable_records", "0"}, {"durable_gaps", "0"}, {"commit_refusals", "0"},
             {"checkpoint_revision", "0"}, {"pending_durable_acceptance", false}, {"continuity", "unverified"},
-            {"audit_or_provider_policy_verified", false}, {"native_loss_count", nullptr}} {}
+            {"audit_or_provider_policy_verified", false}, {"native_loss_count", nullptr},
+            {"log_generation_gaps", "0"}, {"log_retention_gaps", "0"}, {"stale_bookmark_recoveries", "0"},
+            {"legacy_cursor_migrations", "0"}, {"last_lifecycle_gap_reason", nullptr}} {}
     };
     WindowsLogCallbacks callbacks;
     std::vector<std::unique_ptr<Worker>> workers;
@@ -138,7 +226,9 @@ struct WindowsEventLog::Impl {
     void run(Worker& worker, std::stop_token stop) noexcept {
         const auto source = "winevt:v1:" + worker.channel;
         std::uint64_t records = 0, gaps = 0, refusals = 0, delivered = 0, unretained = 0, degraded = 0, source_failures = 0;
+        std::uint64_t generation_gaps = 0, retention_gaps = 0, stale_recoveries = 0, cursor_migrations = 0;
         bool startup_gap_accepted = false;
+        bool force_reset_to_oldest = false;
         while (!stop.stop_requested()) {
             bool has_checkpoint = false;
             try {
@@ -153,24 +243,116 @@ struct WindowsEventLog::Impl {
                     status(worker, "disabled", "native channel configuration disabled; not enabled by agent");
                     pause(stop, 30000); continue;
                 }
-                const auto xml = checkpoint ? widen(checkpoint->value) : std::wstring{};
-                Evt prior{EvtCreateBookmark(checkpoint ? xml.c_str() : nullptr)};
-                if (!prior.value) throw NativeError("EvtCreateBookmark saved cursor", GetLastError());
+                auto log_info = channel_log_info(channel);
+                BookmarkCursor cursor = checkpoint ? decode_cursor(checkpoint->value) : BookmarkCursor{};
+                const auto set_log_health = [&](const ChannelLogInfo& info) {
+                    std::scoped_lock lock{worker.mutex};
+                    worker.health["log_generation_id"] = info.generation;
+                    worker.health["oldest_retained_record_id"] = info.oldest_record_id ? Json(std::to_string(info.oldest_record_id)) : Json(nullptr);
+                    worker.health["retained_record_count"] = std::to_string(info.record_count);
+                    worker.health["newest_record_id_estimate"] = info.newest_record_estimate ? Json(std::to_string(info.newest_record_estimate)) : Json(nullptr);
+                };
+                set_log_health(log_info);
+                const auto lifecycle_reason = [&](const BookmarkCursor& saved, const ChannelLogInfo& current) -> std::string {
+                    if (force_reset_to_oldest) return "native_bookmark_stale_or_invalid";
+                    if (saved.invalid) return "durable_cursor_invalid_reset_to_oldest";
+                    if (!saved.versioned) return "legacy_bookmark_generation_unknown";
+                    if (saved.generation != current.generation && saved.generation != "unknown" && current.generation != "unknown")
+                        return "log_generation_changed_clear_or_recreate";
+                    if (saved.generation != current.generation && (saved.generation == "unknown" || current.generation == "unknown"))
+                        return "log_generation_identity_unavailable_or_changed";
+                    if (saved.last_record_id_known && current.newest_record_estimate && current.newest_record_estimate < saved.last_record_id)
+                        return "record_id_regressed_after_log_clear_or_recreate";
+                    if (saved.last_record_id_known && current.oldest_record_id && saved.last_record_id <
+                        std::numeric_limits<std::uint64_t>::max() && current.oldest_record_id > saved.last_record_id + 1)
+                        return "retention_overwrote_records_after_checkpoint";
+                    return {};
+                };
+                const auto commit_lifecycle_gap = [&](const std::string& reason, const ChannelLogInfo& current,
+                                                       const BookmarkCursor& saved, bool preserve_bookmark) {
+                    BookmarkCursor next;
+                    next.versioned = true;
+                    next.native_xml = preserve_bookmark ? saved.native_xml : std::string{};
+                    next.generation = current.generation;
+                    next.last_record_id = preserve_bookmark ? saved.last_record_id : 0;
+                    next.last_record_id_known = preserve_bookmark && saved.last_record_id_known;
+                    const auto next_cursor = encode_cursor(next.native_xml, current, next.last_record_id, next.last_record_id_known);
+                    Json evidence{{"reason", reason}, {"channel", worker.channel},
+                        {"previous_log_generation_id", saved.generation}, {"current_log_generation_id", current.generation},
+                        {"previous_last_record_id", saved.last_record_id_known ? Json(std::to_string(saved.last_record_id)) : Json(nullptr)},
+                        {"oldest_retained_record_id", current.oldest_record_id ? Json(std::to_string(current.oldest_record_id)) : Json(nullptr)},
+                        {"newest_record_id_estimate", current.newest_record_estimate ? Json(std::to_string(current.newest_record_estimate)) : Json(nullptr)},
+                        {"retained_record_count", std::to_string(current.record_count)},
+                        {"estimated_lost_record_ids", saved.last_record_id_known && saved.last_record_id < std::numeric_limits<std::uint64_t>::max() &&
+                            current.oldest_record_id > saved.last_record_id + 1 ?
+                            Json(std::to_string(current.oldest_record_id - saved.last_record_id - 1)) : Json(nullptr)},
+                        {"lost_native_events", nullptr}, {"resume_policy", preserve_bookmark ? "strict_after_existing_native_bookmark" : "oldest_retained_record"},
+                        {"checkpoint_revision", std::to_string(revision)}};
+                    DecodedWindowsEvent lifecycle_gap{std::move(evidence), std::nullopt};
+                    if (!accept(worker, stop, lifecycle_gap, true, source, next_cursor, revision, records, gaps, refusals)) return false;
+                    ++revision;
+                    checkpoint = delivery::SourceCheckpoint{revision, next_cursor};
+                    cursor = std::move(next);
+                    log_info = current;
+                    force_reset_to_oldest = false;
+                    startup_gap_accepted = true;
+                    if (reason.find("retention") != std::string::npos) ++retention_gaps;
+                    else if (reason == "legacy_bookmark_generation_unknown") ++cursor_migrations;
+                    else if (reason.find("generation") != std::string::npos || reason.find("record_id_regressed") != std::string::npos) ++generation_gaps;
+                    else ++stale_recoveries;
+                    { std::scoped_lock lock{worker.mutex};
+                      worker.health["log_generation_gaps"] = std::to_string(generation_gaps);
+                      worker.health["log_retention_gaps"] = std::to_string(retention_gaps);
+                      worker.health["stale_bookmark_recoveries"] = std::to_string(stale_recoveries);
+                      worker.health["legacy_cursor_migrations"] = std::to_string(cursor_migrations);
+                      worker.health["last_lifecycle_gap_reason"] = reason;
+                        worker.health["continuity"] = reason == "legacy_bookmark_generation_unknown" ? "generation_bound" : "gap_recorded_and_resumed"; }
+                    set_log_health(current);
+                    return true;
+                };
+                if (checkpoint) {
+                    const auto reason = lifecycle_reason(cursor, log_info);
+                    if (!reason.empty() && !commit_lifecycle_gap(reason, log_info, cursor, reason == "legacy_bookmark_generation_unknown")) break;
+                }
+
+                Evt prior;
+                if (!cursor.native_xml.empty()) {
+                    const auto xml = widen(cursor.native_xml);
+                    prior = Evt{EvtCreateBookmark(xml.c_str())};
+                    if (!prior.value) throw NativeError("EvtCreateBookmark saved cursor", GetLastError());
+                }
                 Signal signal;
                 if (!signal.value) throw NativeError("CreateEvent log signal", GetLastError());
-                Evt subscription{EvtSubscribe(nullptr, signal.value, channel.c_str(), L"*", checkpoint ? prior.value : nullptr,
-                    nullptr, nullptr, (checkpoint ? EvtSubscribeStartAfterBookmark : EvtSubscribeStartAtOldestRecord) | EvtSubscribeStrict)};
+                const bool resume_after_bookmark = !cursor.native_xml.empty();
+                Evt subscription{EvtSubscribe(nullptr, signal.value, channel.c_str(), L"*", resume_after_bookmark ? prior.value : nullptr,
+                    nullptr, nullptr, (resume_after_bookmark ? EvtSubscribeStartAfterBookmark : EvtSubscribeStartAtOldestRecord) | EvtSubscribeStrict)};
                 if (!subscription.value) throw NativeError("EvtSubscribe strict", GetLastError());
                 { std::scoped_lock lock{worker.mutex}; worker.health["resume_from_saved_checkpoint"] = checkpoint.has_value();
+                  worker.health["resume_mode"] = resume_after_bookmark ? "strict_after_native_bookmark" : "oldest_retained_record";
                   worker.health["replay_draining"] = true; worker.health["subscription_started_uptime_ms"] = std::to_string(GetTickCount64()); }
                 if (!startup_gap_accepted) {
                     DecodedWindowsEvent gap{{{"reason", checkpoint ? "bookmark_resumed_retention_continuity_unverified" : "history_before_oldest_retained_record_unknown"},
-                        {"channel", worker.channel}, {"lost_native_events", nullptr}, {"checkpoint_revision", std::to_string(revision)}}, std::nullopt};
+                        {"channel", worker.channel}, {"log_generation_id", log_info.generation},
+                        {"oldest_retained_record_id", log_info.oldest_record_id ? Json(std::to_string(log_info.oldest_record_id)) : Json(nullptr)},
+                        {"lost_native_events", nullptr}, {"checkpoint_revision", std::to_string(revision)}}, std::nullopt};
                     if (!accept(worker, stop, gap, true, source, "", revision, records, gaps, refusals)) break;
                     startup_gap_accepted = true;
                 }
                 status(worker, "degraded", "native pull subscription active; audit/provider policy and continuity unverified");
+                auto next_log_check = GetTickCount64() + 5000;
                 while (!stop.stop_requested()) {
+                    if (GetTickCount64() >= next_log_check) {
+                        const auto refreshed = channel_log_info(channel);
+                        set_log_health(refreshed);
+                        const auto reason = lifecycle_reason(cursor, refreshed);
+                        if (!reason.empty()) {
+                            if (!commit_lifecycle_gap(reason, refreshed, cursor, false)) break;
+                            subscription.close();
+                            break;
+                        }
+                        log_info = refreshed;
+                        next_log_check = GetTickCount64() + 5000;
+                    }
                     EVT_HANDLE native = nullptr; DWORD returned = 0;
                     { std::scoped_lock lock{worker.mutex}; worker.health["last_poll_uptime_ms"] = std::to_string(GetTickCount64()); }
                     if (!EvtNext(subscription.value, 1, &native, 250, 0, &returned)) {
@@ -183,6 +365,7 @@ struct WindowsEventLog::Impl {
                     }
                     Evt event{native};
                     if (returned != 1 || !event.value) throw NativeError("EvtNext invalid event count", ERROR_INVALID_DATA);
+                    const auto record_id = native_event_record_id(event.value);
                     ++delivered;
                     { std::scoped_lock lock{worker.mutex}; worker.health["delivered_native_records"] = std::to_string(delivered);
                       worker.health["last_native_delivery_uptime_ms"] = std::to_string(GetTickCount64()); }
@@ -197,19 +380,40 @@ struct WindowsEventLog::Impl {
                         gap = true; decoded.data = {{"reason", "delivered_event_xml_not_retained"}, {"stage", error.what()},
                             {"native_error", error.code}, {"render_utf16_bound_bytes", 131072}, {"unretained_delivered_bodies", "1"}, {"lost_native_events", nullptr}};
                     }
+                    const bool record_id_regressed = cursor.last_record_id_known && record_id <= cursor.last_record_id;
+                    if (record_id_regressed) {
+                        decoded.data = {{"reason", "event_record_id_regressed_or_repeated_within_log_generation"},
+                            {"channel", worker.channel}, {"log_generation_id", log_info.generation},
+                            {"event_record_id", std::to_string(record_id)}, {"previous_record_id", std::to_string(cursor.last_record_id)},
+                            {"unretained_delivered_bodies", "1"}, {"lost_native_events", nullptr}};
+                        gap = true;
+                    }
+                    decoded.data["log_generation_id"] = log_info.generation;
+                    decoded.data["event_record_id_native"] = std::to_string(record_id);
                     if (!gap && decoded.data.value("decode_state", "degraded") != "healthy") ++degraded;
                     { std::scoped_lock lock{worker.mutex}; worker.health["xml_not_retained_records"] = std::to_string(unretained);
                       worker.health["decode_degraded_records"] = std::to_string(degraded);
                       worker.health["last_native_record_id"] = decoded.data.value("event_record_id", Json(nullptr)); }
                     decoded.data["source_checkpoint_revision"] = std::to_string(revision + 1);
                     event.close(); next.close(); // No native event retained through WAL/quota backpressure.
-                    if (!accept(worker, stop, decoded, gap, source, next_xml, revision, records, gaps, refusals)) break;
+                    const auto next_cursor = encode_cursor(next_xml, log_info, record_id, true);
+                    if (!accept(worker, stop, decoded, gap, source, next_cursor, revision, records, gaps, refusals)) break;
                     ++revision;
+                    cursor.versioned = true; cursor.invalid = false; cursor.native_xml = next_xml;
+                    cursor.generation = log_info.generation; cursor.last_record_id = record_id; cursor.last_record_id_known = true;
+                    checkpoint = delivery::SourceCheckpoint{revision, next_cursor};
                     status(worker, "degraded", "native pull subscription active; audit/provider policy and continuity unverified");
                 }
             } catch (const NativeError& error) {
                 { std::scoped_lock lock{worker.mutex}; worker.health["native_source_failures"] = std::to_string(++source_failures); }
                 status(worker, has_checkpoint ? "blind" : "unavailable", error.what(), error.code);
+                const bool stale_bookmark = error.code == ERROR_EVT_QUERY_RESULT_STALE || error.code == ERROR_EVT_QUERY_RESULT_INVALID_POSITION;
+                if (stale_bookmark) {
+                    force_reset_to_oldest = true;
+                    { std::scoped_lock lock{worker.mutex}; worker.health["native_bookmark_stale"] = true; }
+                    pause(stop, 1000);
+                    continue;
+                }
                 try {
                     DecodedWindowsEvent gap{{{"reason", "native_log_source_refused"}, {"stage", error.what()}, {"native_error", error.code},
                         {"saved_checkpoint_preserved", true}, {"lost_native_events", nullptr}}, std::nullopt};
@@ -239,7 +443,7 @@ nlohmann::json WindowsEventLog::snapshot() const {
     for (const auto& worker : impl_->workers) { std::scoped_lock lock{worker->mutex}; channels.push_back(worker->health); }
     return {{"state", "degraded"}, {"channels", std::move(channels)}, {"query", "*"}, {"checkpoint_namespace", "winevt:v1"},
         {"resume_mode", "strict_after_committed_bookmark_or_oldest_retained"}, {"channel_count", impl_->workers.size()},
-        {"limitations", "retention continuity, audit/provider enablement, event semantics, attribution, deadlines and VM qualification pending"}};
+        {"limitations", "generation/retention discontinuities now emit durable gaps at source level; native loss ranges are estimates, and audit/provider enablement, event semantics, attribution, deadlines and VM qualification remain pending"}};
 }
 std::vector<std::string> WindowsEventLog::default_channels() {
     return {"Security", "Microsoft-Windows-PowerShell/Operational", "Windows PowerShell", "Microsoft-Windows-TaskScheduler/Operational",

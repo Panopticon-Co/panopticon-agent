@@ -6,7 +6,10 @@
 #include <array>
 #include <algorithm>
 #include <cctype>
+#include <charconv>
 #include <cstring>
+#include <atomic>
+#include <iterator>
 #include <mutex>
 #include <set>
 #include <stdexcept>
@@ -55,10 +58,98 @@ Json journal_json(const USN_JOURNAL_DATA_V0& j) {
         {"max_usn", std::to_string(j.MaxUsn)}, {"maximum_size", std::to_string(j.MaximumSize)},
         {"allocation_delta", std::to_string(j.AllocationDelta)}};
 }
+
+constexpr std::size_t kMaximumVolumes = 16;
+constexpr char kDiscoverySource[] = "usn:volume-discovery:v1";
+constexpr char kDiscoveryChannel[] = "Windows-Volume-Discovery";
+struct VolumeDiscovery {
+    std::vector<std::string> volumes;
+    bool complete = false;
+    bool bound_exceeded = false;
+    DWORD error = ERROR_SUCCESS;
+};
+struct DiscoveryCheckpoint {
+    std::uint64_t sequence = 0;
+    bool initialized = false;
+    bool blind = false;
+    std::vector<std::string> volumes;
+    std::string blind_start_record_id;
+};
+VolumeDiscovery discover_volumes() {
+    VolumeDiscovery result;
+    std::array<wchar_t, 1024> name{};
+    HANDLE search = FindFirstVolumeW(name.data(), static_cast<DWORD>(name.size()));
+    if (search == INVALID_HANDLE_VALUE) { result.error = GetLastError(); return result; }
+    try {
+        for (;;) {
+            const auto end = std::find(name.begin(), name.end(), L'\0');
+            if (end == name.end()) { result.error = ERROR_INVALID_DATA; break; }
+            std::string ascii;
+            for (auto it = name.begin(); it != end; ++it) {
+                if (*it > 127) { result.error = ERROR_INVALID_DATA; break; }
+                ascii += static_cast<char>(*it);
+            }
+            if (result.error != ERROR_SUCCESS) break;
+            result.volumes.push_back(volume_name(std::move(ascii)));
+            if (result.volumes.size() > kMaximumVolumes) {
+                result.volumes.pop_back(); result.bound_exceeded = true; result.error = ERROR_MORE_DATA; break;
+            }
+            name.fill(L'\0');
+            if (!FindNextVolumeW(search, name.data(), static_cast<DWORD>(name.size()))) {
+                const auto error = GetLastError();
+                result.complete = error == ERROR_NO_MORE_FILES;
+                if (!result.complete) result.error = error;
+                break;
+            }
+        }
+    } catch (...) { FindVolumeClose(search); throw; }
+    FindVolumeClose(search);
+    std::sort(result.volumes.begin(), result.volumes.end());
+    return result;
+}
+Json discovery_checkpoint_json(const DiscoveryCheckpoint& checkpoint) {
+    return {{"format", "windows_usn_discovery_checkpoint_v1"},
+        {"sequence", std::to_string(checkpoint.sequence)}, {"initialized", checkpoint.initialized},
+        {"blind", checkpoint.blind}, {"volumes", checkpoint.volumes},
+        {"blind_start_record_id", checkpoint.blind_start_record_id.empty() ? Json(nullptr) : Json(checkpoint.blind_start_record_id)}};
+}
+std::uint64_t canonical_u64(const Json& value, const char* name) {
+    if (!value.is_string()) throw std::invalid_argument(std::string("discovery checkpoint ") + name + " must be a string");
+    const auto& text = value.get_ref<const std::string&>();
+    std::uint64_t parsed = 0;
+    const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), parsed);
+    if (text.empty() || (text.size() > 1 && text.front() == '0') || error != std::errc{} || end != text.data() + text.size())
+        throw std::invalid_argument(std::string("invalid discovery checkpoint ") + name);
+    return parsed;
+}
+DiscoveryCheckpoint decode_discovery_checkpoint(const std::string& encoded) {
+    if (encoded.size() > 8192) throw std::invalid_argument("USN discovery checkpoint bound exceeded");
+    const auto data = Json::parse(encoded);
+    if (!data.is_object() || data.size() != 6 || data.value("format", "") != "windows_usn_discovery_checkpoint_v1" ||
+        !data.at("initialized").is_boolean() || !data.at("blind").is_boolean() || !data.at("volumes").is_array() || data.at("volumes").size() > kMaximumVolumes)
+        throw std::invalid_argument("unsupported USN discovery checkpoint shape");
+    DiscoveryCheckpoint result;
+    result.sequence = canonical_u64(data.at("sequence"), "sequence");
+    result.initialized = data.at("initialized").get<bool>(); result.blind = data.at("blind").get<bool>();
+    for (const auto& item : data.at("volumes")) {
+        if (!item.is_string()) throw std::invalid_argument("USN discovery checkpoint volume is not a string");
+        auto normalized = volume_name(item.get<std::string>());
+        if (!result.volumes.empty() && normalized <= result.volumes.back()) throw std::invalid_argument("USN discovery checkpoint volumes are not strictly ordered");
+        result.volumes.push_back(std::move(normalized));
+    }
+    const auto& marker = data.at("blind_start_record_id");
+    if (!marker.is_null()) {
+        if (!marker.is_string() || marker.get_ref<const std::string&>().size() > 256) throw std::invalid_argument("invalid USN discovery blind marker");
+        result.blind_start_record_id = marker.get<std::string>();
+    }
+    if (!result.blind && !result.blind_start_record_id.empty()) throw std::invalid_argument("non-blind checkpoint retains a blind marker");
+    return result;
+}
 }
 struct UsnJournal::Impl {
     struct Worker {
         std::string volume, source;
+        std::atomic_bool removal_requested{false};
         mutable std::mutex mutex;
         Json health;
         std::jthread thread;
@@ -70,38 +161,26 @@ struct UsnJournal::Impl {
     };
     UsnCallbacks callbacks;
     std::vector<std::unique_ptr<Worker>> workers;
-    Json discovery{{"state", "degraded"}, {"scope", "at most 16 native volume GUIDs discovered at startup; hotplug rediscovery not implemented"},
-        {"enumeration_complete", false}, {"bound_exceeded", false}, {"native_error", nullptr}};
+    mutable std::mutex workers_mutex;
+    mutable std::mutex discovery_mutex;
+    Json discovery{{"state", "unavailable"}, {"scope", "bounded native volume GUID rediscovery every 30 seconds"},
+        {"enumeration_complete", false}, {"bound_exceeded", false}, {"native_error", nullptr},
+        {"last_successful_enumeration_uptime_ms", nullptr}, {"unknown_interval_start_record_id", nullptr},
+        {"durable_transition_sequence", "0"}, {"active_volume_count", "0"}};
+    std::jthread discovery_thread;
+    std::atomic_bool stopped{false};
+    bool automatic_discovery = false;
     explicit Impl(UsnCallbacks cb, std::vector<std::string> volumes) : callbacks(std::move(cb)) {
         if (!callbacks.load || !callbacks.make_record || !callbacks.commit) throw std::invalid_argument("USN callbacks required");
-        if (volumes.empty()) {
-            std::array<wchar_t, 1024> name{};
-            HANDLE search = FindFirstVolumeW(name.data(), static_cast<DWORD>(name.size()));
-            if (search == INVALID_HANDLE_VALUE) { discovery["state"] = "unavailable"; discovery["native_error"] = std::to_string(GetLastError()); }
-            else {
-                try {
-                    for (;;) {
-                        const auto end = std::find(name.begin(), name.end(), L'\0');
-                        if (end == name.end()) throw std::runtime_error("native volume name not terminated");
-                        std::string ascii;
-                        for (auto it = name.begin(); it != end; ++it) {
-                            if (*it > 127) throw std::runtime_error("native volume GUID name is not ASCII");
-                            ascii += static_cast<char>(*it);
-                        }
-                        volumes.push_back(std::move(ascii));
-                        name.fill(L'\0');
-                        if (!FindNextVolumeW(search, name.data(), static_cast<DWORD>(name.size()))) {
-                            const auto error = GetLastError(); discovery["enumeration_complete"] = error == ERROR_NO_MORE_FILES;
-                            if (error != ERROR_NO_MORE_FILES) discovery["native_error"] = std::to_string(error);
-                            break;
-                        }
-                        if (volumes.size() == 16) { discovery["bound_exceeded"] = true; break; }
-                    }
-                } catch (...) { FindVolumeClose(search); throw; }
-                FindVolumeClose(search);
-            }
-        } else { discovery["scope"] = "explicit selected native volume GUIDs; no all-volume coverage"; }
-        if (volumes.size() > 16) throw std::invalid_argument("USN volume admission bound");
+        automatic_discovery = volumes.empty();
+        if (automatic_discovery) {
+            discovery_thread = std::jthread{[this](std::stop_token stop) { rediscover(stop); }};
+            return;
+        }
+        if (volumes.size() > kMaximumVolumes) throw std::invalid_argument("USN volume admission bound");
+        discovery["scope"] = "explicit selected native volume GUIDs; no all-volume coverage or hotplug rediscovery";
+        discovery["state"] = "degraded";
+        discovery["enumeration_complete"] = false;
         std::set<std::string> unique;
         for (auto& volume : volumes) {
             auto normalized = volume_name(std::move(volume));
@@ -113,6 +192,150 @@ struct UsnJournal::Impl {
     void notify() const { if (callbacks.changed) try { callbacks.changed(); } catch (...) {} }
     static void pause(std::stop_token stop, unsigned ms) {
         for (unsigned elapsed = 0; elapsed < ms && !stop.stop_requested(); elapsed += 50) Sleep(50);
+    }
+    bool publish_discovery(const VolumeDiscovery& scan, std::stop_token stop) {
+        std::optional<delivery::SourceCheckpoint> stored;
+        try { stored = callbacks.load(kDiscoverySource); }
+        catch (...) { return false; }
+        DiscoveryCheckpoint previous;
+        try { if (stored) previous = decode_discovery_checkpoint(stored->value); }
+        catch (...) {
+            { std::scoped_lock lock{discovery_mutex};
+              discovery["state"] = "blind"; discovery["reason"] = "durable discovery checkpoint malformed; no volume set changes applied"; }
+            notify(); return false;
+        }
+        DiscoveryCheckpoint next = previous;
+        Json added = Json::array(), removed = Json::array();
+        const bool failed = !scan.complete || scan.bound_exceeded;
+        std::string transition;
+        std::string reason;
+        if (failed) {
+            if (!previous.blind) {
+                transition = "discovery_unavailable_interval_started";
+                reason = scan.bound_exceeded ? "native volume enumeration exceeded the 16-volume admission bound" : "native volume enumeration failed; current set is unknown";
+                next.blind = true;
+            }
+        } else if (previous.blind) {
+            transition = "discovery_recovered_after_unknown_interval";
+            reason = "volume presence and changes during the recorded discovery-blind interval are unknown";
+            std::set_difference(scan.volumes.begin(), scan.volumes.end(), previous.volumes.begin(), previous.volumes.end(), std::back_inserter(added));
+            std::set_difference(previous.volumes.begin(), previous.volumes.end(), scan.volumes.begin(), scan.volumes.end(), std::back_inserter(removed));
+            next.initialized = true; next.blind = false; next.volumes = scan.volumes; next.blind_start_record_id.clear();
+        } else if (!previous.initialized) {
+            transition = "initial_volume_set_observed";
+            reason = "no prior durable volume inventory; historical volume presence and changes are unknown";
+            next.initialized = true; next.blind = false; next.volumes = scan.volumes; next.blind_start_record_id.clear();
+            for (const auto& volume : scan.volumes) added.push_back(volume);
+        } else if (scan.volumes != previous.volumes) {
+            transition = "volume_set_changed";
+            reason = "bounded native volume GUID set changed between complete enumerations";
+            std::set_difference(scan.volumes.begin(), scan.volumes.end(), previous.volumes.begin(), previous.volumes.end(), std::back_inserter(added));
+            std::set_difference(previous.volumes.begin(), previous.volumes.end(), scan.volumes.begin(), scan.volumes.end(), std::back_inserter(removed));
+            next.volumes = scan.volumes;
+        }
+        if (transition.empty()) return true;
+        if (previous.sequence == UINT64_MAX || (stored && stored->revision == UINT64_MAX)) {
+            { std::scoped_lock lock{discovery_mutex};
+              discovery["state"] = "blind"; discovery["reason"] = "durable discovery sequence or revision exhausted"; }
+            notify(); return false;
+        }
+        next.sequence = previous.sequence + 1;
+        const auto expected_revision = stored ? stored->revision : 0;
+        Json body{{"format", "windows_usn_volume_discovery_v1"}, {"transition", transition}, {"reason", reason},
+            {"source", kDiscoverySource}, {"sequence", std::to_string(next.sequence)},
+            {"previous_volume_set", previous.volumes}, {"current_volume_set", failed ? Json(nullptr) : Json(scan.volumes)},
+            {"added_volume_guids", std::move(added)}, {"removed_volume_guids", std::move(removed)},
+            {"unknown_interval_start_record_id", previous.blind_start_record_id.empty() ? Json(nullptr) : Json(previous.blind_start_record_id)},
+            {"native_error", failed ? Json(std::to_string(scan.error ? scan.error : ERROR_MORE_DATA)) : Json(nullptr)},
+            {"enumeration_complete", scan.complete}, {"bound_exceeded", scan.bound_exceeded},
+            {"maximum_volume_count", kMaximumVolumes}, {"observed_uptime_ms", std::to_string(GetTickCount64())},
+            {"per_volume_checkpoints_reset", false}, {"source_state", "volume presence during unknown intervals is not reconstructable"}};
+        const auto line = callbacks.make_record(kDiscoveryChannel, std::move(body), true);
+        const auto record_id = Json::parse(line).at("record_id").get<std::string>();
+        if (failed && !previous.blind_start_record_id.size()) next.blind_start_record_id = record_id;
+        const auto encoded = discovery_checkpoint_json(next).dump();
+        while (!stop.stop_requested()) {
+            bool accepted = false;
+            try { accepted = callbacks.commit(line, kDiscoverySource, encoded, expected_revision); } catch (...) {}
+            if (accepted) {
+                std::scoped_lock lock{discovery_mutex};
+                discovery["durable_transition_sequence"] = std::to_string(next.sequence);
+                discovery["last_transition_record_id"] = record_id;
+                discovery["unknown_interval_start_record_id"] = next.blind_start_record_id.empty() ? Json(nullptr) : Json(next.blind_start_record_id);
+                return true;
+            }
+            { std::scoped_lock lock{discovery_mutex}; discovery["pending_durable_acceptance"] = true; discovery["state"] = "blind"; }
+            notify(); pause(stop, 1000);
+        }
+        return false;
+    }
+    void update_discovery_snapshot(const VolumeDiscovery& scan, bool durable, const char* reason = nullptr) {
+        std::scoped_lock lock{discovery_mutex};
+        discovery["enumeration_complete"] = scan.complete;
+        discovery["bound_exceeded"] = scan.bound_exceeded;
+        discovery["native_error"] = scan.error == ERROR_SUCCESS ? Json(nullptr) : Json(std::to_string(scan.error));
+        discovery["last_attempt_uptime_ms"] = std::to_string(GetTickCount64());
+        if (scan.complete && !scan.bound_exceeded && durable) {
+            discovery["state"] = "degraded"; // Any inventory-only source is less than continuous file coverage.
+            discovery["reason"] = "volume enumeration durable; each admitted volume has an independent journal worker";
+            discovery["last_successful_enumeration_uptime_ms"] = std::to_string(GetTickCount64());
+            discovery["active_volume_count"] = std::to_string(scan.volumes.size());
+            discovery["observed_volume_guids"] = scan.volumes;
+            discovery["pending_durable_acceptance"] = false;
+        } else {
+            discovery["state"] = "blind";
+            discovery["reason"] = reason ? reason : (scan.bound_exceeded ? "native volume discovery bound exceeded; volume set is incomplete" : "native volume enumeration unavailable or discovery transition not durable");
+            discovery["pending_durable_acceptance"] = !durable;
+        }
+        notify();
+    }
+    void sync_workers(const std::vector<std::string>& volumes) {
+        const std::set<std::string> present(volumes.begin(), volumes.end());
+        std::vector<Worker*> stopping;
+        {
+            std::scoped_lock lock{workers_mutex};
+            for (auto& worker : workers) if (!present.contains(worker->volume) && worker->thread.joinable()) {
+                worker->removal_requested.store(true);
+                worker->thread.request_stop(); stopping.push_back(worker.get());
+            }
+        }
+        for (auto* worker : stopping) if (worker->thread.joinable()) worker->thread.join();
+        {
+            std::scoped_lock lock{workers_mutex};
+            workers.erase(std::remove_if(workers.begin(), workers.end(), [&](const auto& worker) { return !present.contains(worker->volume); }), workers.end());
+            for (const auto& volume : volumes) {
+                const auto found = std::find_if(workers.begin(), workers.end(), [&](const auto& worker) { return worker->volume == volume; });
+                if (found != workers.end()) continue;
+                auto worker = std::make_unique<Worker>(volume);
+                auto* raw = worker.get();
+                raw->thread = std::jthread{[this, raw](std::stop_token token) { run(*raw, token); }};
+                workers.push_back(std::move(worker));
+            }
+        }
+    }
+    void rediscover(std::stop_token stop) noexcept {
+        while (!stop.stop_requested()) {
+            try {
+                auto scan = discover_volumes();
+                if (scan.complete && !scan.bound_exceeded) {
+                    const auto durable = publish_discovery(scan, stop);
+                    update_discovery_snapshot(scan, durable, durable ? nullptr : "discovery transition could not be durably accepted");
+                    if (durable) sync_workers(scan.volumes);
+                } else {
+                    const auto durable = publish_discovery(scan, stop);
+                    update_discovery_snapshot(scan, durable, "native volume enumeration incomplete; prior workers/checkpoints retained and current set unknown");
+                }
+            } catch (const std::exception& error) {
+                VolumeDiscovery failed; failed.error = ERROR_INVALID_DATA;
+                const auto durable = publish_discovery(failed, stop);
+                update_discovery_snapshot(failed, durable, error.what());
+            } catch (...) {
+                VolumeDiscovery failed; failed.error = ERROR_GEN_FAILURE;
+                const auto durable = publish_discovery(failed, stop);
+                update_discovery_snapshot(failed, durable, "unknown native volume discovery failure");
+            }
+            pause(stop, 30000);
+        }
     }
     void status(Worker& w, const char* state, const std::string& reason, DWORD error = 0) {
         bool changed;
@@ -239,17 +462,32 @@ struct UsnJournal::Impl {
             }
             catch (...) { status(w, "blind", "unknown USN worker failure"); pause(stop, 10000); }
         }
-        status(w, "disabled", "endpoint_shutdown; historical checkpoints retained");
+        status(w, "disabled", w.removal_requested.load() ?
+            "volume_removed_by_native_rediscovery; durable per-volume checkpoint retained; changes during absence/unknown discovery interval may be missed" :
+            "endpoint_shutdown; historical checkpoints retained");
     }
 };
 UsnJournal::UsnJournal(UsnCallbacks cb, std::vector<std::string> volumes) : impl_(std::make_unique<Impl>(std::move(cb), std::move(volumes))) {}
 UsnJournal::~UsnJournal() { stop(); }
 void UsnJournal::stop() {
-    for (auto& w : impl_->workers) w->thread.request_stop();
-    for (auto& w : impl_->workers) if (w->thread.joinable()) w->thread.join();
+    if (impl_->stopped.exchange(true)) return;
+    if (impl_->discovery_thread.joinable()) {
+        impl_->discovery_thread.request_stop();
+        impl_->discovery_thread.join();
+    }
+    std::vector<Impl::Worker*> workers;
+    {
+        std::scoped_lock lock{impl_->workers_mutex};
+        for (auto& worker : impl_->workers) {
+            worker->thread.request_stop(); workers.push_back(worker.get());
+        }
+    }
+    for (auto* worker : workers) if (worker->thread.joinable()) worker->thread.join();
 }
 nlohmann::json UsnJournal::snapshot() const {
-    Json volumes = Json::array(); bool active = false, blind = false, disabled = !impl_->workers.empty();
+    Json volumes = Json::array(); bool active = false, blind = false, disabled = false;
+    std::scoped_lock workers_lock{impl_->workers_mutex};
+    disabled = !impl_->workers.empty();
     for (const auto& w : impl_->workers) {
         std::scoped_lock lock{w->mutex}; auto health = w->health;
         // A native call that stalls cannot leave its last sample apparently current.
@@ -261,8 +499,12 @@ nlohmann::json UsnJournal::snapshot() const {
         disabled &= health["state"] == "disabled";
         volumes.push_back(std::move(health));
     }
-    return {{"state", active ? "degraded" : blind ? "blind" : disabled ? "disabled" : "unavailable"}, {"volumes", std::move(volumes)},
-        {"discovery", impl_->discovery}, {"full_file_coverage_verified", false},
-        {"resource_scope", "16 workers; 16 KiB native buffers; bounded application copies; native calls and stop joins lack a hard deadline"}};
+    Json discovery;
+    { std::scoped_lock lock{impl_->discovery_mutex}; discovery = impl_->discovery; }
+    const auto discovery_state = discovery.value("state", std::string("unavailable"));
+    return {{"state", (discovery_state == "blind" || discovery_state == "unavailable") ? "blind" :
+            (active ? "degraded" : blind ? "blind" : disabled ? "disabled" : "unavailable")},
+        {"volumes", std::move(volumes)}, {"discovery", std::move(discovery)}, {"full_file_coverage_verified", false},
+        {"resource_scope", "at most 16 workers; native volume discovery every 30 seconds; 16 KiB USN buffers; bounded application copies; native calls, discovery commit retry and worker joins lack a hard deadline"}};
 }
 }

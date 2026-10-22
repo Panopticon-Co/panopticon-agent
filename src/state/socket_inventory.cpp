@@ -1,4 +1,5 @@
 #include "panopticon/officer/state/socket_inventory.hpp"
+#include "panopticon/officer/core/process_instance.hpp"
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <winsock2.h>
@@ -9,9 +10,13 @@
 #include <vector>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
+#include <memory>
 namespace panopticon::officer::state {
 namespace {
 using Json = nlohmann::json;
+struct HandleCloser { void operator()(void* value) const noexcept { if (value && value != INVALID_HANDLE_VALUE) CloseHandle(value); } };
+using Handle = std::unique_ptr<void, HandleCloser>;
 Json invalid(const char* reason) { return {{"state", "unavailable"}, {"value", nullptr}, {"error_domain", "validation"}, {"error_code", reason}}; }
 std::string hex(const void* data, std::size_t size) {
     constexpr char digits[] = "0123456789abcdef"; const auto* bytes = static_cast<const unsigned char*>(data);
@@ -37,7 +42,7 @@ const char* tcp_symbol(DWORD raw) {
 template<class Row> Json row_value(const Row& row, bool tcp, bool ipv6) {
     Json value{{"reported_owner_pid", std::to_string(row.dwOwningPid)}, {"local_port", port(row.dwLocalPort)},
         {"process_reference", nullptr}, {"socket_instance_reference", nullptr}, {"reported_row_hex", hex(&row, sizeof(row))},
-        {"owner_relation", "native owner PID only; process instance, socket object and activity association unverified"}};
+        {"owner_relation", "native owner PID plus separately sampled process identity; table-to-process temporal association and socket object identity unverified"}};
     if constexpr (requires { row.ucLocalAddr; }) {
         value["local_address_network_bytes_hex"] = hex(row.ucLocalAddr, sizeof(row.ucLocalAddr));
         value["reported_local_scope_id"] = std::to_string(row.dwLocalScopeId);
@@ -56,6 +61,30 @@ template<class Row> Json row_value(const Row& row, bool tcp, bool ipv6) {
         value["tcp_state_symbol"] = nullptr; value["scope"] = "UDP local endpoint table does not report remote peer or connection state"; }
     value["transport"] = tcp ? "tcp" : "udp"; value["address_family"] = ipv6 ? "ipv6" : "ipv4";
     return value;
+}
+Json query_owner_process(std::uint32_t pid, core::ProcessInstanceStore& identities) {
+    const auto started = GetTickCount64();
+    if (pid == 0) return {{"state", "unavailable"}, {"value", nullptr}, {"reason", "system idle PID has no user process instance"},
+        {"query_started_uptime_ms", std::to_string(started)}};
+    Handle process{OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid)};
+    if (!process) return {{"state", "unavailable"}, {"value", nullptr}, {"source", "OpenProcess/PROCESS_QUERY_LIMITED_INFORMATION"},
+        {"error_domain", "Win32"}, {"error_code", std::to_string(GetLastError())}, {"query_started_uptime_ms", std::to_string(started)}};
+    const auto observed_pid = GetProcessId(process.get());
+    if (!observed_pid || observed_pid != pid) return {{"state", "unavailable"}, {"value", nullptr},
+        {"source", "GetProcessId/held process handle"}, {"error_domain", "Win32"},
+        {"error_code", std::to_string(observed_pid ? ERROR_INVALID_DATA : GetLastError())},
+        {"query_started_uptime_ms", std::to_string(started)}};
+    FILETIME created{}, exited{}, kernel{}, user{};
+    if (!GetProcessTimes(process.get(), &created, &exited, &kernel, &user)) return {{"state", "unavailable"}, {"value", nullptr},
+        {"source", "GetProcessTimes/held process handle"}, {"error_domain", "Win32"},
+        {"error_code", std::to_string(GetLastError())}, {"query_started_uptime_ms", std::to_string(started)}};
+    const auto ticks = (static_cast<std::uint64_t>(created.dwHighDateTime) << 32) | created.dwLowDateTime;
+    const auto reference = identities.observe(pid, ticks ? std::optional<std::uint64_t>(ticks) : std::nullopt,
+        std::nullopt, "ip_helper_owner_pid_sample");
+    return {{"state", reference.resolution == "native_exact" ? "healthy" : "degraded"}, {"value", reference.json()},
+        {"source", "GetProcessId+GetProcessTimes/held process handle"},
+        {"query_started_uptime_ms", std::to_string(started)}, {"query_completed_uptime_ms", std::to_string(GetTickCount64())},
+        {"association_scope", "exact process instance sampled after native table read; owner PID relation is not atomic with the table snapshot"}};
 }
 template<class Table, class Row> Json decode(std::span<const std::byte> buffer, bool tcp, bool ipv6, const std::function<bool(Json)>& consumer) {
     constexpr auto start = offsetof(Table, table);
@@ -83,13 +112,56 @@ Json detail::decode_socket_table(std::span<const std::byte> buffer, bool tcp, bo
     if (ipv6) return decode<MIB_UDP6TABLE_OWNER_PID, MIB_UDP6ROW_OWNER_PID>(buffer, tcp, ipv6, consumer);
     return decode<MIB_UDPTABLE_OWNER_PID, MIB_UDPROW_OWNER_PID>(buffer, tcp, ipv6, consumer);
 }
-Json collect_socket_inventory_pages(const std::function<bool(Json)>& consumer) {
-    return detail::collect_socket_inventory_pages(consumer, [](std::span<std::byte> buffer, std::uint32_t& size, bool tcp, bool ipv6) {
+Json collect_socket_inventory_pages(const std::function<bool(Json)>& consumer, const std::string& host_id,
+    const std::optional<std::string>& boot_id) {
+    if (!consumer) throw std::invalid_argument("socket page consumer missing");
+    const auto scoped_boot_id = host_id.empty() ? std::nullopt : boot_id;
+    std::optional<core::ProcessInstanceStore> identities;
+    if (!host_id.empty()) identities.emplace(host_id, scoped_boot_id, 32768);
+    std::unordered_map<std::string, Json> owner_cache;
+    std::size_t owner_rows = 0, owner_exact = 0, owner_unavailable = 0;
+    bool owner_bound = false;
+    auto result = detail::collect_socket_inventory_pages([&](Json page) {
+        if (page.contains("entries") && page.at("entries").is_array()) for (auto& row : page["entries"]) {
+            ++owner_rows;
+            const auto pid_text = row.at("reported_owner_pid").get<std::string>();
+            const auto pid = static_cast<std::uint32_t>(std::stoul(pid_text));
+            const auto cache_key = row.at("source_table").get<std::string>() + ":" + pid_text;
+            auto found = owner_cache.find(cache_key);
+            if (found == owner_cache.end()) {
+                if (owner_cache.size() < 4096) {
+                    Json sample = identities ? query_owner_process(pid, *identities) : Json{
+                        {"state", "unavailable"}, {"value", nullptr},
+                        {"reason", "host identity unavailable; process entity cannot be safely scoped"},
+                        {"association_scope", "native owner PID only; no process entity identifier emitted"}};
+                    found = owner_cache.emplace(cache_key, std::move(sample)).first;
+                }
+                else { owner_bound = true; ++owner_unavailable; row["sampled_owner_process_instance"] = {{"state", "unavailable"}, {"value", nullptr},
+                    {"reason", "per-capture owner PID identity cache bound reached"}};
+                }
+            }
+            if (found != owner_cache.end()) {
+                row["sampled_owner_process_instance"] = found->second;
+                if (found->second.value("state", std::string{}) == "healthy") ++owner_exact;
+                else ++owner_unavailable;
+            }
+        }
+        return consumer(std::move(page));
+    }, [&](std::span<std::byte> buffer, std::uint32_t& size, bool tcp, bool ipv6) {
         DWORD native_size = size;
         const auto error = tcp ? GetExtendedTcpTable(buffer.data(), &native_size, FALSE, ipv6 ? AF_INET6 : AF_INET, TCP_TABLE_OWNER_PID_ALL, 0)
             : GetExtendedUdpTable(buffer.data(), &native_size, FALSE, ipv6 ? AF_INET6 : AF_INET, UDP_TABLE_OWNER_PID, 0);
         size = native_size; return static_cast<std::uint32_t>(error);
     });
+    result["sampled_owner_process_identity"] = {{"state", (!identities || owner_rows == 0) ? "unavailable" :
+            (owner_unavailable || owner_bound || (owner_rows && owner_exact != owner_rows) ? "degraded" : "healthy")},
+        {"rows_decoded_or_attempted", std::to_string(owner_rows)}, {"rows_with_exact_process_identity_sample", std::to_string(owner_exact)},
+        {"rows_with_unavailable_or_unscoped_sample", std::to_string(owner_unavailable)}, {"unique_pid_query_limit", 4096},
+        {"host_identity_available", !host_id.empty()}, {"boot_identity_available", scoped_boot_id.has_value()},
+        {"reason", !identities ? "host identity unavailable" : owner_rows == 0 ? "no decoded socket rows eligible for process-instance sampling" : Json(nullptr)},
+        {"query_cache_scope", "one native table and PID; PID reuse across table queries is not promoted"},
+        {"association_scope", "held-handle process identity is sampled after each table query; IP Helper does not provide an atomic process-instance/socket binding"}};
+    return result;
 }
 Json detail::collect_socket_inventory_pages(const std::function<bool(Json)>& consumer, const SocketTableQuery& native_query) {
     if (!consumer || !native_query) throw std::invalid_argument("socket page consumer/query missing");

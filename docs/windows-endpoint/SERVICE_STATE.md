@@ -123,4 +123,21 @@ Additional references: [QueryServiceConfig2W](https://learn.microsoft.com/en-us/
 [trigger information](https://learn.microsoft.com/en-us/windows/win32/api/winsvc/ns-winsvc-service_trigger_info),
 [trigger types](https://learn.microsoft.com/en-us/windows/win32/api/winsvc/ns-winsvc-service_trigger),
 [trigger-specific data](https://learn.microsoft.com/en-us/windows/win32/api/winsvc/ns-winsvc-service_trigger_specific_data_item).
+Version 1.4 keeps the per-service query results in the existing durable pages
+and reports whether each optional native configuration level succeeded on the
+current OS. `ERROR_INVALID_LEVEL` and `ERROR_CALL_NOT_IMPLEMENTED` are exposed
+as an OS/service-level unavailability hint, not silently counted as a healthy
+empty property; other failures retain the exact Win32 error without guessing an
+OS compatibility cause. Security ACE decoding now extracts the raw access mask
+only for bounded standard allow/deny/audit and object ACE layouts, labels the
+recognized service rights (query/configure/status/dependent/start/stop/pause/
+interrogate/user-control plus standard DELETE/READ_CONTROL/WRITE_DAC/WRITE_OWNER),
+and retains unclassified mask bits. This is ACE-level configuration evidence;
+trustees, inheritance, generic-right mapping, service-object identity across
+separate opens, effective access, SACL/labels and runtime enforcement are not
+resolved. Per-level state, native error, query window, byte bound and aggregate
+success/failure/unattempted/invalid counts remain visible in the committed
+manifest and health projection. No build or Windows runtime validation was
+performed for this additive decoder change.
+
 Selected security query: [QueryServiceObjectSecurity](https://learn.microsoft.com/en-us/windows/win32/api/winsvc/nf-winsvc-queryserviceobjectsecurity).

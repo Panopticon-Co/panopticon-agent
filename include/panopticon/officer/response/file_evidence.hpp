@@ -1,11 +1,32 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
 
 namespace panopticon::officer::response {
+
+enum class QuarantineState : std::uint8_t { refused, failed, partial, completed };
+
+// Typed facts are set even when the legacy optional JSON result is empty so
+// the durable command worker can map post-mutation failures to indeterminate.
+struct QuarantineOutcome {
+    QuarantineState state = QuarantineState::refused;
+    // True once the held source DACL was changed, even if the move later fails.
+    bool source_security_changed = false;
+    // True only after the source handle has been renamed out of its old path.
+    bool source_removed = false;
+    // True only after that rename placed the protected object in quarantine.
+    bool destination_protected = false;
+    // Metadata bytes were flushed and their final-name rename succeeded;
+    // this does not claim directory-entry power-loss durability.
+    bool metadata_durable = false;
+    std::string stored_path;
+    std::string metadata_path;
+    std::string detail;
+};
 
 // Resolves requested_path against allowed_root and refuses to proceed
 // unless the fully canonicalized result is still lexically under
@@ -27,15 +48,16 @@ namespace panopticon::officer::response {
                                                                  std::size_t maximum_bytes,
                                                                  std::string& error_message);
 
-// Atomically moves (MoveFileExW, same-volume rename semantics; falls back
-// to copy+delete across volumes) a regular file from allowed_root into
-// quarantine_root, then applies a deny-everyone-execute/deny-everyone-write
-// ACL to the quarantined copy so it cannot be re-run or altered in place --
-// the Windows-specific hardening step beyond what the Linux agent's
-// quarantine (a plain move under a root with restrictive Unix permissions)
-// needs.
+// Refuses cross-volume moves. For a same-volume move, holds and verifies the
+// source and destination directory handles, protects the source with a
+// restrictive DACL, and uses a handle-relative no-replace rename. The result
+// may be partial if security was changed or the source moved but metadata
+// promotion did not finish; callers must map that state to an indeterminate
+// command result. This is best-effort user-mode protection and does not revoke
+// pre-existing handles or provide kernel tamper protection.
 [[nodiscard]] std::optional<std::string> quarantine_file_and_serialize(
     const std::filesystem::path& allowed_root, const std::filesystem::path& requested_path,
-    const std::filesystem::path& quarantine_root, std::size_t maximum_bytes, std::string& error_message);
+    const std::filesystem::path& quarantine_root, std::size_t maximum_bytes, std::string& error_message,
+    QuarantineOutcome* outcome = nullptr);
 
 }  // namespace panopticon::officer::response
