@@ -22,6 +22,7 @@ add_library(officer-core STATIC
     src/state/host_inventory.cpp
     src/state/process_inventory.cpp
     src/state/thread_inventory.cpp
+    src/state/module_inventory.cpp
     src/state/memory_inventory.cpp
     src/state/process_token.cpp
     src/state/service_inventory.cpp
@@ -181,6 +182,10 @@ if(BUILD_TESTING)
     add_test(NAME officer-process-inventory-tests COMMAND officer-process-inventory-tests)
     add_executable(officer-thread-inventory-tests tests/thread_inventory_tests.cpp)
     add_executable(officer-memory-inventory-tests tests/memory_inventory_tests.cpp)
+    add_executable(officer-module-inventory-tests tests/module_inventory_tests.cpp)
+    target_link_libraries(officer-module-inventory-tests PRIVATE officer-core)
+    add_test(NAME officer-module-inventory-tests COMMAND officer-module-inventory-tests)
+    set_tests_properties(officer-module-inventory-tests PROPERTIES TIMEOUT 60)
     target_link_libraries(officer-memory-inventory-tests PRIVATE officer-core)
     add_test(NAME officer-memory-inventory-tests COMMAND officer-memory-inventory-tests)
     set_tests_properties(officer-memory-inventory-tests PROPERTIES TIMEOUT 90)

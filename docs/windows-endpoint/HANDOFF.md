@@ -37,3 +37,14 @@ Use each ledger entry to distinguish implementation, component evidence, real-Wi
 5. Update `CAPABILITY_MATRIX.md` and `VALIDATION.md` in the same engineering wave, then continue to the next major gap. Revisit contract or other-repository changes only when a concrete endpoint requirement needs them; do not weaken endpoint capability to fit the current Detection Engine.
 
 For any change that needs privileged kernel components, document the qualification dependency and continue independent user-mode work. Completion requires evidence across the plan's complete capability surface and explicit satisfaction of its Definition of Done, not merely a working VM or green test suite.
+
+## Continuation update — 2026-10-22
+
+Added [native module inventory](MODULE_INVENTORY.md), canonical paged runtime
+integration and independent stale-capture health. Fixed the native category
+selector so trailing thread/memory/module slots dispatch independently. Recheck
+these three workers in the next consolidated guest run: the prior selector
+aliased thread and memory despite older component/guest evidence. See the newest
+validation entry for exact checks performed. No VM was started or changed in
+this wave. Windows guest runtime, source completeness, protected targets, native
+faults, recovery and performance qualification remain open.

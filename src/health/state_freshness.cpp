@@ -20,6 +20,7 @@ constexpr Source sources[]{
     {"host_inventory", {"A.host", "state.tpm_device", "state.entra_default_join", "state.storage_volumes", "state.system_audit_policy", "W.enterprise_identity", "Y.posture"}},
     {"process_inventory", {"state.process_inventory"}},
     {"thread_inventory", {"state.thread_inventory", "C.thread_handle"}},
+    {"module_inventory", {"state.module_inventory"}},
     {"memory_region_inventory", {"state.memory_region_inventory", "memory.region_metadata"}},
     {"service_inventory", {"state.service_", "K.service_driver"}},
     {"loaded_driver_inventory", {"state.loaded_driver_inventory"}},

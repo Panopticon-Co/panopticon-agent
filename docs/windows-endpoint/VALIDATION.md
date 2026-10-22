@@ -1,5 +1,43 @@
 # Windows endpoint validation ledger
 
+Native module metadata and worker-routing wave, 2026-10-22: implemented an
+independent rotating Toolhelp module descriptor worker with held PID/creation
+identity, before/after snapshot liveness guards, bounded ERROR_BAD_LENGTH retry,
+explicit PID-zero refusal, ordered durable begin/page/manifest records and
+committed freshness. Fixed native category indexing after the software source
+array: the prior selector classified both trailing thread/memory slots as
+memory. Current source maps thread, memory and module independently. Earlier
+thread guest evidence is historical, not proof of the corrected current runtime.
+
+One consolidated fresh Release build plus CTest run was performed on the Windows
+host using MSVC 14.44.35207, Ninja and the existing vcpkg configuration:
+`cmake --build build-vm-release-x64 --parallel 4` followed by
+`ctest --test-dir build-vm-release-x64 --output-on-failure`. Both commands exited
+zero; all 43 CTest entries passed in 27.76 seconds. The new native
+`officer-module-inventory-tests` passed (0.11 seconds), finding its own loaded
+image/base with native exact identity, retaining native-unscoped identity without
+boot, refusing PID zero, exercising module truncation/page refusal/cancellation/
+invalid retry limits, and verifying overdue module health becomes blind.
+Log: `build-vm-release-x64/Testing/Temporary/LastTest.log` (generated local artifact).
+The log contains: `native module inventory: owned image, identity, refusal,
+bounds, cancellation and freshness passed`.
+
+Fresh Release SHA-256 values:
+- `officer-agent.exe`: `292ea796d2f03bcbce76e2f2735e44e0b0c4426d5e46a6718c300a31e7afa2d5`
+- `officer-module-inventory-tests.exe`: `ab0ebfa045cbc85fa4f45cba8f853adea2d528e9f499de1a12d746cf8f6b4362`
+
+This is native Windows host component evidence and a fresh main-target build,
+not a guest endpoint-runtime capture. No VM was started/changed. No Debug build,
+protected/foreign target, live native failure injection, WOW64/ARM64/Server
+compatibility, journal crash-recovery, performance/soak or broad E2E run was
+performed for this wave. Module file identity/signatures, manual/datafile mapping
+coverage, module instance lifetime, continuous load/unload correlation, memory
+contents and injection detection remain absent. Corrected thread/module/memory
+worker routing and durable capture must be revalidated in a consolidated guest
+run. C/R/AF and the complete A–AN Definition of Done remain partial/unmet.
+See [module inventory](MODULE_INVENTORY.md).
+
+
 Native memory-region implementation wave, 2026-10-09: bounded rotating held
 process metadata capture is integrated into the durable state worker. It emits
 native `VirtualQueryEx` region attributes without reading contents or changing

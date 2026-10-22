@@ -34,6 +34,7 @@
 #include "panopticon/officer/state/process_inventory.hpp"
 #include "panopticon/officer/state/thread_inventory.hpp"
 #include "panopticon/officer/state/memory_inventory.hpp"
+#include "panopticon/officer/state/module_inventory.hpp"
 #include "panopticon/officer/collectors/usn_journal.hpp"
 #include "panopticon/officer/state/service_inventory.hpp"
 #include "panopticon/officer/state/driver_inventory.hpp"
@@ -1900,10 +1901,11 @@ int run_endpoint(int argc, char* argv[], HANDLE service_stop = nullptr,
         if (index < identity_sources.size()) return panopticon::officer::state::identity_source_name(identity_sources[index]);
         index -= identity_sources.size();
         if (index < software_sources.size()) return panopticon::officer::state::software_source_name(software_sources[index]);
-        return index == 0 ? "thread_inventory" : "memory_region_inventory";
+        index -= software_sources.size();
+        return index == 0 ? "thread_inventory" : index == 1 ? "memory_region_inventory" : "module_inventory";
     };
-    std::array<nlohmann::json, 11> persistence_health;
-    std::array<std::jthread, 11> persistence_workers;
+    std::array<nlohmann::json, 12> persistence_health;
+    std::array<std::jthread, 12> persistence_workers;
     for (std::size_t index = 0; index < persistence_workers.size(); ++index)
         persistence_health[index] = {{"state", "unavailable"}, {"committed_snapshots", "0"}, {"commit_failures", "0"},
             {"pending_durable_acceptance", false}, {"collection_in_progress", false}};
@@ -1959,15 +1961,18 @@ int run_endpoint(int argc, char* argv[], HANDLE service_stop = nullptr,
                     else if (index < persistence_sources.size() + identity_sources.size() + software_sources.size())
                         manifest = panopticon::officer::state::collect_software_inventory_pages(software_sources[index - persistence_sources.size() - identity_sources.size()], consume, {}, cancelled);
                     else if (category == "thread_inventory") manifest = panopticon::officer::state::collect_thread_inventory_pages(context->host.id, boot_id, consume, {}, cancelled);
-                    else {
+                    else if (category == "memory_region_inventory") {
                         panopticon::officer::state::MemoryInventoryLimits bounds; bounds.after_pid = memory_after_pid;
                         manifest = panopticon::officer::state::collect_memory_inventory_pages(context->host.id, boot_id, consume, bounds, cancelled);
+                    } else {
+                        panopticon::officer::state::ModuleInventoryLimits bounds; bounds.after_pid = memory_after_pid;
+                        manifest = panopticon::officer::state::collect_module_inventory_pages(context->host.id, boot_id, consume, bounds, cancelled);
                     }
                     manifest["format"] = "paged_" + category + "_v1";
                     manifest["capture_id"] = capture_id; manifest["page_record_ids"] = page_ids;
                     const auto record = record_factory.state(category, manifest);
                     if (!retain(record)) break;
-                    if (category == "memory_region_inventory") memory_after_pid = manifest.at("next_after_pid").get<std::uint32_t>();
+                    if (category == "memory_region_inventory" || category == "module_inventory") memory_after_pid = manifest.at("next_after_pid").get<std::uint32_t>();
                     { std::scoped_lock lock{inventory_mutex}; auto& status = persistence_health[index];
                       status["state"] = manifest["state"]; status["committed_snapshots"] = std::to_string(++committed);
                       status["last_committed_record_id"] = record["record_id"];
