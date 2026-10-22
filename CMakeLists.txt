@@ -244,6 +244,14 @@ if(BUILD_TESTING)
         target_compile_options(officer-source-facts-tests PRIVATE /W4 /permissive- /EHsc /utf-8)
     endif()
     add_test(NAME officer-source-facts-tests COMMAND officer-source-facts-tests)
+    # Explicitly invoked privileged live validation, never an automatic CTest.
+    add_executable(officer-sysmon-live-probe tools/validation/sysmon_live_probe.cpp)
+    target_link_libraries(officer-sysmon-live-probe PRIVATE officer-core officer-collectors officer-delivery)
+    if(MSVC)
+        target_compile_options(officer-sysmon-live-probe PRIVATE /W4 /permissive- /EHsc /utf-8)
+    endif()
+    add_custom_command(TARGET officer-sysmon-live-probe POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:tinyxml2::tinyxml2> $<TARGET_FILE_DIR:officer-sysmon-live-probe>)
     add_executable(officer-source-supervisor-tests tests/source_supervisor_tests.cpp)
     target_link_libraries(officer-source-supervisor-tests PRIVATE officer-core officer-collectors officer-delivery)
     add_custom_command(TARGET officer-source-supervisor-tests POST_BUILD
