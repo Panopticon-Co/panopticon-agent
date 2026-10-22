@@ -73,6 +73,7 @@ add_library(officer-collectors STATIC
     src/collectors/sysmon_telemetry_decoder.cpp
     src/collectors/windows_event_decoder.cpp
     src/collectors/security_audit_semantics.cpp
+    src/collectors/authentication_telemetry.cpp
     src/collectors/powershell_script_telemetry.cpp
     src/collectors/windows_event_log.cpp
     src/collectors/usn_decoder.cpp
@@ -254,6 +255,14 @@ if(BUILD_TESTING)
     add_custom_command(TARGET officer-sysmon-extended-tests POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:tinyxml2::tinyxml2> $<TARGET_FILE_DIR:officer-sysmon-extended-tests>)
     add_test(NAME officer-sysmon-extended-tests COMMAND officer-sysmon-extended-tests)
+    add_executable(officer-authentication-tests tests/authentication_tests.cpp)
+    target_link_libraries(officer-authentication-tests PRIVATE officer-core officer-collectors officer-delivery)
+    if(MSVC)
+        target_compile_options(officer-authentication-tests PRIVATE /W4 /permissive- /EHsc /utf-8)
+    endif()
+    add_custom_command(TARGET officer-authentication-tests POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:tinyxml2::tinyxml2> $<TARGET_FILE_DIR:officer-authentication-tests>)
+    add_test(NAME officer-authentication-tests COMMAND officer-authentication-tests)
     # Explicitly invoked privileged live validation, never an automatic CTest.
     add_executable(officer-sysmon-live-probe tools/validation/sysmon_live_probe.cpp)
     target_link_libraries(officer-sysmon-live-probe PRIVATE officer-core officer-collectors officer-delivery)
