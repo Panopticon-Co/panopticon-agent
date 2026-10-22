@@ -79,6 +79,14 @@ void failed_worker_and_byte_charge() {
     t::RawRegistryEvent registry{}; registry.value_data = std::string(1000, 'v');
     registry.process.cached_context.emplace(); registry.process.cached_context->process_guid = std::string(2000, 'g');
     require(p::raw_event_charge(t::RawEvent{registry}) >= 3000, "registry data and separate cached context are charged");
+    t::RawProcessEvent extended{};
+    extended.sysmon_fields.emplace();
+    std::size_t extended_capacity = 0;
+    for (auto& field : extended.sysmon_fields->fields) {
+        field.emplace(); field->reserve(10000); extended_capacity += field->capacity() + 1;
+    }
+    require(p::raw_event_charge(t::RawEvent{std::move(extended)}) >= extended_capacity,
+        "all extended Sysmon source string capacities count toward queue admission");
 }
 void concurrent_pressure(bool require_no_refusal, bool blocked = false) {
     constexpr std::size_t producers = 4, per_producer = 1000, total = producers * per_producer;

@@ -4,6 +4,15 @@ Living execution ledger for the approved Full Surface Engineering Plan, updated 
 
 Runtime states are `healthy`, `degraded`, `unavailable`, `disabled`, `unsupported` and `blind`, each with scope, reason, observation time and failure count. Healthy applies only to a precisely named verified capability. Blind means expected visibility has lost continuity. Unsupported requires an explicit platform/technical justification; missing implementation is unavailable. A running collector never establishes complete domain coverage.
 
+The 2026-10-22 telemetry increment restores native build compatibility and adds nine
+source-spelled Sysmon process-start fields to canonical decoded evidence, including
+parent command line, integrity, original filename and logon/session context. All field
+capacities count toward bounded queue admission. See [field parity](FEATURE_FIELD_PARITY.md)
+and the latest [validation entry](VALIDATION.md). Domains B/C/G/O remain partial: this
+does not bind ETW/Sysmon instances, establish auth-session joins, add EID8/10/22 or prove
+live-Sysmon/VM/Manager/ML parity. Event Log restart now uses a queried newest native ID
+instead of assuming record IDs are contiguous.
+
 | ID | Domain | Current implementation | Required gap closure |
 |---|---|---|---|
 | A | Host identity and inventory | Separate enrollment/device/install/native boot; durable native snapshots and committed field health: names, OS/version/revision, architecture, memory, firmware/BIOS, native join/default Entra, compatible TPM/version, IPv4/IPv6 adapters, volume/mount/filesystem/quota-aware capacity; separate Secure Boot registry report and read-only UEFI `SecureBoot` variable/API/firmware/privilege evidence with mismatch reporting (source-only, not yet built or runtime verified); independent bounded `Win32_EncryptableVolume` capture records volume/device identifiers and separate read-only protection/conversion/encryption-method outputs with HRESULT and provider status; not built/runtime-validated. See [volume encryption](VOLUME_ENCRYPTION.md). Capture continues without event-source access | Device clone/replacement lifecycle; TPM/attestation and complete Entra/disk/encryption/removable/virtualization/hardware detail, physical-volume correlation, key-protector/recovery/escrow evidence and effective hardware-encryption proof; state deltas/watchers/reconciliation; API deadlines and crash-safe pending state; compatibility/resource/fleet qualification; privileged and firmware-specific Secure Boot API behavior qualification |

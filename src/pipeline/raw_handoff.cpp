@@ -19,6 +19,7 @@ std::size_t raw_event_charge(const telemetry::RawEvent& event) {
         if constexpr (std::is_same_v<T, telemetry::RawProcessEvent>) {
             optional(raw.process_guid); optional(raw.parent_process_guid); optional(raw.parent_executable);
             optional(raw.executable); optional(raw.command_line); optional(raw.user_sid); optional(raw.user_name); optional(raw.sha256);
+            if (raw.sysmon_fields) for (const auto& field : raw.sysmon_fields->fields) optional(field);
         } else {
             const auto& process = raw.process;
             optional(process.executable); optional(process.process_name); optional(process.user_name);

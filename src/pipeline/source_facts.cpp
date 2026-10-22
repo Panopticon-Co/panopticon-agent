@@ -57,6 +57,22 @@ Json source_facts(const telemetry::RawEvent& raw) {
                 {"parent_pid", event.parent_pid ? Json(*event.parent_pid) : Json(nullptr)}, {"parent_executable", text(event.parent_executable)},
                 {"executable", text(event.executable)}, {"command_line", text(event.command_line)},
                 {"user_sid", text(event.user_sid)}, {"user_name", text(event.user_name)}, {"sha256", text(event.sha256)}};
+            if (event.sysmon_fields) {
+                if (event.source.kind != telemetry::TelemetrySourceKind::sysmon ||
+                    event.source.provider != "Microsoft-Windows-Sysmon" || event.terminated)
+                    throw std::invalid_argument("Sysmon process field source/operation mismatch");
+                Json fields = Json::object();
+                Json unavailable = Json::array();
+                for (std::size_t index = 0; index < telemetry::SysmonProcessFields::names.size(); ++index) {
+                    const auto name = std::string{telemetry::SysmonProcessFields::names[index]};
+                    const auto& value = event.sysmon_fields->fields[index];
+                    fields[name] = text(value);
+                    if (!value) unavailable.push_back({{"field", name}, {"reason", "source_field_absent"}});
+                }
+                result["process"]["sysmon_fields"] = {{"format", "windows_sysmon_process_fields_v1"},
+                    {"event_id", 1}, {"fields", std::move(fields)}, {"unavailable", std::move(unavailable)},
+                    {"values_interpreted", false}, {"native_creation_ticks_derived", false}};
+            }
             if (event.native_fields) {
                 const auto& native = *event.native_fields;
                 if (event.source.kind != telemetry::TelemetrySourceKind::etw ||

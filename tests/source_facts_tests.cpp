@@ -117,8 +117,49 @@ struct Scratch {
         if (path.parent_path() == root && path.filename().string().starts_with("officer-source-facts-")) fs::remove_all(path, error);
     }
 };
+Json sysmon_process_context_recovery() {
+    auto event = process();
+    event.source = {telemetry::TelemetrySourceKind::sysmon, "Microsoft-Windows-Sysmon",
+        "Microsoft-Windows-Sysmon/Operational", 99};
+    event.start_time_ticks.reset();
+    event.sha256 = std::string(64, 'A');
+    event.sysmon_fields.emplace();
+    auto& fields = event.sysmon_fields->fields;
+    fields[0] = std::string{"parent\0tail", 11};
+    fields[1] = "Medium";
+    fields[2] = std::string(1, static_cast<char>(0xff));
+    fields[3] = "";
+    fields[4] = "0xffffffffffffffff";
+    fields[5] = "-";
+    enrichment::EnrichedProcessEvent enriched;
+    enriched.raw = event; enriched.sha256 = event.sha256;
+    std::string error;
+    const auto normalized = pipeline::normalize_process_event(enriched, context(), error);
+    require(normalized.has_value(), "extended source facts must remain independent of legacy process normalization");
+    pipeline::EndpointRecordFactory factory{context(), "device-1", std::string(64, 'b'), boot, 1};
+    const auto record = factory.observation(telemetry::RawEvent{event}, *normalized);
+    const auto& facts = record.at("data").at("source_facts").at("process").at("sysmon_fields");
+    require(facts.at("fields").at("ParentCommandLine").get<std::string>() == *fields[0] &&
+        facts.at("fields").at("OriginalFileName").at("bytes") == "ff", "source text bytes survive without replacement or NUL truncation");
+    require(facts.at("fields").at("CurrentDirectory") == "" && facts.at("fields").at("LogonGuid") == "-" &&
+        facts.at("fields").at("TerminalSessionId").is_null() && facts.at("unavailable").size() == 3,
+        "empty, sentinel and absent source fields remain distinct");
+    require(facts.at("fields").at("LogonId") == "0xffffffffffffffff" &&
+        record.at("subject").at("native_creation_ticks").is_null(), "native source text never creates a response target token");
+    Scratch scratch;
+    { delivery::DurableJournal journal{{scratch.path}}; journal.append(record.dump()); }
+    { delivery::DurableJournal reopened{{scratch.path}};
+      const auto batch = reopened.peek(10, 1024 * 1024);
+      require(batch && batch->protocol == 2 && batch->entries.size() == 1 && batch->entries[0].body == record.dump(),
+          "extended canonical process context survives encrypted journal restart byte-for-byte"); }
+    return record;
+}
 int main(int argc, char** argv) {
     try {
+        const auto extended_context = sysmon_process_context_recovery();
+        if (argc == 2 && std::string{argv[1]} == "--emit-sysmon-context-fixture") {
+            std::cout << extended_context.dump() << '\n'; return 0;
+        }
         native_field_scope_tests();
         const auto fixtures = failure_fixtures();
         if (argc == 2 && std::string{argv[1]} == "--emit-fixtures") { std::cout << fixtures.dump() << '\n'; return 0; }

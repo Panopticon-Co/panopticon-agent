@@ -38,6 +38,16 @@ struct EtwProcessNativeFields {
 
 // A source adapter publishes this structure. It contains observed facts only;
 // it does not contain JSON, transport, storage, or detection concerns.
+struct SysmonProcessFields {
+    // Retain exact source spelling and text, including empty strings and '-'.
+    // Nullable entries mean the source field was absent, not a default value.
+    static constexpr std::array<std::string_view, 9> names{
+        "ParentCommandLine", "IntegrityLevel", "OriginalFileName", "CurrentDirectory",
+        "LogonId", "LogonGuid", "TerminalSessionId", "Hashes", "UtcTime"};
+    std::array<std::optional<std::string>, names.size()> fields;
+    bool operator==(const SysmonProcessFields&) const = default;
+};
+
 struct RawProcessEvent {
     SourceProvenance source;
     UtcTimestamp process_start_time;
@@ -67,6 +77,7 @@ struct RawProcessEvent {
     std::optional<std::uint64_t> termination_time_ticks;
     std::optional<std::uint32_t> exit_code;
     std::optional<EtwProcessNativeFields> native_fields;
+    std::optional<SysmonProcessFields> sysmon_fields;
 
     bool operator==(const RawProcessEvent&) const = default;
 };
