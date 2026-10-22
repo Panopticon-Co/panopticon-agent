@@ -18,6 +18,17 @@ if ($SourceCommit -and $SourceCommit -notmatch '^[0-9a-f]{40}$') { throw 'Source
 $run = Join-Path $parent ('sysmon-live-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N').Substring(0,8))
 $started = [DateTime]::UtcNow.ToString('o')
 try {
+    $channelBefore = Get-WinEvent -ListLog 'Microsoft-Windows-Sysmon/Operational'
+    if (-not $channelBefore.IsEnabled) { throw 'Sysmon channel is disabled; validation will not enable it.' }
+    $aclBefore = [string]$channelBefore.SecurityDescriptor
+    $query = [System.Diagnostics.Eventing.Reader.EventLogQuery]::new(
+        'Microsoft-Windows-Sysmon/Operational', [System.Diagnostics.Eventing.Reader.PathType]::LogName, '*')
+    $query.ReverseDirection = $true
+    $reader = [System.Diagnostics.Eventing.Reader.EventLogReader]::new($query)
+    try {
+        $accessRecord = $reader.ReadEvent([TimeSpan]::FromSeconds(1))
+        if ($accessRecord) { $accessRecord.Dispose() }
+    } finally { $reader.Dispose() }
     & $probe $run *> (Join-Path $parent 'sysmon-live-probe-console.log')
     if ($LASTEXITCODE -ne 0) { throw "Native live probe failed with exit $LASTEXITCODE; see $run" }
     $report = Get-Content -Raw -LiteralPath (Join-Path $run 'report.json') | ConvertFrom-Json
@@ -40,6 +51,10 @@ try {
         }
     }
     [IO.File]::WriteAllText((Join-Path $run 'native-event.xml'), $xmlText, [Text.UTF8Encoding]::new($false))
+    $channelAfter = Get-WinEvent -ListLog 'Microsoft-Windows-Sysmon/Operational'
+    if ([string]$channelAfter.SecurityDescriptor -cne $aclBefore -or $channelAfter.IsEnabled -ne $channelBefore.IsEnabled) {
+        throw 'Channel permissions or enablement changed during validation; unchanged state cannot be claimed.'
+    }
     $hashes = @{}
     foreach ($name in @('report.json','canonical-record.json','native-event.xml')) {
         $hashes[$name] = (Get-FileHash -LiteralPath (Join-Path $run $name) -Algorithm SHA256).Hash
@@ -51,6 +66,7 @@ try {
         native_record_id=$recordId; owned_process_id=$report.owned_process_id;
         probe_sha256=$ExpectedSha256; probe_source_commit=$SourceCommit; fields_compared_exactly=$true;
         journal_restart_exact=$report.journal_restart_exact;
+        read_access_verified=$true; channel_permissions_unchanged=$true;
         service_or_channel_configuration_changed=$false; artifacts=$hashes
     }
     [IO.File]::WriteAllText((Join-Path $run 'manifest.json'), ($manifest | ConvertTo-Json -Depth 6), [Text.UTF8Encoding]::new($false))
