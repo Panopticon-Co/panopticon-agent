@@ -1,0 +1,22 @@
+{
+    "status":  "passed",
+    "synthetic":  false,
+    "capture_started_utc":  "2026-10-22T16:38:03.0429024Z",
+    "capture_completed_utc":  "2026-10-22T16:38:04.4551431Z",
+    "source":  "Microsoft-Windows-Sysmon/Operational",
+    "event_id":  1,
+    "native_record_id":  "663335",
+    "owned_process_id":  25608,
+    "probe_sha256":  "C51E31970A604C9FE0AD0C70DF5174538BB4235B1107160D6E7158C6322F07D3",
+    "probe_source_commit":  "6e5b895ea5b01128a47c60746d76e0b823b16035",
+    "fields_compared_exactly":  true,
+    "journal_restart_exact":  true,
+    "read_access_verified":  true,
+    "channel_permissions_unchanged":  true,
+    "service_or_channel_configuration_changed":  false,
+    "artifacts":  {
+                      "native-event.xml":  "A9EEFECD25B5D910E585AE04570E360CF79135EE116EC903024F739AEC36B70E",
+                      "canonical-record.json":  "04DE1630FED9E27B7499C89E3253234DC0F68F1E5A6B95FCBCACE9A282524F0D",
+                      "report.json":  "C22CECE41EEF35912FFF71BD8F0DFC18AAF955B1E456AAD77C15423A7E45A442"
+                  }
+}

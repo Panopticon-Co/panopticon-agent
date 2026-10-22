@@ -19,6 +19,7 @@ std::size_t raw_event_charge(const telemetry::RawEvent& event) {
         if constexpr (std::is_same_v<T, telemetry::RawProcessEvent>) {
             optional(raw.process_guid); optional(raw.parent_process_guid); optional(raw.parent_executable);
             optional(raw.executable); optional(raw.command_line); optional(raw.user_sid); optional(raw.user_name); optional(raw.sha256);
+            if (raw.sysmon_fields) for (const auto& field : raw.sysmon_fields->fields) optional(field);
         } else {
             const auto& process = raw.process;
             optional(process.executable); optional(process.process_name); optional(process.user_name);
@@ -36,6 +37,23 @@ std::size_t raw_event_charge(const telemetry::RawEvent& event) {
                 optional(raw.key_path); optional(raw.value_name); optional(raw.value_type); optional(raw.value_data);
             } else if constexpr (std::is_same_v<T, telemetry::RawImageLoadEvent>) {
                 optional(raw.path); optional(raw.signature_status); optional(raw.sha256);
+            } else if constexpr (std::is_same_v<T, telemetry::RawSysmonExtendedEvent>) {
+                add(raw.event_time_field);
+                optional(raw.call_trace); optional(raw.start_module); optional(raw.start_function);
+                optional(raw.query_name); optional(raw.query_results);
+                if (raw.source_fields.capacity() > (std::numeric_limits<std::size_t>::max() - bytes) / sizeof(raw.source_fields[0]))
+                    throw std::length_error("raw source fields charge overflow");
+                bytes += raw.source_fields.capacity() * sizeof(raw.source_fields[0]);
+                for (const auto& [name, value] : raw.source_fields) { add(name); add(value); }
+                if (raw.target) {
+                    optional(raw.target->executable); optional(raw.target->process_name);
+                    optional(raw.target->process_guid); optional(raw.target->user_name); optional(raw.target->user_sid);
+                    if (raw.target->cached_context) {
+                        const auto& cached = *raw.target->cached_context;
+                        source(cached.source); add(cached.process_guid); optional(cached.executable);
+                        optional(cached.user_name); optional(cached.user_sid);
+                    }
+                }
             }
         }
     }, event);

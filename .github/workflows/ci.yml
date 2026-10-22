@@ -8,8 +8,12 @@ on:
 
 jobs:
   windows-x64:
-    name: Build and test (Windows x64)
+    name: Build and test (Windows x64, ${{ matrix.build_type }})
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: [Debug, Release]
     steps:
       - name: Check out Officer
         uses: actions/checkout@v4
@@ -44,7 +48,8 @@ jobs:
         run: |
           cmake -S . -B build-officer-x64 -G Ninja `
             -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake" `
-            -DVCPKG_TARGET_TRIPLET=x64-windows
+            -DVCPKG_TARGET_TRIPLET=x64-windows `
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
         shell: pwsh
 
       - name: Build
@@ -52,5 +57,5 @@ jobs:
         shell: pwsh
 
       - name: Test
-        run: ctest --test-dir build-officer-x64 --output-on-failure
+        run: ctest --test-dir build-officer-x64 --output-on-failure --timeout 120
         shell: pwsh

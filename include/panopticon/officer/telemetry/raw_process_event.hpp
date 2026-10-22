@@ -9,6 +9,8 @@
 #include <string>
 #include <string_view>
 #include <variant>
+#include <vector>
+#include <utility>
 
 namespace panopticon::officer::telemetry {
 
@@ -38,6 +40,16 @@ struct EtwProcessNativeFields {
 
 // A source adapter publishes this structure. It contains observed facts only;
 // it does not contain JSON, transport, storage, or detection concerns.
+struct SysmonProcessFields {
+    // Retain exact source spelling and text, including empty strings and '-'.
+    // Nullable entries mean the source field was absent, not a default value.
+    static constexpr std::array<std::string_view, 9> names{
+        "ParentCommandLine", "IntegrityLevel", "OriginalFileName", "CurrentDirectory",
+        "LogonId", "LogonGuid", "TerminalSessionId", "Hashes", "UtcTime"};
+    std::array<std::optional<std::string>, names.size()> fields;
+    bool operator==(const SysmonProcessFields&) const = default;
+};
+
 struct RawProcessEvent {
     SourceProvenance source;
     UtcTimestamp process_start_time;
@@ -67,6 +79,7 @@ struct RawProcessEvent {
     std::optional<std::uint64_t> termination_time_ticks;
     std::optional<std::uint32_t> exit_code;
     std::optional<EtwProcessNativeFields> native_fields;
+    std::optional<SysmonProcessFields> sysmon_fields;
 
     bool operator==(const RawProcessEvent&) const = default;
 };
@@ -138,6 +151,28 @@ struct RawImageLoadEvent {
     bool operator==(const RawImageLoadEvent&) const = default;
 };
 
+// Windows-specific canonical families; never serialized as legacy schema 0.4.
+// Source fields preserve exact decoded spelling/text within the XML admission cap.
+struct RawSysmonExtendedEvent {
+    SourceProvenance source;
+    UtcTimestamp timestamp;
+    RawProcessContext process;
+    std::uint16_t event_id = 0; // closed set: 8, 10, 22
+    std::string event_time_field;
+    std::optional<RawProcessContext> target;
+    std::optional<std::uint64_t> granted_access;
+    std::optional<std::uint64_t> start_address;
+    std::optional<std::uint32_t> new_thread_id;
+    std::optional<std::uint32_t> query_status;
+    std::optional<std::string> call_trace;
+    std::optional<std::string> start_module;
+    std::optional<std::string> start_function;
+    std::optional<std::string> query_name;
+    std::optional<std::string> query_results;
+    std::vector<std::pair<std::string, std::string>> source_fields;
+    bool operator==(const RawSysmonExtendedEvent&) const = default;
+};
+
 // New raw event types are added to this variant without changing collector
 // ownership or downstream sink interfaces.
 using RawEvent = std::variant<
@@ -145,6 +180,7 @@ using RawEvent = std::variant<
     RawNetworkEvent,
     RawFileEvent,
     RawRegistryEvent,
-    RawImageLoadEvent>;
+    RawImageLoadEvent,
+    RawSysmonExtendedEvent>;
 
 }  // namespace panopticon::officer::telemetry

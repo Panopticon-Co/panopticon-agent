@@ -6,6 +6,7 @@
 #include "panopticon/officer/core/entity_id.hpp"
 #include "panopticon/officer/pipeline/normalizer.hpp"
 #include "panopticon/officer/pipeline/serializer.hpp"
+#include "panopticon/officer/pipeline/endpoint_record.hpp"
 
 #include <chrono>
 #include <fstream>
@@ -131,6 +132,56 @@ void expect_round_trips(const telemetry::PanopticonEvent& event, const char* lab
         std::cerr << "Round-trip parse error for " << label << ": " << error << '\n';
     }
     expect(back && *back == event, label);
+}
+
+void test_sysmon_process_context_canonical_path() {
+    std::string error;
+    auto decoded = collectors::SysmonProcessDecoder::decode_xml(read_fixture(), error);
+    expect(decoded && decoded->sysmon_fields, "EID1 retains extended source context");
+    if (!decoded || !decoded->sysmon_fields) return;
+    panopticon::officer::enrichment::EnrichedProcessEvent enriched;
+    enriched.raw = *decoded;
+    enriched.sha256 = decoded->sha256;
+    const auto normalized = pipeline::normalize_process_event(enriched, family_context(), error);
+    expect(normalized.has_value(), "extended EID1 context does not break legacy normalization");
+    if (!normalized) return;
+    pipeline::EndpointRecordFactory factory{family_context(), "device-context", std::string(64, 'b'),
+        "boot_" + std::string(64, 'a'), 1};
+    const auto record = factory.observation(telemetry::RawEvent{*decoded}, *normalized);
+    const auto& facts = record.at("data").at("source_facts").at("process").at("sysmon_fields");
+    const auto& fields = facts.at("fields");
+    expect(fields.at("ParentCommandLine") == "powershell.exe -NoProfile" &&
+        fields.at("IntegrityLevel") == "Medium" && fields.at("OriginalFileName") == "OFFICER-DEMO.EXE",
+        "canonical records preserve parent command, integrity and original filename");
+    expect(fields.at("LogonId") == "0x00000000000003e7" && fields.at("TerminalSessionId") == "1" &&
+        fields.at("LogonGuid") == "{SANITIZED-LOGON-GUID}" && fields.at("UtcTime") == "2026-08-14 12:00:00.1234567",
+        "native logon/session/time spelling survives without numeric coercion");
+    expect(facts.at("unavailable").empty() && !decoded->start_time_ticks &&
+        record.at("subject").at("native_creation_ticks").is_null(), "context never invents native creation ticks");
+
+    auto xml = read_fixture();
+    const auto begin = xml.find("    <Data Name=\"ParentCommandLine\">");
+    xml.erase(begin, xml.find("</Data>", begin) + 7 - begin);
+    decoded = collectors::SysmonProcessDecoder::decode_xml(xml, error);
+    expect(decoded && decoded->sysmon_fields && !decoded->sysmon_fields->fields[0], "absent parent command stays absent");
+    if (decoded) {
+        enriched.raw = *decoded;
+        const auto missing_normalized = pipeline::normalize_process_event(enriched, family_context(), error);
+        expect(missing_normalized.has_value(), "missing optional source context still normalizes");
+        if (!missing_normalized) return;
+        const auto missing = factory.observation(telemetry::RawEvent{*decoded}, *missing_normalized);
+        const auto& missing_facts = missing.at("data").at("source_facts").at("process").at("sysmon_fields");
+        expect(missing_facts.at("fields").at("ParentCommandLine").is_null() &&
+            missing_facts.at("unavailable")[0].at("reason") == "source_field_absent", "missing context carries a reason");
+    }
+    xml = read_fixture();
+    xml.insert(xml.find("</EventData>"), "<Data Name=\"ParentCommandLine\">ambiguous</Data>");
+    expect(!collectors::SysmonProcessDecoder::decode_xml(xml, error), "duplicate extended fields are refused");
+    xml = read_fixture();
+    const std::string event_id = "<EventID>1</EventID>";
+    xml.replace(xml.find(event_id), event_id.size(), "<EventID>5</EventID>");
+    decoded = collectors::SysmonProcessDecoder::decode_xml(xml, error);
+    expect(decoded && decoded->terminated && !decoded->sysmon_fields, "EID5 cannot masquerade as extended start context");
 }
 
 void test_sysmon_network_family() {
@@ -327,6 +378,7 @@ void test_sysmon_telemetry_decoder_rejects_process_and_unknown_ids() {
 
 int main() {
     test_sysmon_process_decoder();
+    test_sysmon_process_context_canonical_path();
     test_sysmon_decoder_rejects_wrong_event_and_bad_numbers();
     test_cross_source_entity_identity();
     test_collectors_share_the_generic_interface();

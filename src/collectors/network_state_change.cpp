@@ -89,8 +89,10 @@ Json interface_row(const MIB_IPINTERFACE_ROW& row) {
         {"interface_index", std::to_string(row.InterfaceIndex)},
         {"reported_mtu", std::to_string(row.NlMtu)},
         {"reported_metric", std::to_string(row.Metric)},
-        {"reported_connection_type", std::to_string(static_cast<unsigned>(row.ConnectionType))},
-        {"reported_interface_type", std::to_string(static_cast<unsigned>(row.Type))},
+        {"reported_connection_type", nullptr},
+        {"reported_interface_type", nullptr},
+        {"unavailable", {{"reported_connection_type", "not_exposed_by_MIB_IPINTERFACE_ROW"},
+            {"reported_interface_type", "not_exposed_by_MIB_IPINTERFACE_ROW"}}},
         {"record_scope", "native interface row; interface index and LUID are reported identifiers, not durable entity identity"}};
 }
 

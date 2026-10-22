@@ -1,0 +1,758 @@
+Start testing: Oct 22 21:40 India Standard Time
+----------------------------------------------------------
+1/44 Testing: officer-process-graph-tests
+1/44 Test: officer-process-graph-tests
+Command: "<workspace>/review/panopticon-agent/build-officer-telemetry-debug/officer-process-graph-tests.exe"
+Directory: <workspace>/review/panopticon-agent/build-officer-telemetry-debug
+"officer-process-graph-tests" start time: Oct 22 21:40 India Standard Time
+Output:
+----------------------------------------------------------
+Process graph encrypted archive/rebuild/identity/ancestry fixtures passed; live ETW and creator qualification unverified
+<end of output>
+Test time =   0.60 sec
+----------------------------------------------------------
+Test Passed.
+"officer-process-graph-tests" end time: Oct 22 21:40 India Standard Time
+"officer-process-graph-tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+2/44 Testing: officer-device-guard-tests
+2/44 Test: officer-device-guard-tests
+Command: "<workspace>/review/panopticon-agent/build-officer-telemetry-debug/officer-device-guard-tests.exe"
+Directory: <workspace>/review/panopticon-agent/build-officer-telemetry-debug
+"officer-device-guard-tests" start time: Oct 22 21:40 India Standard Time
+Output:
+----------------------------------------------------------
+Device Guard native provider and bounded variant fixtures passed; effective enforcement unverified
+<end of output>
+Test time =   0.49 sec
+----------------------------------------------------------
+Test Passed.
+"officer-device-guard-tests" end time: Oct 22 21:40 India Standard Time
+"officer-device-guard-tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+3/44 Testing: officer-process-lifecycle-tests
+3/44 Test: officer-process-lifecycle-tests
+Command: "<workspace>/review/panopticon-agent/build-officer-telemetry-debug/officer-process-lifecycle-tests.exe"
+Directory: <workspace>/review/panopticon-agent/build-officer-telemetry-debug
+"officer-process-lifecycle-tests" start time: Oct 22 21:40 India Standard Time
+Output:
+----------------------------------------------------------
+Synthetic TDH native-template and Sysmon stop identity/clock/PID reuse fixtures passed; live privileged ETW unverified
+<end of output>
+Test time =   0.22 sec
+----------------------------------------------------------
+Test Passed.
+"officer-process-lifecycle-tests" end time: Oct 22 21:40 India Standard Time
+"officer-process-lifecycle-tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+4/44 Testing: officer-service-host-tests
+4/44 Test: officer-service-host-tests
+Command: "<workspace>/review/panopticon-agent/build-officer-telemetry-debug/officer-service-host-tests.exe"
+Directory: <workspace>/review/panopticon-agent/build-officer-telemetry-debug
+"officer-service-host-tests" start time: Oct 22 21:40 India Standard Time
+Output:
+----------------------------------------------------------
+Service transition, failure, stop race and real progress invariants passed; no SCM runtime qualification
+<end of output>
+Test time =   0.20 sec
+----------------------------------------------------------
+Test Passed.
+"officer-service-host-tests" end time: Oct 22 21:40 India Standard Time
+"officer-service-host-tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+5/44 Testing: officer-software-inventory-tests
+5/44 Test: officer-software-inventory-tests
+Command: "<workspace>/review/panopticon-agent/build-officer-telemetry-debug/officer-software-inventory-tests.exe"
+Directory: <workspace>/review/panopticon-agent/build-officer-telemetry-debug
+"officer-software-inventory-tests" start time: Oct 22 21:40 India Standard Time
+Output:
+----------------------------------------------------------
+[{"failures":"7","rows":179,"source":"msi_product_inventory"},{"failures":"4","rows":296,"source":"uninstall_registry_inventory"}]
+<end of output>
+Test time =   1.42 sec
+----------------------------------------------------------
+Test Passed.
+"officer-software-inventory-tests" end time: Oct 22 21:40 India Standard Time
+"officer-software-inventory-tests" time elapsed: 00:00:01
+----------------------------------------------------------
+
+6/44 Testing: officer-identity-inventory-tests
+6/44 Test: officer-identity-inventory-tests
+Command: "<workspace>/review/panopticon-agent/build-officer-telemetry-debug/officer-identity-inventory-tests.exe"
+Directory: <workspace>/review/panopticon-agent/build-officer-telemetry-debug
+"officer-identity-inventory-tests" start time: Oct 22 21:40 India Standard Time
+Output:
+----------------------------------------------------------
+[{"enumeration_complete":true,"query_failures":"0","rows":7,"source":"account_inventory","state":"degraded"},{"enumeration_complete":true,"query_failures":"0","rows":43,"source":"local_group_inventory","state":"degraded"},{"enumeration_complete":true,"query_failures":"8","rows":14,"source":"logon_session_inventory","state":"degraded"},{"enumeration_complete":true,"query_failures":"0","rows":2,"source":"terminal_session_inventory","state":"degraded"}]
+<end of output>
+Test time =   0.33 sec
+----------------------------------------------------------
+Test Passed.
+"officer-identity-inventory-tests" end time: Oct 22 21:40 India Standard Time
+"officer-identity-inventory-tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+7/44 Testing: officer-registry-persistence-tests
+7/44 Test: officer-registry-persistence-tests
+Command: "<workspace>/review/panopticon-agent/build-officer-telemetry-debug/officer-registry-persistence-tests.exe"
+Directory: <workspace>/review/panopticon-agent/build-officer-telemetry-debug
+"officer-registry-persistence-tests" start time: Oct 22 21:40 India Standard Time
+Output:
+----------------------------------------------------------
+native registry persistence fixtures, raw bytes, explicit views, branch bounds, refusal and health passed
+<end of output>
+Test time =   1.10 sec
+----------------------------------------------------------
+Test Passed.
+"officer-registry-persistence-tests" end time: Oct 22 21:40 India Standard Time
+"officer-registry-persistence-tests" time elapsed: 00:00:01
+----------------------------------------------------------
+
+8/44 Testing: officer-persistence-inventory-tests
+8/44 Test: officer-persistence-inventory-tests
+Command: "<workspace>/review/panopticon-agent/build-officer-telemetry-debug/officer-persistence-inventory-tests.exe"
+Directory: <workspace>/review/panopticon-agent/build-officer-telemetry-debug
+"officer-persistence-inventory-tests" start time: Oct 22 21:40 India Standard Time
+Output:
+----------------------------------------------------------
+[{"entries":355,"enumeration_complete":true,"pages":23,"query_failure_count":"0","source":"scheduled_task_inventory","state":"degraded"},{"entries":9,"enumeration_complete":true,"pages":1,"query_failure_count":"0","source":"wmi_subscription_inventory","state":"degraded"},{"entries":93,"enumeration_complete":false,"pages":6,"query_failure_count":"4","source":"startup_inventory","state":"degraded"},{"entries":523,"enumeration_complete":true,"pages":33,"query_failure_count":"0","source":"active_setup_inventory","state":"degraded"},{"entries":1418,"enumeration_complete":false,"pages":89,"query_failure_count":"6","source":"image_execution_inventory","state":"degraded"},{"entries":9728,"enumeration_complete":false,"pages":608,"query_failure_count":"0","source":"com_activation_inventory","state":"degraded"},{"entries":79,"enumeration_complete":true,"pages":5,"query_failure_count":"0","source":"startup_approval_inventory","state":"degraded"},{"entries":446,"enumeration_complete":false,"pages":28,"query_failure_count":"4","source":"browser_registration_inventory","state":"degraded"},{"entries":736,"enumeration_complete":true,"pages":46,"query_failure_count":"0","source":"office_addin_inventory","state":"degraded"}]
+<end of output>
+Test time =   5.35 sec
+----------------------------------------------------------
+Test Passed.
+"officer-persistence-inventory-tests" end time: Oct 22 21:40 India Standard Time
+"officer-persistence-inventory-tests" time elapsed: 00:00:05
+----------------------------------------------------------
+
+9/44 Testing: officer-windows-event-log-tests
+9/44 Test: officer-windows-event-log-tests
+Command: "<workspace>/review/panopticon-agent/build-officer-telemetry-debug/officer-windows-event-log-tests.exe"
+Directory: <workspace>/review/panopticon-agent/build-officer-telemetry-debug
+"officer-windows-event-log-tests" start time: Oct 22 21:40 India Standard Time
+Output:
+----------------------------------------------------------
+real Windows Application pull/bookmark/refusal/restart verified; token_records=2
+<end of output>
+Test time =   4.60 sec
+----------------------------------------------------------
+Test Passed.
+"officer-windows-event-log-tests" end time: Oct 22 21:40 India Standard Time
+"officer-windows-event-log-tests" time elapsed: 00:00:04
+----------------------------------------------------------
+
+10/44 Testing: officer-ip-interface-inventory-tests
+10/44 Test: officer-ip-interface-inventory-tests
+Command: "<workspace>/review/panopticon-agent/build-officer-telemetry-debug/officer-ip-interface-inventory-tests.exe"
+Directory: <workspace>/review/panopticon-agent/build-officer-telemetry-debug
+"officer-ip-interface-inventory-tests" start time: Oct 22 21:40 India Standard Time
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.60 sec
+----------------------------------------------------------
+Test Passed.
+"officer-ip-interface-inventory-tests" end time: Oct 22 21:40 India Standard Time
+"officer-ip-interface-inventory-tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+11/44 Testing: officer-route-inventory-tests
+11/44 Test: officer-route-inventory-tests
+Command: "<workspace>/review/panopticon-agent/build-officer-telemetry-debug/officer-route-inventory-tests.exe"
+Directory: <workspace>/review/panopticon-agent/build-officer-telemetry-debug
+"officer-route-inventory-tests" start time: Oct 22 21:40 India Standard Time
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   1.75 sec
+----------------------------------------------------------
+Test Passed.
+"officer-route-inventory-tests" end time: Oct 22 21:40 India Standard Time
+"officer-route-inventory-tests" time elapsed: 00:00:01
+----------------------------------------------------------
+
+12/44 Testing: officer-socket-inventory-tests
+12/44 Test: officer-socket-inventory-tests
+Command: "<workspace>/review/panopticon-agent/build-officer-telemetry-debug/officer-socket-inventory-tests.exe"
+Directory: <workspace>/review/panopticon-agent/build-officer-telemetry-debug
+"officer-socket-inventory-tests" start time: Oct 22 21:40 India Standard Time
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.47 sec
+----------------------------------------------------------
+Test Passed.
+"officer-socket-inventory-tests" end time: Oct 22 21:40 India Standard Time
+"officer-socket-inventory-tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+13/44 Testing: officer-driver-inventory-tests
+13/44 Test: officer-driver-inventory-tests
+Command: "<workspace>/review/panopticon-agent/build-officer-telemetry-debug/officer-driver-inventory-tests.exe"
+Directory: <workspace>/review/panopticon-agent/build-officer-telemetry-debug
+"officer-driver-inventory-tests" start time: Oct 22 21:40 India Standard Time
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.28 sec
+----------------------------------------------------------
+Test Passed.
+"officer-driver-inventory-tests" end time: Oct 22 21:40 India Standard Time
+"officer-driver-inventory-tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+14/44 Testing: officer-service-inventory-tests
+14/44 Test: officer-service-inventory-tests
+Command: "<workspace>/review/panopticon-agent/build-officer-telemetry-debug/officer-service-inventory-tests.exe"
+Directory: <workspace>/review/panopticon-agent/build-officer-telemetry-debug
+"officer-service-inventory-tests" start time: Oct 22 21:40 India Standard Time
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   7.98 sec
+----------------------------------------------------------
+Test Passed.
+"officer-service-inventory-tests" end time: Oct 22 21:41 India Standard Time
+"officer-service-inventory-tests" time elapsed: 00:00:07
+----------------------------------------------------------
+
+15/44 Testing: officer-process-inventory-tests
+15/44 Test: officer-process-inventory-tests
+Command: "<workspace>/review/panopticon-agent/build-officer-telemetry-debug/officer-process-inventory-tests.exe"
+Directory: <workspace>/review/panopticon-agent/build-officer-telemetry-debug
+"officer-process-inventory-tests" start time: Oct 22 21:41 India Standard Time
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   2.37 sec
+----------------------------------------------------------
+Test Passed.
+"officer-process-inventory-tests" end time: Oct 22 21:41 India Standard Time
+"officer-process-inventory-tests" time elapsed: 00:00:02
+----------------------------------------------------------
+
+16/44 Testing: officer-module-inventory-tests
+16/44 Test: officer-module-inventory-tests
+Command: "<workspace>/review/panopticon-agent/build-officer-telemetry-debug/officer-module-inventory-tests.exe"
+Directory: <workspace>/review/panopticon-agent/build-officer-telemetry-debug
+"officer-module-inventory-tests" start time: Oct 22 21:41 India Standard Time
+Output:
+----------------------------------------------------------
+native module inventory: owned image, identity, refusal, bounds, cancellation and freshness passed
+<end of output>
+Test time =   0.27 sec
+----------------------------------------------------------
+Test Passed.
+"officer-module-inventory-tests" end time: Oct 22 21:41 India Standard Time
+"officer-module-inventory-tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+17/44 Testing: officer-memory-inventory-tests
+17/44 Test: officer-memory-inventory-tests
+Command: "<workspace>/review/panopticon-agent/build-officer-telemetry-debug/officer-memory-inventory-tests.exe"
+Directory: <workspace>/review/panopticon-agent/build-officer-telemetry-debug
+"officer-memory-inventory-tests" start time: Oct 22 21:41 India Standard Time
+Output:
+----------------------------------------------------------
+native memory region inventory tests passed
+<end of output>
+Test time =   0.31 sec
+----------------------------------------------------------
+Test Passed.
+"officer-memory-inventory-tests" end time: Oct 22 21:41 India Standard Time
+"officer-memory-inventory-tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+18/44 Testing: officer-thread-inventory-tests
+18/44 Test: officer-thread-inventory-tests
+Command: "<workspace>/review/panopticon-agent/build-officer-telemetry-debug/officer-thread-inventory-tests.exe"
+Directory: <workspace>/review/panopticon-agent/build-officer-telemetry-debug
+"officer-thread-inventory-tests" start time: Oct 22 21:41 India Standard Time
+Output:
+----------------------------------------------------------
+native thread inventory tests passed
+<end of output>
+Test time =   7.80 sec
+----------------------------------------------------------
+Test Passed.
+"officer-thread-inventory-tests" end time: Oct 22 21:41 India Standard Time
+"officer-thread-inventory-tests" time elapsed: 00:00:07
+----------------------------------------------------------
+
+19/44 Testing: officer-usn-journal-tests
+19/44 Test: officer-usn-journal-tests
+Command: "<workspace>/review/panopticon-agent/build-officer-telemetry-debug/officer-usn-journal-tests.exe"
+Directory: <workspace>/review/panopticon-agent/build-officer-telemetry-debug
+"officer-usn-journal-tests" start time: Oct 22 21:41 India Standard Time
+Output:
+----------------------------------------------------------
+native USN live test unavailable Win32=5; decoder/durable component evidence only
+USN decoder and native/durable tests passed; live=false
+<end of output>
+Test time =   0.16 sec
+----------------------------------------------------------
+Test Passed.
+"officer-usn-journal-tests" end time: Oct 22 21:41 India Standard Time
+"officer-usn-journal-tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+20/44 Testing: officer-raw-handoff-tests
+20/44 Test: officer-raw-handoff-tests
+Command: "<workspace>/review/panopticon-agent/build-officer-telemetry-debug/officer-raw-handoff-tests.exe"
+Directory: <workspace>/review/panopticon-agent/build-officer-telemetry-debug
+"officer-raw-handoff-tests" start time: Oct 22 21:41 India Standard Time
+Output:
+----------------------------------------------------------
+{"admitted":4000,"check":"four producer handoff pressure; lightweight owned handler","completed":4000,"contention_refused":0,"handler_blocked_during_submission":false,"refused":0,"submitted":4000}
+{"admitted":4000,"check":"four producer handoff pressure; lightweight owned handler","completed":4000,"contention_refused":0,"handler_blocked_during_submission":true,"refused":0,"submitted":4000}
+<end of output>
+Test time =   0.90 sec
+----------------------------------------------------------
+Test Passed.
+"officer-raw-handoff-tests" end time: Oct 22 21:41 India Standard Time
+"officer-raw-handoff-tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+21/44 Testing: officer-response-runtime-tests
+21/44 Test: officer-response-runtime-tests
+Command: "<workspace>/review/panopticon-agent/build-officer-telemetry-debug/officer-response-runtime-tests.exe"
+Directory: <workspace>/review/panopticon-agent/build-officer-telemetry-debug
+"officer-response-runtime-tests" start time: Oct 22 21:41 India Standard Time
+Output:
+----------------------------------------------------------
+production inbox recovery, expiry, owner lock and duplicate suppression passed
+<end of output>
+Test time =   0.37 sec
+----------------------------------------------------------
+Test Passed.
+"officer-response-runtime-tests" end time: Oct 22 21:41 India Standard Time
+"officer-response-runtime-tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+22/44 Testing: officer-process-action-tests
+22/44 Test: officer-process-action-tests
+Command: "<workspace>/review/panopticon-agent/build-officer-telemetry-debug/officer-process-action-tests.exe"
+Directory: <workspace>/review/panopticon-agent/build-officer-telemetry-debug
+"officer-process-action-tests" start time: Oct 22 21:41 India Standard Time
+Output:
+----------------------------------------------------------
+held-handle process action tests passed; only owned inert child terminated
+<end of output>
+Test time =   0.30 sec
+----------------------------------------------------------
+Test Passed.
+"officer-process-action-tests" end time: Oct 22 21:41 India Standard Time
+"officer-process-action-tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+23/44 Testing: officer-host-inventory-tests
+23/44 Test: officer-host-inventory-tests
+Command: "<workspace>/review/panopticon-agent/build-officer-telemetry-debug/officer-host-inventory-tests.exe"
+Directory: <workspace>/review/panopticon-agent/build-officer-telemetry-debug
+"officer-host-inventory-tests" start time: Oct 22 21:41 India Standard Time
+Output:
+----------------------------------------------------------
+native host inventory query/uncertainty tests passed; fields=26; elapsed_ms=63
+<end of output>
+Test time =   0.27 sec
+----------------------------------------------------------
+Test Passed.
+"officer-host-inventory-tests" end time: Oct 22 21:41 India Standard Time
+"officer-host-inventory-tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+24/44 Testing: officer-source-facts-tests
+24/44 Test: officer-source-facts-tests
+Command: "<workspace>/review/panopticon-agent/build-officer-telemetry-debug/officer-source-facts-tests.exe"
+Directory: <workspace>/review/panopticon-agent/build-officer-telemetry-debug
+"officer-source-facts-tests" start time: Oct 22 21:41 India Standard Time
+Output:
+----------------------------------------------------------
+source facts preservation tests passed
+<end of output>
+Test time =   0.28 sec
+----------------------------------------------------------
+Test Passed.
+"officer-source-facts-tests" end time: Oct 22 21:41 India Standard Time
+"officer-source-facts-tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+25/44 Testing: officer-source-supervisor-tests
+25/44 Test: officer-source-supervisor-tests
+Command: "<workspace>/review/panopticon-agent/build-officer-telemetry-debug/officer-source-supervisor-tests.exe"
+Directory: <workspace>/review/panopticon-agent/build-officer-telemetry-debug
+"officer-source-supervisor-tests" start time: Oct 22 21:41 India Standard Time
+Output:
+----------------------------------------------------------
+source supervision tests passed
+<end of output>
+Test time =   0.30 sec
+----------------------------------------------------------
+Test Passed.
+"officer-source-supervisor-tests" end time: Oct 22 21:41 India Standard Time
+"officer-source-supervisor-tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+26/44 Testing: officer-endpoint-tests
+26/44 Test: officer-endpoint-tests
+Command: "<workspace>/review/panopticon-agent/build-officer-telemetry-debug/officer-endpoint-tests.exe"
+Directory: <workspace>/review/panopticon-agent/build-officer-telemetry-debug
+"officer-endpoint-tests" start time: Oct 22 21:41 India Standard Time
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.22 sec
+----------------------------------------------------------
+Test Passed.
+"officer-endpoint-tests" end time: Oct 22 21:41 India Standard Time
+"officer-endpoint-tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+27/44 Testing: officer-journal-tests
+27/44 Test: officer-journal-tests
+Command: "<workspace>/review/panopticon-agent/build-officer-telemetry-debug/officer-journal-tests.exe"
+Directory: <workspace>/review/panopticon-agent/build-officer-telemetry-debug
+"officer-journal-tests" start time: Oct 22 21:41 India Standard Time
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   1.43 sec
+----------------------------------------------------------
+Test Passed.
+"officer-journal-tests" end time: Oct 22 21:41 India Standard Time
+"officer-journal-tests" time elapsed: 00:00:01
+----------------------------------------------------------
+
+28/44 Testing: officer-core-contract-tests
+28/44 Test: officer-core-contract-tests
+Command: "<workspace>/review/panopticon-agent/build-officer-telemetry-debug/officer-core-tests.exe"
+Directory: <workspace>/review/panopticon-agent/build-officer-telemetry-debug
+"officer-core-contract-tests" start time: Oct 22 21:41 India Standard Time
+Output:
+----------------------------------------------------------
+All Officer contract tests passed.
+<end of output>
+Test time =   0.20 sec
+----------------------------------------------------------
+Test Passed.
+"officer-core-contract-tests" end time: Oct 22 21:41 India Standard Time
+"officer-core-contract-tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+29/44 Testing: officer-defender-status-tests
+29/44 Test: officer-defender-status-tests
+Command: "<workspace>/review/panopticon-agent/build-officer-telemetry-debug/officer-defender-status-tests.exe"
+Directory: <workspace>/review/panopticon-agent/build-officer-telemetry-debug
+"officer-defender-status-tests" start time: Oct 22 21:41 India Standard Time
+Output:
+----------------------------------------------------------
+Defender typed properties, malformed data, copy bounds and COM ownership passed; native {"capture_entries_byte_limit":"655360","collection_deadline_enforced":false,"collector_version":"1.1","connect_max_wait_ms":"120000","consistency":"non_atomic","entries":[{"device_reference":null,"enumeration_index":"0","fields":{"AMEngineVersion":{"contract_group":"selected_base_and_object_path","error_domain":"HRESULT","expected_cim_type":"8","hresult_code":"0","property":"AMEngineVersion","property_availability":"reported","protection_verified":false,"query_completed_uptime_ms":"121324484","query_started_uptime_ms":"121324484","raw_scalar":null,"raw_text":"1.1.26090.9","reported_bstr_bytes":"22","reported_cim_type":"8","reported_utf16_units":"11","source":"IWbemClassObject::Get/MSFT_MpComputerStatus","state":"healthy","value":"1.1.26090.9","variant_clear_hresult_code":"0","variant_type":"8"},"AMProductVersion":{"contract_group":"selected_base_and_object_path","error_domain":"HRESULT","expected_cim_type":"8","hresult_code":"0","property":"AMProductVersion","property_availability":"reported","protection_verified":false,"query_completed_uptime_ms":"121324484","query_started_uptime_ms":"121324484","raw_scalar":null,"raw_text":"4.18.26090.9","reported_bstr_bytes":"24","reported_cim_type":"8","reported_utf16_units":"12","source":"IWbemClassObject::Get/MSFT_MpComputerStatus","state":"healthy","value":"4.18.26090.9","variant_clear_hresult_code":"0","variant_type":"8"},"AMRunningMode":{"contract_group":"modern_optional","error_domain":"HRESULT","expected_cim_type":"8","hresult_code":"0","property":"AMRunningMode","property_availability":"reported","protection_verified":false,"query_completed_uptime_ms":"121324484","query_started_uptime_ms":"121324484","raw_scalar":null,"raw_text":"Normal","reported_bstr_bytes":"12","reported_cim_type":"8","reported_mode":"Normal","reported_utf16_units":"6","source":"IWbemClassObject::Get/MSFT_MpComputerStatus","state":"healthy","value":"Normal","variant_clear_hresult_code":"0","variant_type":"8"},"AMServiceEnabled":{"contract_group":"selected_base_and_object_path","error_domain":"HRESULT","expected_cim_type":"11","hresult_code":"0","property":"AMServiceEnabled","property_availability":"reported","protection_verified":false,"query_completed_uptime_ms":"121324484","query_started_uptime_ms":"121324484","raw_scalar":"-1","reported_cim_type":"11","source":"IWbemClassObject::Get/MSFT_MpComputerStatus","state":"healthy","value":true,"variant_clear_hresult_code":"0","variant_type":"11"},"AMServiceVersion":{"contract_group":"selected_base_and_object_path","error_domain":"HRESULT","expected_cim_type":"8","hresult_code":"0","property":"AMServiceVersion","property_availability":"reported","protection_verified":false,"query_completed_uptime_ms":"121324484","query_started_uptime_ms":"121324484","raw_scalar":null,"raw_text":"4.18.26090.9","reported_bstr_bytes":"24","reported_cim_type":"8","reported_utf16_units":"12","source":"IWbemClassObject::Get/MSFT_MpComputerStatus","state":"healthy","value":"4.18.26090.9","variant_clear_hresult_code":"0","variant_type":"8"},"AntispywareEnabled":{"contract_group":"selected_base_and_object_path","error_domain":"HRESULT","expected_cim_type":"11","hresult_code":"0","property":"AntispywareEnabled","property_availability":"reported","protection_verified":false,"query_completed_uptime_ms":"121324484","query_started_uptime_ms":"121324484","raw_scalar":"-1","reported_cim_type":"11","source":"IWbemClassObject::Get/MSFT_MpComputerStatus","state":"healthy","value":true,"variant_clear_hresult_code":"0","variant_type":"11"},"AntispywareSignatureAge":{"contract_group":"selected_base_and_object_path","error_domain":"HRESULT","expected_cim_type":"19","hresult_code":"0","property":"AntispywareSignatureAge","property_availability":"reported","protection_verified":false,"query_completed_uptime_ms":"121324484","query_started_uptime_ms":"121324484","raw_scalar":"0","reported_cim_type":"19","source":"IWbemClassObject::Get/MSFT_MpComputerStatus","state":"healthy","value":"0","variant_clear_hresult_code":"0","variant_type":"3"},"AntispywareSignatureLastUpdated":{"contract_group":"selected_base_and_object_path","error_domain":"HRESULT","expected_cim_type":"101","hresult_code":"0","property":"AntispywareSignatureLastUpdated","property_availability":"reported","protection_verified":false,"query_completed_uptime_ms":"121324484","query_started_uptime_ms":"121324484","raw_scalar":null,"raw_text":"20261021233344.000000+000","reported_bstr_bytes":"50","reported_cim_type":"101","reported_utf16_units":"25","source":"IWbemClassObject::Get/MSFT_MpComputerStatus","state":"healthy","timestamp_normalized":false,"value":"20261021233344.000000+000","variant_clear_hresult_code":"0","variant_type":"8"},"AntispywareSignatureVersion":{"contract_group":"selected_base_and_object_path","error_domain":"HRESULT","expected_cim_type":"8","hresult_code":"0","property":"AntispywareSignatureVersion","property_availability":"reported","protection_verified":false,"query_completed_uptime_ms":"121324484","query_started_uptime_ms":"121324484","raw_scalar":null,"raw_text":"1.461.145.0","reported_bstr_bytes":"22","reported_cim_type":"8","reported_utf16_units":"11","source":"IWbemClassObject::Get/MSFT_MpComputerStatus","state":"healthy","value":"1.461.145.0","variant_clear_hresult_code":"0","variant_type":"8"},"AntivirusEnabled":{"contract_group":"selected_base_and_object_path","error_domain":"HRESULT","expected_cim_type":"11","hresult_code":"0","property":"AntivirusEnabled","property_availability":"reported","protection_verified":false,"query_completed_uptime_ms":"121324484","query_started_uptime_ms":"121324484","raw_scalar":"-1","reported_cim_type":"11","source":"IWbemClassObject::Get/MSFT_MpComputerStatus","state":"healthy","value":true,"variant_clear_hresult_code":"0","variant_type":"11"},"AntivirusSignatureAge":{"contract_group":"selected_base_and_object_path","error_domain":"HRESULT","expected_cim_type":"19","hresult_code":"0","property":"AntivirusSignatureAge","property_availability":"reported","protection_verified":false,"query_completed_uptime_ms":"121324484","query_started_uptime_ms":"121324484","raw_scalar":"0","reported_cim_type":"19","source":"IWbemClassObject::Get/MSFT_MpComputerStatus","state":"healthy","value":"0","variant_clear_hresult_code":"0","variant_type":"3"},"AntivirusSignatureLastUpdated":{"contract_group":"selected_base_and_object_path","error_domain":"HRESULT","expected_cim_type":"101","hresult_code":"0","property":"AntivirusSignatureLastUpdated","property_availability":"reported","protection_verified":false,"query_completed_uptime_ms":"121324484","query_started_uptime_ms":"121324484","raw_scalar":null,"raw_text":"20261021233344.000000+000","reported_bstr_bytes":"50","reported_cim_type":"101","reported_utf16_units":"25","source":"IWbemClassObject::Get/MSFT_MpComputerStatus","state":"healthy","timestamp_normalized":false,"value":"20261021233344.000000+000","variant_clear_hresult_code":"0","variant_type":"8"},"AntivirusSignatureVersion":{"contract_group":"selected_base_and_object_path","error_domain":"HRESULT","expected_cim_type":"8","hresult_code":"0","property":"AntivirusSignatureVersion","property_availability":"reported","protection_verified":false,"query_completed_uptime_ms":"121324484","query_started_uptime_ms":"121324484","raw_scalar":null,"raw_text":"1.461.145.0","reported_bstr_bytes":"22","reported_cim_type":"8","reported_utf16_units":"11","source":"IWbemClassObject::Get/MSFT_MpComputerStatus","state":"healthy","value":"1.461.145.0","variant_clear_hresult_code":"0","variant_type":"8"},"BehaviorMonitorEnabled":{"contract_group":"selected_base_and_object_path","error_domain":"HRESULT","expected_cim_type":"11","hresult_code":"0","property":"BehaviorMonitorEnabled","property_availability":"reported","protection_verified":false,"query_completed_uptime_ms":"121324484","query_started_uptime_ms":"121324484","raw_scalar":"-1","reported_cim_type":"11","source":"IWbemClassObject::Get/MSFT_MpComputerStatus","state":"healthy","value":true,"variant_clear_hresult_code":"0","variant_type":"11"},"ComputerID":{"contract_group":"selected_base_and_object_path","error_domain":"HRESULT","expected_cim_type":"8","hresult_code":"0","property":"ComputerID","property_availability":"reported","protection_verified":false,"query_completed_uptime_ms":"121324484","query_started_uptime_ms":"121324484","raw_scalar":null,"raw_text":"F00EB769-E20C-4AFB-ACEA-A8E629947E5F","reported_bstr_bytes":"72","reported_cim_type":"8","reported_utf16_units":"36","source":"IWbemClassObject::Get/MSFT_MpComputerStatus","state":"healthy","value":"F00EB769-E20C-4AFB-ACEA-A8E629947E5F","variant_clear_hresult_code":"0","variant_type":"8"},"ComputerState":{"contract_group":"selected_base_and_object_path","error_domain":"HRESULT","expected_cim_type":"19","hresult_code":"0","property":"ComputerState","property_availability":"reported","protection_verified":false,"query_completed_uptime_ms":"121324484","query_started_uptime_ms":"121324484","raw_scalar":"0","reported_cim_type":"19","source":"IWbemClassObject::Get/MSFT_MpComputerStatus","state":"healthy","value":"0","variant_clear_hresult_code":"0","variant_type":"3"},"FullScanAge":{"contract_group":"selected_base_and_object_path","error_domain":"HRESULT","expected_cim_type":"19","hresult_code":"0","property":"FullScanAge","property_availability":"reported","protection_verified":false,"query_completed_uptime_ms":"121324484","query_started_uptime_ms":"121324484","raw_scalar":"-1","reported_cim_type":"19","source":"IWbemClassObject::Get/MSFT_MpComputerStatus","state":"healthy","value":"4294967295","variant_clear_hresult_code":"0","variant_type":"3"},"FullScanEndTime":{"contract_group":"selected_base_and_object_path","error_domain":"HRESULT","expected_cim_type":"101","hresult_code":"0","property":"FullScanEndTime","property_availability":"reported","protection_verified":false,"query_completed_uptime_ms":"121324484","query_started_uptime_ms":"121324484","raw_scalar":null,"reported_cim_type":"101","source":"IWbemClassObject::Get/MSFT_MpComputerStatus","state":"degraded","validation_error":"variant_value_uninterpreted","value":null,"variant_clear_hresult_code":"0","variant_type":"1"},"FullScanStartTime":{"contract_group":"selected_base_and_object_path","error_domain":"HRESULT","expected_cim_type":"101","hresult_code":"0","property":"FullScanStartTime","property_availability":"reported","protection_verified":false,"query_completed_uptime_ms":"121324484","query_started_uptime_ms":"121324484","raw_scalar":null,"reported_cim_type":"101","source":"IWbemClassObject::Get/MSFT_MpComputerStatus","state":"degraded","validation_error":"variant_value_uninterpreted","value":null,"variant_clear_hresult_code":"0","variant_type":"1"},"IoavProtectionEnabled":{"contract_group":"selected_base_and_object_path","error_domain":"HRESULT","expected_cim_type":"11","hresult_code":"0","property":"IoavProtectionEnabled","property_availability":"reported","protection_verified":false,"query_completed_uptime_ms":"121324484","query_started_uptime_ms":"121324484","raw_scalar":"-1","reported_cim_type":"11","source":"IWbemClassObject::Get/MSFT_MpComputerStatus","state":"healthy","value":true,"variant_clear_hresult_code":"0","variant_type":"11"},"IsTamperProtected":{"contract_group":"modern_optional","error_domain":"HRESULT","expected_cim_type":"11","hresult_code":"0","property":"IsTamperProtected","property_availability":"reported","protection_verified":false,"query_completed_uptime_ms":"121324484","query_started_uptime_ms":"121324484","raw_scalar":"-1","reported_cim_type":"11","reported_tamper_state":"enabled","source":"IWbemClassObject::Get/MSFT_MpComputerStatus","state":"healthy","value":true,"variant_clear_hresult_code":"0","variant_type":"11"},"LastFullScanSource":{"contract_group":"selected_base_and_object_path","error_domain":"HRESULT","expected_cim_type":"17","hresult_code":"0","property":"LastFullScanSource","property_availability":"reported","protection_verified":false,"query_completed_uptime_ms":"121324484","query_started_uptime_ms":"121324484","raw_scalar":"0","reported_cim_type":"17","source":"IWbemClassObject::Get/MSFT_MpComputerStatus","state":"healthy","value":"0","variant_clear_hresult_code":"0","variant_type":"17"},"LastQuickScanSource":{"contract_group":"selected_base_and_object_path","error_domain":"HRESULT","expected_cim_type":"17","hresult_code":"0","property":"LastQuickScanSource","property_availability":"reported","protection_verified":false,"query_completed_uptime_ms":"121324484","query_started_uptime_ms":"121324484","raw_scalar":"2","reported_cim_type":"17","source":"IWbemClassObject::Get/MSFT_MpComputerStatus","state":"healthy","value":"2","variant_clear_hresult_code":"0","variant_type":"17"},"NISEnabled":{"contract_group":"selected_base_and_object_path","error_domain":"HRESULT","expected_cim_type":"11","hresult_code":"0","property":"NISEnabled","property_availability":"reported","protection_verified":false,"query_completed_uptime_ms":"121324484","query_started_uptime_ms":"121324484","raw_scalar":"-1","reported_cim_type":"11","source":"IWbemClassObject::Get/MSFT_MpComputerStatus","state":"healthy","value":true,"variant_clear_hresult_code":"0","variant_type":"11"},"NISEngineVersion":{"contract_group":"selected_base_and_object_path","error_domain":"HRESULT","expected_cim_type":"8","hresult_code":"0","property":"NISEngineVersion","property_availability":"reported","protection_verified":false,"query_completed_uptime_ms":"121324484","query_started_uptime_ms":"121324484","raw_scalar":null,"raw_text":"1.1.26090.9","reported_bstr_bytes":"22","reported_cim_type":"8","reported_utf16_units":"11","source":"IWbemClassObject::Get/MSFT_MpComputerStatus","state":"healthy","value":"1.1.26090.9","variant_clear_hresult_code":"0","variant_type":"8"},"NISSignatureAge":{"contract_group":"selected_base_and_object_path","error_domain":"HRESULT","expected_cim_type":"19","hresult_code":"0","property":"NISSignatureAge","property_availability":"reported","protection_verified":false,"query_completed_uptime_ms":"121324484","query_started_uptime_ms":"121324484","raw_scalar":"0","reported_cim_type":"19","source":"IWbemClassObject::Get/MSFT_MpComputerStatus","state":"healthy","value":"0","variant_clear_hresult_code":"0","variant_type":"3"},"NISSignatureLastUpdated":{"contract_group":"selected_base_and_object_path","error_domain":"HRESULT","expected_cim_type":"101","hresult_code":"0","property":"NISSignatureLastUpdated","property_availability":"reported","protection_verified":false,"query_completed_uptime_ms":"121324484","query_started_uptime_ms":"121324484","raw_scalar":null,"raw_text":"20261021233344.000000+000","reported_bstr_bytes":"50","reported_cim_type":"101","reported_utf16_units":"25","source":"IWbemClassObject::Get/MSFT_MpComputerStatus","state":"healthy","timestamp_normalized":false,"value":"20261021233344.000000+000","variant_clear_hresult_code":"0","variant_type":"8"},"NISSignatureVersion":{"contract_group":"selected_base_and_object_path","error_domain":"HRESULT","expected_cim_type":"8","hresult_code":"0","property":"NISSignatureVersion","property_availability":"reported","protection_verified":false,"query_completed_uptime_ms":"121324484","query_started_uptime_ms":"121324484","raw_scalar":null,"raw_text":"1.461.145.0","reported_bstr_bytes":"22","reported_cim_type":"8","reported_utf16_units":"11","source":"IWbemClassObject::Get/MSFT_MpComputerStatus","state":"healthy","value":"1.461.145.0","variant_clear_hresult_code":"0","variant_type":"8"},"OnAccessProtectionEnabled":{"contract_group":"selected_base_and_object_path","error_domain":"HRESULT","expected_cim_type":"11","hresult_code":"0","property":"OnAccessProtectionEnabled","property_availability":"reported","protection_verified":false,"query_completed_uptime_ms":"121324484","query_started_uptime_ms":"121324484","raw_scalar":"-1","reported_cim_type":"11","source":"IWbemClassObject::Get/MSFT_MpComputerStatus","state":"healthy","value":true,"variant_clear_hresult_code":"0","variant_type":"11"},"QuickScanAge":{"contract_group":"selected_base_and_object_path","error_domain":"HRESULT","expected_cim_type":"19","hresult_code":"0","property":"QuickScanAge","property_availability":"reported","protection_verified":false,"query_completed_uptime_ms":"121324484","query_started_uptime_ms":"121324484","raw_scalar":"0","reported_cim_type":"19","source":"IWbemClassObject::Get/MSFT_MpComputerStatus","state":"healthy","value":"0","variant_clear_hresult_code":"0","variant_type":"3"},"QuickScanEndTime":{"contract_group":"selected_base_and_object_path","error_domain":"HRESULT","expected_cim_type":"101","hresult_code":"0","property":"QuickScanEndTime","property_availability":"reported","protection_verified":false,"query_completed_uptime_ms":"121324484","query_started_uptime_ms":"121324484","raw_scalar":null,"raw_text":"20261021181651.519000+000","reported_bstr_bytes":"50","reported_cim_type":"101","reported_utf16_units":"25","source":"IWbemClassObject::Get/MSFT_MpComputerStatus","state":"healthy","timestamp_normalized":false,"value":"20261021181651.519000+000","variant_clear_hresult_code":"0","variant_type":"8"},"QuickScanStartTime":{"contract_group":"selected_base_and_object_path","error_domain":"HRESULT","expected_cim_type":"101","hresult_code":"0","property":"QuickScanStartTime","property_availability":"reported","protection_verified":false,"query_completed_uptime_ms":"121324484","query_started_uptime_ms":"121324484","raw_scalar":null,"raw_text":"20261021181304.483000+000","reported_bstr_bytes":"50","reported_cim_type":"101","reported_utf16_units":"25","source":"IWbemClassObject::Get/MSFT_MpComputerStatus","state":"healthy","timestamp_normalized":false,"value":"20261021181304.483000+000","variant_clear_hresult_code":"0","variant_type":"8"},"RealTimeProtectionEnabled":{"contract_group":"selected_base_and_object_path","error_domain":"HRESULT","expected_cim_type":"11","hresult_code":"0","property":"RealTimeProtectionEnabled","property_availability":"reported","protection_verified":false,"query_completed_uptime_ms":"121324484","query_started_uptime_ms":"121324484","raw_scalar":"-1","reported_cim_type":"11","source":"IWbemClassObject::Get/MSFT_MpComputerStatus","state":"healthy","value":true,"variant_clear_hresult_code":"0","variant_type":"11"},"RealTimeScanDirection":{"contract_group":"selected_base_and_object_path","error_domain":"HRESULT","expected_cim_type":"17","hresult_code":"0","property":"RealTimeScanDirection","property_availability":"reported","protection_verified":false,"query_completed_uptime_ms":"121324484","query_started_uptime_ms":"121324484","raw_scalar":"0","reported_cim_type":"17","source":"IWbemClassObject::Get/MSFT_MpComputerStatus","state":"healthy","value":"0","variant_clear_hresult_code":"0","variant_type":"17"},"TamperProtectionSource":{"contract_group":"modern_optional","error_domain":"HRESULT","expected_cim_type":"8","hresult_code":"0","policy_authority_verified":false,"property":"TamperProtectionSource","property_availability":"reported","protection_verified":false,"query_completed_uptime_ms":"121324484","query_started_uptime_ms":"121324484","raw_scalar":null,"raw_text":"Signatures","reported_bstr_bytes":"20","reported_cim_type":"8","reported_utf16_units":"10","source":"IWbemClassObject::Get/MSFT_MpComputerStatus","state":"healthy","value":"Signatures","variant_clear_hresult_code":"0","variant_type":"8"},"__RELPATH":{"contract_group":"selected_base_and_object_path","error_domain":"HRESULT","expected_cim_type":"8","hresult_code":"0","property":"__RELPATH","property_availability":"reported","protection_verified":false,"query_completed_uptime_ms":"121324484","query_started_uptime_ms":"121324484","raw_scalar":null,"raw_text":"MSFT_MpComputerStatus.ComputerID=\"F00EB769-E20C-4AFB-ACEA-A8E629947E5F\"","reported_bstr_bytes":"142","reported_cim_type":"8","reported_utf16_units":"71","source":"IWbemClassObject::Get/MSFT_MpComputerStatus","state":"healthy","value":"MSFT_MpComputerStatus.ComputerID=\"F00EB769-E20C-4AFB-ACEA-A8E629947E5F\"","variant_clear_hresult_code":"0","variant_type":"8"}},"process_reference":null,"product_reference":null,"state":"degraded"}],"enumeration_completed":true,"enumeration_timeout_ms":"1000","format":"defender_computer_status_v1","inventory_complete":false,"last_fetched":"0","modern_property_quality":{"AMRunningMode":{"degraded_captured_rows":"0","healthy_captured_rows":"1","missing_field_captured_rows":"0","protection_verified":false,"scope":"getter and interpretation quality in retained rows only; not complete inventory, effective protection or policy authority","state":"healthy","unavailable_captured_rows":"0"},"IsTamperProtected":{"degraded_captured_rows":"0","healthy_captured_rows":"1","missing_field_captured_rows":"0","protection_verified":false,"scope":"getter and interpretation quality in retained rows only; not complete inventory, effective protection or policy authority","state":"healthy","unavailable_captured_rows":"0"},"TamperProtectionSource":{"degraded_captured_rows":"0","healthy_captured_rows":"1","missing_field_captured_rows":"0","protection_verified":false,"scope":"getter and interpretation quality in retained rows only; not complete inventory, effective protection or policy authority","state":"healthy","unavailable_captured_rows":"0"}},"namespace":"Root\\Microsoft\\Windows\\Defender","native_allocation_bounded":false,"native_steps":[{"error_domain":"HRESULT","hresult_code":"0","query_completed_uptime_ms":"121323906","query_started_uptime_ms":"121323906","source":"CoInitializeEx"},{"error_domain":"HRESULT","hresult_code":"0","query_completed_uptime_ms":"121323921","query_started_uptime_ms":"121323906","source":"CoCreateInstance/WbemLocator"},{"error_domain":"HRESULT","hresult_code":"0","query_completed_uptime_ms":"121323953","query_started_uptime_ms":"121323921","source":"IWbemLocator::ConnectServer"},{"error_domain":"HRESULT","hresult_code":"0","query_completed_uptime_ms":"121323953","query_started_uptime_ms":"121323953","source":"CoSetProxyBlanket/IWbemServices"},{"error_domain":"HRESULT","hresult_code":"0","query_completed_uptime_ms":"121323953","query_started_uptime_ms":"121323953","source":"IWbemServices::ExecQuery"},{"error_domain":"HRESULT","hresult_code":"0","query_completed_uptime_ms":"121323953","query_started_uptime_ms":"121323953","source":"CoSetProxyBlanket/IEnumWbemClassObject"},{"error_domain":"HRESULT","hresult_code":"0","query_completed_uptime_ms":"121324484","query_started_uptime_ms":"121323953","source":"IEnumWbemClassObject::Next"},{"error_domain":"HRESULT","hresult_code":"1","query_completed_uptime_ms":"121324484","query_started_uptime_ms":"121324484","source":"IEnumWbemClassObject::Next"}],"protection_verified":false,"query":"SELECT * FROM MSFT_MpComputerStatus","query_summary":{"failed_getters":"0","scope":"queried objects including undelivered rows; not source event loss","successful_getters":"36","uninterpreted_results":"2"},"row_limit":"8","row_text_copy_byte_limit":"32768","scope":"caller-visible local Defender status properties; provider and timestamps unverified; no product/process/device lifetime or policy enforcement proof","selected_base_and_object_path_properties":"33","selected_modern_optional_properties":"3","state":"degraded"}
+<end of output>
+Test time =   0.79 sec
+----------------------------------------------------------
+Test Passed.
+"officer-defender-status-tests" end time: Oct 22 21:41 India Standard Time
+"officer-defender-status-tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+30/44 Testing: officer-security-center-tests
+30/44 Test: officer-security-center-tests
+Command: "<workspace>/review/panopticon-agent/build-officer-telemetry-debug/officer-security-center-tests.exe"
+Directory: <workspace>/review/panopticon-agent/build-officer-telemetry-debug
+"officer-security-center-tests" start time: Oct 22 21:41 India Standard Time
+Output:
+----------------------------------------------------------
+Security Center category HRESULT/fallback/sentinel queries passed; native {"failed_hresult_results":"0","other_success_hresult_results":"0","queries_not_attempted":"0","s_false_service_unavailable":"0","s_ok_results":"6","uninterpreted_outputs":"0"}
+<end of output>
+Test time =   0.17 sec
+----------------------------------------------------------
+Test Passed.
+"officer-security-center-tests" end time: Oct 22 21:41 India Standard Time
+"officer-security-center-tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+31/44 Testing: officer-state-freshness-tests
+31/44 Test: officer-state-freshness-tests
+Command: "<workspace>/review/panopticon-agent/build-officer-telemetry-debug/officer-state-freshness-tests.exe"
+Directory: <workspace>/review/panopticon-agent/build-officer-telemetry-debug
+"officer-state-freshness-tests" start time: Oct 22 21:41 India Standard Time
+Output:
+----------------------------------------------------------
+State capture age, stalled new collection, late commit, clock refusal and recovery passed
+<end of output>
+Test time =   0.43 sec
+----------------------------------------------------------
+Test Passed.
+"officer-state-freshness-tests" end time: Oct 22 21:41 India Standard Time
+"officer-state-freshness-tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+32/44 Testing: officer-firewall-rules-tests
+32/44 Test: officer-firewall-rules-tests
+Command: "<workspace>/review/panopticon-agent/build-officer-telemetry-debug/officer-firewall-rules-tests.exe"
+Directory: <workspace>/review/panopticon-agent/build-officer-telemetry-debug
+"officer-firewall-rules-tests" start time: Oct 22 21:41 India Standard Time
+Output:
+----------------------------------------------------------
+Firewall rule paging/refusal/byte bounds and read-only native enumeration passed: "576" rows
+<end of output>
+Test time =   4.42 sec
+----------------------------------------------------------
+Test Passed.
+"officer-firewall-rules-tests" end time: Oct 22 21:41 India Standard Time
+"officer-firewall-rules-tests" time elapsed: 00:00:04
+----------------------------------------------------------
+
+33/44 Testing: officer-firewall-profiles-tests
+33/44 Test: officer-firewall-profiles-tests
+Command: "<workspace>/review/panopticon-agent/build-officer-telemetry-debug/officer-firewall-profiles-tests.exe"
+Directory: <workspace>/review/panopticon-agent/build-officer-telemetry-debug
+"officer-firewall-profiles-tests" start time: Oct 22 21:41 India Standard Time
+Output:
+----------------------------------------------------------
+Firewall profile independent getter failures, raw output, masks, HRESULTs and actual read-only native capture passed
+<end of output>
+Test time =   0.48 sec
+----------------------------------------------------------
+Test Passed.
+"officer-firewall-profiles-tests" end time: Oct 22 21:41 India Standard Time
+"officer-firewall-profiles-tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+34/44 Testing: officer-diagnostic-output-tests
+34/44 Test: officer-diagnostic-output-tests
+Command: "<workspace>/review/panopticon-agent/build-officer-telemetry-debug/officer-diagnostic-output-tests.exe"
+Directory: <workspace>/review/panopticon-agent/build-officer-telemetry-debug
+"officer-diagnostic-output-tests" start time: Oct 22 21:41 India Standard Time
+Output:
+----------------------------------------------------------
+Owned unread pipe, cancellation, framing, handle ownership and failure accounting passed
+<end of output>
+Test time =   0.27 sec
+----------------------------------------------------------
+Test Passed.
+"officer-diagnostic-output-tests" end time: Oct 22 21:41 India Standard Time
+"officer-diagnostic-output-tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+35/44 Testing: officer-live-collector-decoder-tests
+35/44 Test: officer-live-collector-decoder-tests
+Command: "<workspace>/review/panopticon-agent/build-officer-telemetry-debug/officer-collector-tests.exe"
+Directory: <workspace>/review/panopticon-agent/build-officer-telemetry-debug
+"officer-live-collector-decoder-tests" start time: Oct 22 21:41 India Standard Time
+Output:
+----------------------------------------------------------
+All Officer Phase 2 collector tests passed.
+<end of output>
+Test time =   0.17 sec
+----------------------------------------------------------
+Test Passed.
+"officer-live-collector-decoder-tests" end time: Oct 22 21:41 India Standard Time
+"officer-live-collector-decoder-tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+36/44 Testing: officer-agent-cli-help
+36/44 Test: officer-agent-cli-help
+Command: "<workspace>/review/panopticon-agent/build-officer-telemetry-debug/officer-agent.exe" "--help"
+Directory: <workspace>/review/panopticon-agent/build-officer-telemetry-debug
+"officer-agent-cli-help" start time: Oct 22 21:41 India Standard Time
+Output:
+----------------------------------------------------------
+Usage: <workspace>/review/panopticon-agent/build-officer-telemetry-debug/officer-agent.exe [--service] [--source all|etw|sysmon] [--manager-url <https-url>] [--insecure-tls]
+       [--enable-response] [--identity-path <path>] [--bootstrap-token-path <path>]
+       [--file-collection-root <dir>] [--quarantine-root <dir>] [--forensic-store-root <dir>]
+       [--manager-exception-host <numeric-ip>] [--manager-exception-port <tcp-port>]
+  --source                  Select live collectors (default: all).
+  --manager-url             Also deliver events to a Panopticon manager over HTTPS.
+                            Stdout output is unaffected either way.
+  --insecure-tls            Skip TLS certificate validation for telemetry delivery
+                            only (bring-up only). Never applies to the response
+                            (command polling/execution) path, which always verifies.
+  --enable-response         Opt in to polling the Manager for commands and executing
+                            them (requires --manager-url). Off by default.
+  --identity-path           Where to load/store this agent's enrolled identity.
+  --spool-directory         Protected durable record directory, including offline capture.
+  --fim-root                Explicit absolute directory for FIM (repeat up to 8); disabled without roots.
+  --bootstrap-token-path    One-shot enrollment token file, read only if
+                            --identity-path does not yet exist.
+  --file-collection-root    Allow-listed root for COLLECT_FILE/QUARANTINE_FILE.
+  --quarantine-root         Destination root for QUARANTINE_FILE.
+  --forensic-store-root     Encrypted local store for ACQUIRE_FILE; key is DPAPI-protected.
+  --manager-exception-host  One unscoped numeric IPv4/IPv6 manager address.
+  --manager-exception-port  TCP port permitted to that manager address.
+Run elevated and press Ctrl+C to stop cleanly.
+<end of output>
+Test time =   0.22 sec
+----------------------------------------------------------
+Test Passed.
+"officer-agent-cli-help" end time: Oct 22 21:41 India Standard Time
+"officer-agent-cli-help" time elapsed: 00:00:00
+----------------------------------------------------------
+
+37/44 Testing: officer-delivery-tests
+37/44 Test: officer-delivery-tests
+Command: "<workspace>/review/panopticon-agent/build-officer-telemetry-debug/officer-delivery-tests.exe"
+Directory: <workspace>/review/panopticon-agent/build-officer-telemetry-debug
+"officer-delivery-tests" start time: Oct 22 21:41 India Standard Time
+Output:
+----------------------------------------------------------
+All Officer delivery tests passed.
+<end of output>
+Test time =   6.34 sec
+----------------------------------------------------------
+Test Passed.
+"officer-delivery-tests" end time: Oct 22 21:41 India Standard Time
+"officer-delivery-tests" time elapsed: 00:00:06
+----------------------------------------------------------
+
+38/44 Testing: officer-spool-tests
+38/44 Test: officer-spool-tests
+Command: "<workspace>/review/panopticon-agent/build-officer-telemetry-debug/officer-spool-tests.exe"
+Directory: <workspace>/review/panopticon-agent/build-officer-telemetry-debug
+"officer-spool-tests" start time: Oct 22 21:41 India Standard Time
+Output:
+----------------------------------------------------------
+[spool] record permanently undeliverable after 2 attempts, dropping (batch_id=batch-1)
+[spool] record permanently undeliverable after 1 attempts, dropping (batch_id=batch-1)
+[spool] corrupt record at segment=1 offset=0, quarantined
+[spool] quota exceeded, evicting segment 1 (undelivered telemetry lost)
+[spool] quota exceeded, evicting segment 2 (undelivered telemetry lost)
+[spool] quota exceeded, evicting segment 3 (undelivered telemetry lost)
+[spool] quota exceeded, evicting segment 4 (undelivered telemetry lost)
+[spool] quota exceeded, evicting segment 5 (undelivered telemetry lost)
+[spool] quota exceeded, evicting segment 6 (undelivered telemetry lost)
+[spool] quota exceeded, evicting segment 7 (undelivered telemetry lost)
+[spool] quota exceeded, evicting segment 8 (undelivered telemetry lost)
+[spool] quota exceeded, evicting segment 9 (undelivered telemetry lost)
+[spool] quota exceeded, evicting segment 10 (undelivered telemetry lost)
+[spool] quota exceeded, evicting segment 11 (undelivered telemetry lost)
+[spool] quota exceeded, evicting segment 12 (undelivered telemetry lost)
+[spool] quota exceeded, evicting segment 13 (undelivered telemetry lost)
+[spool] quota exceeded, evicting segment 14 (undelivered telemetry lost)
+[spool] quota exceeded, evicting segment 15 (undelivered telemetry lost)
+[spool] quota exceeded, evicting segment 16 (undelivered telemetry lost)
+[spool] quota exceeded, evicting segment 17 (undelivered telemetry lost)
+[spool] quota exceeded, evicting segment 18 (undelivered telemetry lost)
+All Officer spool tests passed.
+<end of output>
+Test time =   0.51 sec
+----------------------------------------------------------
+Test Passed.
+"officer-spool-tests" end time: Oct 22 21:41 India Standard Time
+"officer-spool-tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+39/44 Testing: officer-response-tests
+39/44 Test: officer-response-tests
+Command: "<workspace>/review/panopticon-agent/build-officer-telemetry-debug/officer-response-tests.exe"
+Directory: <workspace>/review/panopticon-agent/build-officer-telemetry-debug
+"officer-response-tests" start time: Oct 22 21:41 India Standard Time
+Output:
+----------------------------------------------------------
+All Officer response tests passed.
+<end of output>
+Test time =   0.36 sec
+----------------------------------------------------------
+Test Passed.
+"officer-response-tests" end time: Oct 22 21:41 India Standard Time
+"officer-response-tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+40/44 Testing: officer-keypair-tests
+40/44 Test: officer-keypair-tests
+Command: "<workspace>/review/panopticon-agent/build-officer-telemetry-debug/officer-keypair-tests.exe"
+Directory: <workspace>/review/panopticon-agent/build-officer-telemetry-debug
+"officer-keypair-tests" start time: Oct 22 21:41 India Standard Time
+Output:
+----------------------------------------------------------
+All Officer keypair tests passed.
+<end of output>
+Test time =   0.23 sec
+----------------------------------------------------------
+Test Passed.
+"officer-keypair-tests" end time: Oct 22 21:41 India Standard Time
+"officer-keypair-tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+41/44 Testing: officer-query-parser-tests
+41/44 Test: officer-query-parser-tests
+Command: "<workspace>/review/panopticon-agent/build-officer-telemetry-debug/tools/query/officer-tests.exe"
+Directory: <workspace>/review/panopticon-agent/build-officer-telemetry-debug/tools/query
+"officer-query-parser-tests" start time: Oct 22 21:41 India Standard Time
+Output:
+----------------------------------------------------------
+All parser tests passed.
+<end of output>
+Test time =   0.15 sec
+----------------------------------------------------------
+Test Passed.
+"officer-query-parser-tests" end time: Oct 22 21:41 India Standard Time
+"officer-query-parser-tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+42/44 Testing: officer-query-cli-help
+42/44 Test: officer-query-cli-help
+Command: "<workspace>/review/panopticon-agent/build-officer-telemetry-debug/tools/query/officer-query.exe" "--help"
+Directory: <workspace>/review/panopticon-agent/build-officer-telemetry-debug/tools/query
+"officer-query-cli-help" start time: Oct 22 21:41 India Standard Time
+Output:
+----------------------------------------------------------
+Usage: <workspace>/review/panopticon-agent/build-officer-telemetry-debug/tools/query/officer-query.exe [--limit N] [--event-id N] [--format json|xml] [--output FILE]
+  --limit N     Read 1 to 1000 newest records (default: 20).
+  --event-id N  Sysmon ID: 1, 3, 11, 12, 13, or 14 (default: 1).
+  --format      Output json (default) or raw xml.
+  --output      Also write the same output to FILE.
+<end of output>
+Test time =   0.15 sec
+----------------------------------------------------------
+Test Passed.
+"officer-query-cli-help" end time: Oct 22 21:41 India Standard Time
+"officer-query-cli-help" time elapsed: 00:00:00
+----------------------------------------------------------
+
+43/44 Testing: officer-query-cli-invalid-limit
+43/44 Test: officer-query-cli-invalid-limit
+Command: "<workspace>/review/panopticon-agent/build-officer-telemetry-debug/tools/query/officer-query.exe" "--limit" "0"
+Directory: <workspace>/review/panopticon-agent/build-officer-telemetry-debug/tools/query
+"officer-query-cli-invalid-limit" start time: Oct 22 21:41 India Standard Time
+Output:
+----------------------------------------------------------
+Invalid --limit value: 0
+Usage: <workspace>/review/panopticon-agent/build-officer-telemetry-debug/tools/query/officer-query.exe [--limit N] [--event-id N] [--format json|xml] [--output FILE]
+  --limit N     Read 1 to 1000 newest records (default: 20).
+  --event-id N  Sysmon ID: 1, 3, 11, 12, 13, or 14 (default: 1).
+  --format      Output json (default) or raw xml.
+  --output      Also write the same output to FILE.
+<end of output>
+Test time =   0.05 sec
+----------------------------------------------------------
+Test Passed.
+"officer-query-cli-invalid-limit" end time: Oct 22 21:41 India Standard Time
+"officer-query-cli-invalid-limit" time elapsed: 00:00:00
+----------------------------------------------------------
+
+44/44 Testing: officer-query-cli-invalid-event-id
+44/44 Test: officer-query-cli-invalid-event-id
+Command: "<workspace>/review/panopticon-agent/build-officer-telemetry-debug/tools/query/officer-query.exe" "--event-id" "999"
+Directory: <workspace>/review/panopticon-agent/build-officer-telemetry-debug/tools/query
+"officer-query-cli-invalid-event-id" start time: Oct 22 21:41 India Standard Time
+Output:
+----------------------------------------------------------
+Unsupported --event-id value: 999
+Usage: <workspace>/review/panopticon-agent/build-officer-telemetry-debug/tools/query/officer-query.exe [--limit N] [--event-id N] [--format json|xml] [--output FILE]
+  --limit N     Read 1 to 1000 newest records (default: 20).
+  --event-id N  Sysmon ID: 1, 3, 11, 12, 13, or 14 (default: 1).
+  --format      Output json (default) or raw xml.
+  --output      Also write the same output to FILE.
+<end of output>
+Test time =   0.05 sec
+----------------------------------------------------------
+Test Passed.
+"officer-query-cli-invalid-event-id" end time: Oct 22 21:41 India Standard Time
+"officer-query-cli-invalid-event-id" time elapsed: 00:00:00
+----------------------------------------------------------
+
+End testing: Oct 22 21:41 India Standard Time

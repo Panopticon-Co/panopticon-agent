@@ -2,6 +2,28 @@
 
 Updated: 2026-10-22
 
+## Telemetry-context continuation checkpoint
+
+Branch `codex/windows-telemetry`, [PR 5](https://github.com/Panopticon-Co/panopticon-agent/pull/5):
+source candidate `5501139` repairs native build failures and false Event Log bookmark
+resets from sparse record IDs; adds nine source-spelled EID1 context fields through
+canonical source facts, bounded queue accounting and encrypted-journal recovery.
+Fresh native Windows x64 Debug and Release builds pass 44/44 tests each; both initial
+GitHub CI jobs pass. A repeatable elevated live Sysmon probe also passes, comparing
+all nine new fields with native EID1 XML and verifying exact journal recovery.
+See [validation](VALIDATION.md) and
+[feature parity](FEATURE_FIELD_PARITY.md) for scoped evidence and consumer work.
+
+Unelevated Sysmon access is denied on this host. Normal UAC elevation allowed the
+live probe without changing channel permissions. The synthetic fixture remains
+explicitly separate from real captured evidence. No dedicated-VM, Manager acceptance
+or model parity is claimed. The existing lab-service-ledger branch and
+running agent were preserved. Remaining work includes exact ETW/Sysmon alias binding,
+canonical EID8/10/22, durable 4104 attribution, USN rediscovery, RDP/WinRM and the rest
+of the approved plan. Later source-only/runtime claims below remain historical;
+the latest validation entry supersedes only their build/component-test status for
+this named candidate, not full capability qualification.
+
 This handoff is for the next engineer continuing the Windows endpoint mission. The approved source plan is preserved verbatim in [FULL_SURFACE_ENGINEERING_PLAN.md](FULL_SURFACE_ENGINEERING_PLAN.md). The implementation remains incomplete; this handoff does not change the plan's A–AN scope or Definition of Done.
 
 ## Read these first

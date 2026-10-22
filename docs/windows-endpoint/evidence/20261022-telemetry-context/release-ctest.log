@@ -1,0 +1,93 @@
+Test project <workspace>/review/panopticon-agent/build-officer-telemetry-release
+      Start  1: officer-process-graph-tests
+ 1/44 Test  #1: officer-process-graph-tests ............   Passed    0.66 sec
+      Start  2: officer-device-guard-tests
+ 2/44 Test  #2: officer-device-guard-tests .............   Passed    0.27 sec
+      Start  3: officer-process-lifecycle-tests
+ 3/44 Test  #3: officer-process-lifecycle-tests ........   Passed    0.11 sec
+      Start  4: officer-service-host-tests
+ 4/44 Test  #4: officer-service-host-tests .............   Passed    0.10 sec
+      Start  5: officer-software-inventory-tests
+ 5/44 Test  #5: officer-software-inventory-tests .......   Passed    0.42 sec
+      Start  6: officer-identity-inventory-tests
+ 6/44 Test  #6: officer-identity-inventory-tests .......   Passed    0.22 sec
+      Start  7: officer-registry-persistence-tests
+ 7/44 Test  #7: officer-registry-persistence-tests .....   Passed    0.48 sec
+      Start  8: officer-persistence-inventory-tests
+ 8/44 Test  #8: officer-persistence-inventory-tests ....   Passed    1.64 sec
+      Start  9: officer-windows-event-log-tests
+ 9/44 Test  #9: officer-windows-event-log-tests ........   Passed    4.90 sec
+      Start 10: officer-ip-interface-inventory-tests
+10/44 Test #10: officer-ip-interface-inventory-tests ...   Passed    2.05 sec
+      Start 11: officer-route-inventory-tests
+11/44 Test #11: officer-route-inventory-tests ..........   Passed    1.02 sec
+      Start 12: officer-socket-inventory-tests
+12/44 Test #12: officer-socket-inventory-tests .........   Passed    1.52 sec
+      Start 13: officer-driver-inventory-tests
+13/44 Test #13: officer-driver-inventory-tests .........   Passed    0.30 sec
+      Start 14: officer-service-inventory-tests
+14/44 Test #14: officer-service-inventory-tests ........   Passed    2.09 sec
+      Start 15: officer-process-inventory-tests
+15/44 Test #15: officer-process-inventory-tests ........   Passed    2.31 sec
+      Start 16: officer-module-inventory-tests
+16/44 Test #16: officer-module-inventory-tests .........   Passed    0.21 sec
+      Start 17: officer-memory-inventory-tests
+17/44 Test #17: officer-memory-inventory-tests .........   Passed    0.26 sec
+      Start 18: officer-thread-inventory-tests
+18/44 Test #18: officer-thread-inventory-tests .........   Passed    1.62 sec
+      Start 19: officer-usn-journal-tests
+19/44 Test #19: officer-usn-journal-tests ..............   Passed    0.17 sec
+      Start 20: officer-raw-handoff-tests
+20/44 Test #20: officer-raw-handoff-tests ..............   Passed    0.74 sec
+      Start 21: officer-response-runtime-tests
+21/44 Test #21: officer-response-runtime-tests .........   Passed    0.32 sec
+      Start 22: officer-process-action-tests
+22/44 Test #22: officer-process-action-tests ...........   Passed    0.15 sec
+      Start 23: officer-host-inventory-tests
+23/44 Test #23: officer-host-inventory-tests ...........   Passed    0.15 sec
+      Start 24: officer-source-facts-tests
+24/44 Test #24: officer-source-facts-tests .............   Passed    0.26 sec
+      Start 25: officer-source-supervisor-tests
+25/44 Test #25: officer-source-supervisor-tests ........   Passed    1.27 sec
+      Start 26: officer-endpoint-tests
+26/44 Test #26: officer-endpoint-tests .................   Passed    0.16 sec
+      Start 27: officer-journal-tests
+27/44 Test #27: officer-journal-tests ..................   Passed    1.47 sec
+      Start 28: officer-core-contract-tests
+28/44 Test #28: officer-core-contract-tests ............   Passed    0.23 sec
+      Start 29: officer-defender-status-tests
+29/44 Test #29: officer-defender-status-tests ..........   Passed    0.80 sec
+      Start 30: officer-security-center-tests
+30/44 Test #30: officer-security-center-tests ..........   Passed    1.31 sec
+      Start 31: officer-state-freshness-tests
+31/44 Test #31: officer-state-freshness-tests ..........   Passed    1.17 sec
+      Start 32: officer-firewall-rules-tests
+32/44 Test #32: officer-firewall-rules-tests ...........   Passed    0.46 sec
+      Start 33: officer-firewall-profiles-tests
+33/44 Test #33: officer-firewall-profiles-tests ........   Passed    0.16 sec
+      Start 34: officer-diagnostic-output-tests
+34/44 Test #34: officer-diagnostic-output-tests ........   Passed    0.27 sec
+      Start 35: officer-live-collector-decoder-tests
+35/44 Test #35: officer-live-collector-decoder-tests ...   Passed    0.17 sec
+      Start 36: officer-agent-cli-help
+36/44 Test #36: officer-agent-cli-help .................   Passed    0.14 sec
+      Start 37: officer-delivery-tests
+37/44 Test #37: officer-delivery-tests .................   Passed    6.35 sec
+      Start 38: officer-spool-tests
+38/44 Test #38: officer-spool-tests ....................   Passed    0.38 sec
+      Start 39: officer-response-tests
+39/44 Test #39: officer-response-tests .................   Passed    0.18 sec
+      Start 40: officer-keypair-tests
+40/44 Test #40: officer-keypair-tests ..................   Passed    0.16 sec
+      Start 41: officer-query-parser-tests
+41/44 Test #41: officer-query-parser-tests .............   Passed    0.14 sec
+      Start 42: officer-query-cli-help
+42/44 Test #42: officer-query-cli-help .................   Passed    0.13 sec
+      Start 43: officer-query-cli-invalid-limit
+43/44 Test #43: officer-query-cli-invalid-limit ........   Passed    0.03 sec
+      Start 44: officer-query-cli-invalid-event-id
+44/44 Test #44: officer-query-cli-invalid-event-id .....   Passed    0.03 sec
+
+100% tests passed, 0 tests failed out of 44
+
+Total Test time (real) =  52.44 sec

@@ -221,7 +221,7 @@ Json secure_boot_firmware_variable(const Json& registry_report, const Json& firm
         firmware_report["value"].contains("type_value");
     const auto firmware_type_value = firmware_type_ok ? firmware_report["value"]["type_value"].get<int>() : static_cast<int>(FirmwareTypeUnknown);
     const auto firmware_type = static_cast<FIRMWARE_TYPE>(firmware_type_value);
-    Json result{{"state", "unavailable"}, {"source", "GetFirmwareEnvironmentVariableExW"},
+    Json result{{"state", "unavailable"}, {"value", nullptr}, {"source", "GetFirmwareEnvironmentVariableExW"},
         {"variable_name", "SecureBoot"}, {"vendor_guid", "{8BE4DF61-93CA-11D2-AA0D-00E098032B8C}"},
         {"firmware_type", firmware_type_ok ? firmware_report["value"]["type"] : Json(nullptr)},
         {"firmware_type_value", firmware_type_ok ? Json(firmware_type_value) : Json(nullptr)},
@@ -281,6 +281,7 @@ Json secure_boot_firmware_variable(const Json& registry_report, const Json& firm
     }
     result["state"] = "healthy";
     result["secure_boot_enabled"] = value == 1;
+    result["value"] = value == 1;
     result["reason"] = "UEFI variable query succeeded; reports firmware variable value only and is not attestation";
     if (registry_report.value("state", std::string{}) == "healthy" && registry_report.contains("value") && registry_report["value"].is_number_unsigned()) {
         const auto registry_value = registry_report["value"].get<std::uint64_t>();
