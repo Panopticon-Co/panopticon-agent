@@ -9,6 +9,8 @@
 #include <string>
 #include <string_view>
 #include <variant>
+#include <vector>
+#include <utility>
 
 namespace panopticon::officer::telemetry {
 
@@ -149,6 +151,28 @@ struct RawImageLoadEvent {
     bool operator==(const RawImageLoadEvent&) const = default;
 };
 
+// Windows-specific canonical families; never serialized as legacy schema 0.4.
+// Source fields preserve exact decoded spelling/text within the XML admission cap.
+struct RawSysmonExtendedEvent {
+    SourceProvenance source;
+    UtcTimestamp timestamp;
+    RawProcessContext process;
+    std::uint16_t event_id = 0; // closed set: 8, 10, 22
+    std::string event_time_field;
+    std::optional<RawProcessContext> target;
+    std::optional<std::uint64_t> granted_access;
+    std::optional<std::uint64_t> start_address;
+    std::optional<std::uint32_t> new_thread_id;
+    std::optional<std::uint32_t> query_status;
+    std::optional<std::string> call_trace;
+    std::optional<std::string> start_module;
+    std::optional<std::string> start_function;
+    std::optional<std::string> query_name;
+    std::optional<std::string> query_results;
+    std::vector<std::pair<std::string, std::string>> source_fields;
+    bool operator==(const RawSysmonExtendedEvent&) const = default;
+};
+
 // New raw event types are added to this variant without changing collector
 // ownership or downstream sink interfaces.
 using RawEvent = std::variant<
@@ -156,6 +180,7 @@ using RawEvent = std::variant<
     RawNetworkEvent,
     RawFileEvent,
     RawRegistryEvent,
-    RawImageLoadEvent>;
+    RawImageLoadEvent,
+    RawSysmonExtendedEvent>;
 
 }  // namespace panopticon::officer::telemetry

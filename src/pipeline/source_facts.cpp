@@ -128,6 +128,14 @@ Json source_facts(const telemetry::RawEvent& raw) {
                 result["family"] = "image_load";
                 result["image"] = {{"path", text(event.path)}, {"is_signed", event.is_signed ? Json(*event.is_signed) : Json(nullptr)},
                     {"signature_status", text(event.signature_status)}, {"sha256", text(event.sha256)}};
+            } else if constexpr (std::is_same_v<Event, telemetry::RawSysmonExtendedEvent>) {
+                result["family"] = event.event_id == 22 ? "dns" : event.event_id == 10 ? "process_access" : "remote_thread";
+                result["event_id"] = event.event_id;
+                result["event_time_field"] = event.event_time_field;
+                result["target"] = event.target ? context(*event.target) : Json(nullptr);
+                Json fields = Json::object();
+                for (const auto& [name, value] : event.source_fields) fields[name] = lossless_text(value);
+                result["windows_event_data"] = std::move(fields);
             }
         }
         return result;

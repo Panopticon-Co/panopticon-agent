@@ -40,3 +40,20 @@ output. The script uses a process-local execution-policy option, not a machine p
 change. Envelope identity is probe-local, not production enrollment or a verified
 ETW/Sysmon native-instance alias. A successful single-event capture does not qualify
 capture recall, all Sysmon families, VM compatibility or Manager/ML integration.
+
+## Interactions and DNS
+
+Build `officer-sysmon-extended-live-probe` and invoke
+`run_sysmon_extended_live_probe.ps1` with the same four arguments/UAC pattern.
+It creates a child copy of itself, opens a read-only query handle, starts one
+thread at the child's existing system `ExitThread` export, and queries
+`www.example.com` through DNS. It performs no remote writes or executable
+allocations and only terminates its own retained child on cleanup.
+
+The collector captures EIDs 8/10/22 for this probe/child, canonicalizes them,
+reopens its encrypted journal, and saves all captured originals. The script
+independently compares every EventData field against the exact native record ID
+and checks channel permissions/enablement. `status: incomplete` and exit 3 mean
+one or more families were not captured under the existing installed policy;
+captured families still receive independent XML checks. Missing events are not
+declared successful. No Sysmon/service configuration changes are made.
