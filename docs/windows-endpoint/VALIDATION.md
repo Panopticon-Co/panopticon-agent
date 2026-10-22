@@ -37,7 +37,10 @@ New regressions cover EID1 XML through canonical source facts, missing/duplicate
 fields, EID5 exclusion, exact logon/time text without invented native ticks, all
 extended string capacities at queue admission, embedded NUL/invalid UTF-8 handling,
 and byte-identical protocol-2 encrypted-journal recovery after reopen.
-Release and remote CI results are pending at this checkpoint.
+Release: fresh configure/build succeeded; **44/44 CTest cases passed**, 52.44 seconds.
+Both Debug and Release also passed [GitHub CI run 39812485546](https://github.com/Panopticon-Co/panopticon-agent/actions/runs/39812485546)
+at documentation head `3d3148d`, with unchanged production code. The explicit live
+probe is added by `9eb3cce`/`6e5b895`; it is not an automatic privileged CTest.
 
 Evidence: [Debug summary](evidence/20261022-telemetry-context/debug-ctest.log),
 [full test output](evidence/20261022-telemetry-context/debug-test-output.log),
@@ -45,11 +48,30 @@ Evidence: [Debug summary](evidence/20261022-telemetry-context/debug-ctest.log),
 [pinned schema](evidence/20261022-telemetry-context/endpoint-record-1.0.schema.json).
 The synthetic record validates with Draft202012Validator against contracts snapshot
 `1d96f731a80ea57c1d610bd6ee4523889714c3b8`, not contracts master. Its SHA-256 is
-`624BF85EEEB36FF7057CCF1E2EE0275D4B9B730EBC71EB1B138C5FBD804F9E55`.
-Logs replace the workspace prefix with `<workspace>`; output is otherwise retained.
+`EDC17457C9E5DC9D3974DC4AEBF1DAC2A4D19AD659601B0F6AB91BE475548C43`.
+Logs replace the workspace prefix with `<workspace>`; evidence text uses LF line endings.
 
-Not proved: live Sysmon (Operational channel unavailable to this session), ETW/Sysmon
-exact alias binding, live process field availability, full capture recall, auth joins,
+Live Sysmon **verified** with normal UAC elevation: the repeatable validation script
+checks read access, subscribes using the native `SysmonEventCollector`, creates one
+owned benign marked cmd.exe process, captures canonical output, and independently
+reads the same native EID1 XML. Final run at 2026-10-22 16:38:03–16:38:04 UTC captures
+record **663335**, owned PID **25608**, and compares all nine added source fields
+exactly. IntegrityLevel is `High`; OriginalFileName is `Cmd.Exe`. The canonical
+record survives encrypted journal reopen byte-for-byte and passes the pinned JSON
+schema with format checking. The script confirms channel ACL/enablement unchanged.
+The earlier inaccessible-channel statement was an access limitation of the
+unelevated session, not proof that Sysmon was absent or disabled.
+
+Raw XML, full canonical output, report and encrypted journal remain in the workspace
+at `output/sysmon-live-20261022-220803-62342f40`; see the
+[live manifest](evidence/20261022-telemetry-context/live-capture-manifest.json) and
+[safe summary](evidence/20261022-telemetry-context/live-capture-summary.json).
+The manifest pins the probe binary/source commit and raw artifact SHA-256 values.
+Full command/account/path values remain local. Envelope identity is probe-local,
+not a production enrollment. Repeat with
+`tools/validation/run_sysmon_live_probe.ps1`; it never changes channel permissions.
+
+Not proved: ETW/Sysmon exact alias binding, full capture recall, auth joins,
 EID8/10/22 canonical coverage, dedicated-VM behavior, fleet/chaos/soak qualification,
 Manager acceptance or engine train/serve parity. No model/engine code changed.
 See [feature parity](FEATURE_FIELD_PARITY.md) for consumer requirements. The A–AN

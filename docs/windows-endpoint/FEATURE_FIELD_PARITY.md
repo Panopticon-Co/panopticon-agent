@@ -25,8 +25,9 @@ bounds, large-record admission and per-field truncation policy remain broader wo
 this increment does not silently truncate or zero-fill.
 
 Paths in this table are relative to `data.source_facts`. "Retained" means implemented
-here; component results are recorded in `VALIDATION.md`. Live Sysmon availability is
-unverified: its Operational channel was unavailable to this development session.
+here; component results are recorded in `VALIDATION.md`. An elevated live EID1 probe
+now verifies all nine fields against the exact native XML and durable canonical
+recovery. Earlier unelevated access was denied; channel permissions were not changed.
 
 | Canonical field | Windows source(s) | Sysmon/OTRF field name | Unavailable reasons | Status |
 |---|---|---|---|---|
@@ -67,4 +68,5 @@ unverified: its Operational channel was unavailable to this development session.
 
 Check installed-version availability against real output and
 [Microsoft's Sysmon documentation](https://learn.microsoft.com/en-us/sysinternals/downloads/sysmon).
-No live-Sysmon, dedicated-VM, Manager acceptance or train/serve qualification is claimed.
+Live verification covers the owned benign EID1 scenario on this development host.
+Dedicated-VM, Manager acceptance, capture recall and train/serve qualification remain open.
