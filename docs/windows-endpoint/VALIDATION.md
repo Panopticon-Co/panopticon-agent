@@ -1,5 +1,66 @@
 # Windows endpoint validation ledger
 
+Extended native registry persistence wave, 2026-10-22: four independent raw
+registry mechanism workers now capture selected Active Setup, image-execution
+(IFEO/filter/SilentProcessExit/Session Manager/AppCert), COM CLSID/AppID activation
+configuration and StartupApproved state. Explicit view, raw type/bytes, refusal,
+subkey-prefix bounds and independent committed freshness are integrated. Worker
+array length derives from source counts, and persistence-domain health includes
+all eight relevant state sources. These are configuration observations, not
+execution, actor, effective authorization or complete persistence coverage.
+
+Fresh Release main-target build and consolidated CTest pass: 44/44 tests,
+26.20 seconds. New `officer-registry-persistence-tests` passes (0.22 seconds)
+against an owned inert HKCU scratch namespace, without installing actual COM,
+autorun or execution-hook configuration. It verifies native layouts, selected
+raw values and views, branch truncation, consumer refusal and domain freshness.
+The expanded persistence component emits all seven source page/manifest sets.
+Python validation tools compile and the guest script passes PowerShell AST parsing.
+
+A 20-second non-elevated Windows host runtime followed by abrupt owned-process
+exit retains 7,529 canonical originals, each passing Schema 1.0. Its seven
+persistence manifests assemble exactly and bind committed fresh health. Two
+separate journal readbacks have identical SHA-256
+`ab582d2313f925121e39266d684c5f2be6dc4a1e51ace557c04a65ed88fc772f`.
+Runtime counts: Active Setup 579 rows; image execution 1,382 rows with four
+native query failures; COM activation 10,084 rows with explicit branch-prefix
+truncation; StartupApproved 151 rows; original startup 104 rows with four query
+failures; tasks 371 rows; WMI nine rows. Native traversal/domain qualification
+is not inferred from page assembly. Component fixture emits 811 schema-valid
+records. Private local evidence:
+`demo-run/registry-persistence/persistence-runtime-2ecaaff6bfbf4b47b2bc1f8e9e25224e/report.json`.
+
+The same retained originals independently prove distinct current thread,
+memory-region and module capture assemblies. Thread capture retains 5,527 rows
+and 2,524 native query failures. Module and memory captures each retain eight
+access-denied open refusals for the initial rotating PID candidates; their
+states are unavailable. This run proves refusal/durable routing, not successful
+module or memory metadata on those targets. Supplemental report:
+`worker-routing-and-modules-report.json` in that evidence directory.
+
+The owned four-vCPU/4-GiB guest was started with the previously authorized
+memory-pressure override (4,388 MiB host availability before start). No other VM
+was stopped or modified. Guest Control hostname and a current Windows licensing
+probe succeeded: LicenseStatus 1, GracePeriodRemaining 107365 minutes. A new
+hashed package `build-20261022-144707` is staged. The elevated harness was launched
+once with the lifecycle fixture and normal UAC approval; observation is ongoing.
+The first harness terminates before its final runtime report because the COM
+manifest is absent at the fixed 20-second cutoff. All 26 component results are
+zero and not timed out. Exported originals independently assemble current
+thread (1,351 rows), memory (528 region rows plus native refusals) and module
+(105 descriptors plus five native snapshot refusals) captures and all six
+non-COM persistence captures; two recovery originals match. The owned lifecycle
+report is verified. These are partial guest results, not a successful overall
+run. Export: `C:\Users\Acer\Documents\Panopticon-Windows-Validation\evidence\guest-registry-wave-20261022`.
+The fixture now defaults to a bounded 75-second capture and retains a transcript;
+package `build-20261022-145653` contains the same native binaries and the updated
+harness. A single retry is launched for the missing gate; no duplicate live run
+is intentionally started. Guest qualification remains partial pending its report.
+Protected targets, fair full registry traversal, change/rollback reconciliation,
+service-account/privacy/fault/OS/performance/soak and complete A–AN qualification
+remain open. See [registry persistence](REGISTRY_PERSISTENCE.md).
+
+
 Native module metadata and worker-routing wave, 2026-10-22: implemented an
 independent rotating Toolhelp module descriptor worker with held PID/creation
 identity, before/after snapshot liveness guards, bounded ERROR_BAD_LENGTH retry,

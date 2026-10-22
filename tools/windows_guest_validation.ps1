@@ -1,5 +1,6 @@
 [CmdletBinding()]
 param([string]$PackagePath = $PSScriptRoot, [switch]$ExercisePersistenceFixtures,
+    [ValidateRange(20,180)][int]$CaptureSeconds = 75,
     [ValidateSet('etw','sysmon','all')][string]$ProcessSource = 'etw', [switch]$ExerciseProcessLifecycle, [switch]$ExerciseFileFixtures)
 $ErrorActionPreference = 'Stop'
 if ($env:COMPUTERNAME -ne 'PANOPTICON-WIN') { throw 'Guest validation is restricted to the dedicated Windows guest' }
@@ -27,6 +28,7 @@ function Get-OwnedExitCode([IntPtr]$Handle) {
 }
 $destination = Join-Path $env:ProgramData ('PanopticonValidation\run-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
 New-Item -ItemType Directory -Path $destination -ErrorAction Stop | Out-Null
+Start-Transcript -LiteralPath (Join-Path $destination 'validation-transcript.txt') -ErrorAction Stop | Out-Null
 $package = (Resolve-Path -LiteralPath $PackagePath).Path
 $manifest = Get-Content -LiteralPath (Join-Path $package 'SHA256.json') -Raw | ConvertFrom-Json
 foreach ($entry in $manifest) {
@@ -46,7 +48,7 @@ $results = @()
 # These execute real OS response safety, durability, native state and log tests;
 # destructive response/host isolation is restricted to later disposable clones.
 foreach ($name in @('officer-usn-journal-tests','officer-process-graph-tests','officer-device-guard-tests','officer-windows-event-log-tests','officer-journal-tests','officer-process-action-tests','officer-response-runtime-tests',
-    'officer-process-inventory-tests','officer-thread-inventory-tests','officer-memory-inventory-tests','officer-service-inventory-tests','officer-driver-inventory-tests','officer-host-inventory-tests',
+    'officer-process-inventory-tests','officer-thread-inventory-tests','officer-memory-inventory-tests','officer-module-inventory-tests','officer-registry-persistence-tests','officer-service-inventory-tests','officer-driver-inventory-tests','officer-host-inventory-tests',
     'officer-socket-inventory-tests','officer-route-inventory-tests','officer-ip-interface-inventory-tests','officer-defender-status-tests','officer-security-center-tests',
     'officer-persistence-inventory-tests','officer-identity-inventory-tests','officer-software-inventory-tests','officer-service-host-tests','officer-process-lifecycle-tests','officer-state-freshness-tests')) {
     $out = Join-Path $destination ($name + '.stdout.txt'); $err = Join-Path $destination ($name + '.stderr.txt')
@@ -116,7 +118,10 @@ try {
         $lifecycleExpected.ExitCode=Get-OwnedExitCode $lifecycleHandle; $lifecycleExpected.Completed=$true
         $lifecycleExpected | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $destination 'lifecycle-expected.json') -Encoding UTF8
     }
-    Start-Sleep -Seconds 15
+    # Native state workers have 60-second soft budgets and concurrent durable
+    # acceptance; a fixed 20-second startup capture can truncate COM inventory.
+    # This remains a bounded fixture, never a claim of complete collection.
+    Start-Sleep -Seconds ($CaptureSeconds - 5)
     if ($agent.HasExited) { throw 'Guest endpoint exited before runtime capture completed' }
 } finally {
     if ($lifecycleFixture -and !$lifecycleFixture.HasExited) { $lifecycleFixture.Kill(); $lifecycleFixture.WaitForExit() }
@@ -167,7 +172,7 @@ foreach ($line in [IO.File]::ReadLines($recoveredPath)) {
         $record.data.process.pid -eq $lifecycleExpected.Pid -and $record.data.process.start_time_ticks -eq $lifecycleExpected.CreationTicks) {
         $lifecycleStops.Add($record)
     }
-    if ($record.kind -eq 'health' -or $record.category -match '^(thread_inventory|memory_region_inventory|device_guard_state|scheduled_task_inventory|wmi_subscription_inventory|startup_inventory|account_inventory|local_group_inventory|logon_session_inventory|terminal_session_inventory|msi_product_inventory|uninstall_registry_inventory)') { $selectedRecords.Add($record) }
+    if ($record.kind -eq 'health' -or $record.category -match '^(thread_inventory|memory_region_inventory|module_inventory|active_setup_inventory|image_execution_inventory|com_activation_inventory|startup_approval_inventory|device_guard_state|scheduled_task_inventory|wmi_subscription_inventory|startup_inventory|account_inventory|local_group_inventory|logon_session_inventory|terminal_session_inventory|msi_product_inventory|uninstall_registry_inventory)') { $selectedRecords.Add($record) }
 }
 $lifecycleVerified = $false
 $retainedGraphVerified = $false
@@ -260,7 +265,7 @@ if ($ExerciseFileFixtures) {
     [pscustomobject]@{Expected=$fileFixtureExpected;MatchingRows=$usnFixtureRows.ToArray();BeforeReasonMask=$beforeReasons;AfterReasonMask=$afterReasons;Verified=[bool]$fileVerified;ActorAttributionVerified=$false;FullFileCoverageVerified=$false} | ConvertTo-Json -Depth 15 | Set-Content -LiteralPath (Join-Path $destination 'usn-runtime-fixture-report.json') -Encoding UTF8
     if(!$fileVerified){throw 'Owned runtime USN create/ADS/rename/delete fixture not observed; originals retained'}
 }
-foreach ($source in @('thread_inventory','memory_region_inventory','scheduled_task_inventory','wmi_subscription_inventory','startup_inventory','account_inventory','local_group_inventory','logon_session_inventory','terminal_session_inventory','msi_product_inventory','uninstall_registry_inventory')) {
+foreach ($source in @('thread_inventory','memory_region_inventory','module_inventory','active_setup_inventory','image_execution_inventory','com_activation_inventory','startup_approval_inventory','scheduled_task_inventory','wmi_subscription_inventory','startup_inventory','account_inventory','local_group_inventory','logon_session_inventory','terminal_session_inventory','msi_product_inventory','uninstall_registry_inventory')) {
     $capture = @($records | Where-Object category -EQ $source)
     if ($capture.Count -ne 1) { throw "Missing or ambiguous guest persistence capture: $source" }
     $pages = @($records | Where-Object { $_.category -eq ($source + '_page') -and $_.data.capture_id -eq $capture[0].data.capture_id })

@@ -20,6 +20,10 @@ PERSISTENCE_SOURCES = (
     "scheduled_task_inventory",
     "wmi_subscription_inventory",
     "startup_inventory",
+    "active_setup_inventory",
+    "image_execution_inventory",
+    "com_activation_inventory",
+    "startup_approval_inventory",
 )
 IDENTITY_SOURCES = (
     "account_inventory",

@@ -44,12 +44,17 @@ def main():
         require(digest(root / name).lower() == entry["Hash"].lower(), "package hash mismatch")
     components = load(root / "component-results.json")
     expected_components = 24 if (root / "officer-memory-inventory-tests.exe").is_file() else 23 if (root / "officer-usn-journal-tests.exe").is_file() else 22 if (root / "officer-thread-inventory-tests.exe").is_file() else 21
+    extras = [name for name in ("officer-module-inventory-tests", "officer-registry-persistence-tests")
+              if (root / (name + ".exe")).is_file()]
+    expected_components += len(extras)
+    require(all(any(row["Test"] == name for row in components) for name in extras),
+            "required current-wave native component evidence missing")
     require(len(components) == expected_components and len({row["Test"] for row in components}) == expected_components,
             "component execution list incomplete")
     if expected_components >= 22:
         require(any(row["Test"] == "officer-thread-inventory-tests" for row in components),
                 "native thread component evidence missing")
-    if expected_components == 24:
+    if (root / "officer-memory-inventory-tests.exe").is_file():
         require(any(row["Test"] == "officer-memory-inventory-tests" for row in components)
                 and load(root / "memory-component-report.json")["real_windows_memory_region_verified"] is True,
                 "required native memory component evidence missing")

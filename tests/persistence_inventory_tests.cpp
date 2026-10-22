@@ -76,7 +76,9 @@ int main(int argc, char** argv) {
         Json records = Json::array(), reports = Json::array();
         pipeline::NormalizationContext context{{"agent-1", "1.0-dev"}, {"host-1", "LAB", {"Windows", "26100"}}};
         pipeline::EndpointRecordFactory factory{context, "device-1", std::string(64, 'b'), std::nullopt, 1};
-        for (auto source : {state::PersistenceSource::scheduled_tasks, state::PersistenceSource::wmi_subscriptions, state::PersistenceSource::startup}) {
+        for (auto source : {state::PersistenceSource::scheduled_tasks, state::PersistenceSource::wmi_subscriptions, state::PersistenceSource::startup,
+            state::PersistenceSource::active_setup, state::PersistenceSource::image_execution,
+            state::PersistenceSource::com_activation, state::PersistenceSource::startup_approval}) {
             const std::string category = state::persistence_source_name(source);
             state::PersistenceLimits limits; limits.page_entries = 16; limits.soft_budget_ms = 15000;
             Json ids = Json::array(); std::size_t rows = 0;

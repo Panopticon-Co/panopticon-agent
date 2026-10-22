@@ -142,4 +142,12 @@ private:
 Json tasks(Pager& pager);
 Json wmi(Pager& pager);
 Json startup(Pager& pager);
+// Borrowed read-only hive and optional test namespace prefix. Never loads hives,
+// activates COM, expands commands or executes configured targets.
+bool registry_values(Pager& pager, HKEY hive, const char* hive_name, const std::wstring& path,
+    REGSAM view, std::span<const wchar_t* const> selected = {}, const char* mechanism = "startup");
+Json registry_mechanism(Pager& pager, PersistenceSource source);
+bool registry_mechanism_scope(Pager& pager, PersistenceSource source, HKEY hive,
+    const char* hive_name, const std::wstring& prefix = L"");
+
 }

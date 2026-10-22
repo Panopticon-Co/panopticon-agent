@@ -43,6 +43,7 @@ add_library(officer-core STATIC
     src/state/scheduled_task_inventory.cpp
     src/state/wmi_subscription_inventory.cpp
     src/state/startup_inventory.cpp
+    src/state/registry_persistence.cpp
     src/state/identity_inventory.cpp
     src/state/software_inventory.cpp
     src/runtime/service_host.cpp
@@ -151,6 +152,10 @@ if(BUILD_TESTING)
     add_test(NAME officer-identity-inventory-tests COMMAND officer-identity-inventory-tests)
     set_tests_properties(officer-identity-inventory-tests PROPERTIES TIMEOUT 90)
     add_executable(officer-persistence-inventory-tests tests/persistence_inventory_tests.cpp)
+    add_executable(officer-registry-persistence-tests tests/registry_persistence_tests.cpp)
+    target_link_libraries(officer-registry-persistence-tests PRIVATE officer-core)
+    add_test(NAME officer-registry-persistence-tests COMMAND officer-registry-persistence-tests)
+    set_tests_properties(officer-registry-persistence-tests PROPERTIES TIMEOUT 60)
     target_link_libraries(officer-persistence-inventory-tests PRIVATE officer-core)
     add_custom_command(TARGET officer-persistence-inventory-tests POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:tinyxml2::tinyxml2> $<TARGET_FILE_DIR:officer-persistence-inventory-tests>)

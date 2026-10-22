@@ -48,3 +48,25 @@ aliased thread and memory despite older component/guest evidence. See the newest
 validation entry for exact checks performed. No VM was started or changed in
 this wave. Windows guest runtime, source completeness, protected targets, native
 faults, recovery and performance qualification remain open.
+
+## Extended registry persistence continuation — 2026-10-22
+
+Added four independent native registry mechanism workers: Active Setup,
+image-execution hooks (IFEO/filter/SilentProcessExit/boot/AppCert), COM
+CLSID/AppID activation configuration, and raw StartupApproved state. See
+[registry persistence](REGISTRY_PERSISTENCE.md). Native worker counts now derive
+from their source arrays to avoid future hard-coded category/count mismatch.
+The shared registry reader preserves existing startup rows while adding mechanism
+provenance. Freshness/domain aggregation and host/guest capture tooling include
+the new sources and the preceding module wave.
+
+The native fixture creates only an owned inert scratch hierarchy, not actual
+activation/autorun configuration. Consolidated Release CTest passed 44/44;
+the 20-second host endpoint run retained seven complete page assemblies and
+7,529 original records across two identical recovery readbacks. This verifies
+capture assembly, not complete native/domain enumeration: native access failures
+and COM branch truncation remain explicit. Thread, module and memory workers
+now have distinct retained capture sets; the first eight host module/memory
+candidates all refused access, so successful runtime metadata for those two
+sources is not established by that host run. Refer to the newest validation
+entry for consolidated guest results and remaining gates.

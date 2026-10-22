@@ -10,9 +10,10 @@ struct FindCloser { void operator()(void* value) const noexcept { if (value && v
 using Find = std::unique_ptr<void, FindCloser>;
 const wchar_t* autorun_keys[]{L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", L"Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce",
     L"Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer\\Run"};
-bool registry(Pager& pager, HKEY hive, const char* hive_name, const std::wstring& path, REGSAM view,
-    std::span<const wchar_t* const> selected = {}) {
-    Json base{{"registry_hive", hive_name}, {"key_path", text(path.data(), path.size())},
+}
+bool registry_values(Pager& pager, HKEY hive, const char* hive_name, const std::wstring& path, REGSAM view,
+    std::span<const wchar_t* const> selected, const char* mechanism) {
+    Json base{{"mechanism", mechanism}, {"registry_hive", hive_name}, {"key_path", text(path.data(), path.size())},
         {"registry_view", view == KEY_WOW64_32KEY ? "32" : "64"}, {"consistency", "non_atomic_indexed_registry_queries"}};
     Key key; const auto opened = RegOpenKeyExW(hive, path.c_str(), 0, KEY_QUERY_VALUE | view, &key.value);
     if (opened != ERROR_SUCCESS) {
@@ -63,6 +64,7 @@ bool registry(Pager& pager, HKEY hive, const char* hive_name, const std::wstring
     summary["enumeration_complete"] = complete && pager.active(); summary["examined_indices"] = std::to_string(index);
     pager.add(std::move(summary)); return complete && pager.active();
 }
+namespace {
 bool startup_folder(Pager& pager, REFKNOWNFOLDERID folder_id, const char* scope) {
     PWSTR folder = nullptr; const auto status = SHGetKnownFolderPath(folder_id, KF_FLAG_DONT_VERIFY, nullptr, &folder);
     std::unique_ptr<wchar_t, decltype(&CoTaskMemFree)> owned(folder, CoTaskMemFree);
@@ -109,13 +111,13 @@ Json startup(Pager& pager) {
     for (const auto view : {KEY_WOW64_64KEY, KEY_WOW64_32KEY}) {
         for (const auto* path : autorun_keys) {
             if (!pager.active()) { complete = false; break; }
-            complete = registry(pager, HKEY_LOCAL_MACHINE, "HKLM", path, view) && complete;
-            if (pager.active()) complete = registry(pager, HKEY_CURRENT_USER, "HKCU/caller", path, view) && complete;
+            complete = registry_values(pager, HKEY_LOCAL_MACHINE, "HKLM", path, view) && complete;
+            if (pager.active()) complete = registry_values(pager, HKEY_CURRENT_USER, "HKCU/caller", path, view) && complete;
         }
         constexpr const wchar_t* winlogon[]{L"Shell", L"Userinit", L"AppSetup", L"TaskMan"};
         constexpr const wchar_t* appinit[]{L"AppInit_DLLs", L"LoadAppInit_DLLs", L"RequireSignedAppInit_DLLs"};
-        if (pager.active()) complete = registry(pager, HKEY_LOCAL_MACHINE, "HKLM", L"Software\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon", view, winlogon) && complete;
-        if (pager.active()) complete = registry(pager, HKEY_LOCAL_MACHINE, "HKLM", L"Software\\Microsoft\\Windows NT\\CurrentVersion\\Windows", view, appinit) && complete;
+        if (pager.active()) complete = registry_values(pager, HKEY_LOCAL_MACHINE, "HKLM", L"Software\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon", view, winlogon) && complete;
+        if (pager.active()) complete = registry_values(pager, HKEY_LOCAL_MACHINE, "HKLM", L"Software\\Microsoft\\Windows NT\\CurrentVersion\\Windows", view, appinit) && complete;
     }
     std::array<wchar_t, 256> name{}; DWORD index = 0;
     for (; index < 1024 && pager.active(); ++index) {
@@ -131,7 +133,7 @@ Json startup(Pager& pager) {
         const std::wstring hive_path(name.data(), units);
         for (const auto view : {KEY_WOW64_64KEY, KEY_WOW64_32KEY}) for (const auto* path : autorun_keys) {
             if (!pager.active()) { complete = false; break; }
-            complete = registry(pager, HKEY_USERS, "HKU/loaded SID hive", hive_path + L"\\" + path, view) && complete;
+            complete = registry_values(pager, HKEY_USERS, "HKU/loaded SID hive", hive_path + L"\\" + path, view) && complete;
         }
     }
     if (index == 1024) complete = false;

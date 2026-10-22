@@ -1,7 +1,7 @@
 # Native persistence state
 
-Three independent Windows workers capture scheduled tasks, permanent WMI
-subscriptions and selected startup mechanisms. Each emits common/versioned
+Seven independent Windows workers capture scheduled tasks, permanent WMI
+subscriptions, selected startup mechanisms and four [extended registry mechanism groups](REGISTRY_PERSISTENCE.md). Each emits common/versioned
 endpoint records with a durable begin, indexed bounded pages and an ordered
 manifest referencing the accepted page IDs. They run without Detection or Sysmon.
 Immutable canonical bytes retry until journal acceptance; the native iterator
@@ -44,8 +44,9 @@ is never expanded or executed. ERROR_MORE_DATA output is never decoded.
 Current-caller/common Startup folders retain directory metadata and reported
 reparse tags without recursion or shortcut resolution. File/target lifetime,
 contents/signers and execution remain unverified. Unloaded users, other user
-Startup folders, Active Setup, StartupApproved, COM/IFEO and other mechanisms
-remain future work.
+Startup folders, complete Active Setup, StartupApproved and COM/IFEO semantics remain unqualified;
+selected raw state is now captured by independent workers described in the
+extended registry document. Other mechanisms remain future work.
 
 ## Bounds, evidence and remaining gates
 

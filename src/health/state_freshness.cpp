@@ -35,6 +35,10 @@ constexpr Source sources[]{
     {"scheduled_task_inventory", {"state.scheduled_task_inventory"}},
     {"wmi_subscription_inventory", {"state.wmi_subscription_inventory"}},
     {"startup_inventory", {"state.startup_inventory"}},
+    {"active_setup_inventory", {"state.active_setup_inventory"}},
+    {"image_execution_inventory", {"state.image_execution_inventory"}},
+    {"com_activation_inventory", {"state.com_activation_inventory"}},
+    {"startup_approval_inventory", {"state.startup_approval_inventory"}},
     {"account_inventory", {"state.account_inventory"}},
     {"local_group_inventory", {"state.local_group_inventory"}},
     {"logon_session_inventory", {"state.logon_session_inventory"}},
@@ -114,9 +118,9 @@ void apply_state_capture_freshness(Json& health, std::uint64_t now) {
     // state sources and active corresponding log sources, so one failing source
     // neither erases another nor leaves a stale inventory looking current.
     if (health.contains("capabilities") && health["capabilities"].is_array()) {
-        struct Group { const char* id; std::array<const char*, 4> state_sources; const char* log_channel; };
+        struct Group { const char* id; std::array<const char*, 8> state_sources; const char* log_channel; };
         constexpr Group groups[]{
-            {"J.persistence", {"service_inventory", "scheduled_task_inventory", "wmi_subscription_inventory", "startup_inventory"}, nullptr},
+            {"J.persistence", {"service_inventory", "scheduled_task_inventory", "wmi_subscription_inventory", "startup_inventory", "active_setup_inventory", "image_execution_inventory", "com_activation_inventory", "startup_approval_inventory"}, nullptr},
             {"L.scheduled_task", {"scheduled_task_inventory"}, "Microsoft-Windows-TaskScheduler/Operational"},
             {"M.wmi", {"wmi_subscription_inventory"}, "Microsoft-Windows-WMI-Activity/Operational"},
             {"D.user_session", {"account_inventory", "local_group_inventory", "logon_session_inventory", "terminal_session_inventory"}, nullptr},

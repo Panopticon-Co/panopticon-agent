@@ -1886,7 +1886,11 @@ int run_endpoint(int argc, char* argv[], HANDLE service_stop = nullptr,
     constexpr std::array persistence_sources{
         panopticon::officer::state::PersistenceSource::scheduled_tasks,
         panopticon::officer::state::PersistenceSource::wmi_subscriptions,
-        panopticon::officer::state::PersistenceSource::startup};
+        panopticon::officer::state::PersistenceSource::startup,
+        panopticon::officer::state::PersistenceSource::active_setup,
+        panopticon::officer::state::PersistenceSource::image_execution,
+        panopticon::officer::state::PersistenceSource::com_activation,
+        panopticon::officer::state::PersistenceSource::startup_approval};
     constexpr std::array identity_sources{
         panopticon::officer::state::IdentitySource::accounts,
         panopticon::officer::state::IdentitySource::groups,
@@ -1904,8 +1908,9 @@ int run_endpoint(int argc, char* argv[], HANDLE service_stop = nullptr,
         index -= software_sources.size();
         return index == 0 ? "thread_inventory" : index == 1 ? "memory_region_inventory" : "module_inventory";
     };
-    std::array<nlohmann::json, 12> persistence_health;
-    std::array<std::jthread, 12> persistence_workers;
+    constexpr auto native_worker_count = persistence_sources.size() + identity_sources.size() + software_sources.size() + 3;
+    std::array<nlohmann::json, native_worker_count> persistence_health;
+    std::array<std::jthread, native_worker_count> persistence_workers;
     for (std::size_t index = 0; index < persistence_workers.size(); ++index)
         persistence_health[index] = {{"state", "unavailable"}, {"committed_snapshots", "0"}, {"commit_failures", "0"},
             {"pending_durable_acceptance", false}, {"collection_in_progress", false}};
