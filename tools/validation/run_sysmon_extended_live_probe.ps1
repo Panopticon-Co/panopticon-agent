@@ -25,7 +25,7 @@ try {
     $probeExit = $LASTEXITCODE
     if ($probeExit -ne 0 -and $probeExit -ne 3) { throw "Native probe failed ($probeExit); inspect $run" }
     $report = Get-Content -Raw -LiteralPath (Join-Path $run 'report.json') | ConvertFrom-Json
-    $records = @(Get-Content -Raw -LiteralPath (Join-Path $run 'canonical-records.json') | ConvertFrom-Json | Where-Object { $null -ne $_ })
+    $records = Get-Content -Raw -LiteralPath (Join-Path $run 'canonical-records.json') | ConvertFrom-Json
     $verified = @()
     foreach ($entry in $records) {
         $recordId = [string]$entry.provenance.native_record_id
@@ -55,7 +55,7 @@ try {
     $installedSysmon = Join-Path $env:windir 'Sysmon64.exe'
     if (Test-Path -LiteralPath $installedSysmon) {
         # -c without a filename only displays the current configuration.
-        & $installedSysmon -c *> (Join-Path $run 'installed-sysmon-configuration.txt')
+        $configurationQuery = Start-Process -FilePath $installedSysmon -ArgumentList '-c' -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput (Join-Path $run 'installed-sysmon-configuration.txt') -RedirectStandardError (Join-Path $run 'installed-sysmon-configuration-stderr.txt')
     }
     Get-ChildItem -LiteralPath $run -File | ForEach-Object { $hashes[$_.Name] = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
     $manifest = [ordered]@{
@@ -65,6 +65,7 @@ try {
         original_source_fields_compared_exactly=($verified.Count -gt 0); verified_record_count=$verified.Count;
         journal_restart_exact=$report.journal_restart_exact;
         read_access_verified=$true; channel_permissions_unchanged=$true; service_or_policy_changed=$false;
+        configuration_query_exit_code=$(if ($configurationQuery) { $configurationQuery.ExitCode } else { $null });
         artifacts=$hashes
     }
     [IO.File]::WriteAllText((Join-Path $run 'manifest.json'), ($manifest | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))
