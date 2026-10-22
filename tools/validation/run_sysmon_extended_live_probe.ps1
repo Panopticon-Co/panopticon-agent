@@ -25,7 +25,7 @@ try {
     $probeExit = $LASTEXITCODE
     if ($probeExit -ne 0 -and $probeExit -ne 3) { throw "Native probe failed ($probeExit); inspect $run" }
     $report = Get-Content -Raw -LiteralPath (Join-Path $run 'report.json') | ConvertFrom-Json
-    $records = @(Get-Content -Raw -LiteralPath (Join-Path $run 'canonical-records.json') | ConvertFrom-Json)
+    $records = @(Get-Content -Raw -LiteralPath (Join-Path $run 'canonical-records.json') | ConvertFrom-Json | Where-Object { $null -ne $_ })
     $verified = @()
     foreach ($entry in $records) {
         $recordId = [string]$entry.provenance.native_record_id
@@ -52,12 +52,18 @@ try {
         throw 'Channel permissions or enablement changed during validation.'
     }
     $hashes = @{}
+    $installedSysmon = Join-Path $env:windir 'Sysmon64.exe'
+    if (Test-Path -LiteralPath $installedSysmon) {
+        # -c without a filename only displays the current configuration.
+        & $installedSysmon -c *> (Join-Path $run 'installed-sysmon-configuration.txt')
+    }
     Get-ChildItem -LiteralPath $run -File | ForEach-Object { $hashes[$_.Name] = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
     $manifest = [ordered]@{
         status=$report.status; synthetic=$false; source_commit=$SourceCommit; probe_sha256=$ExpectedSha256;
         capture_started_utc=$started; capture_completed_utc=[DateTime]::UtcNow.ToString('o');
         verified_event_ids=$verified; missing_event_ids=@($report.missing_event_ids);
-        original_source_fields_compared_exactly=$true; journal_restart_exact=$report.journal_restart_exact;
+        original_source_fields_compared_exactly=($verified.Count -gt 0); verified_record_count=$verified.Count;
+        journal_restart_exact=$report.journal_restart_exact;
         read_access_verified=$true; channel_permissions_unchanged=$true; service_or_policy_changed=$false;
         artifacts=$hashes
     }
