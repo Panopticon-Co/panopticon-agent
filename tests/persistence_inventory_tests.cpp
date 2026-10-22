@@ -78,7 +78,8 @@ int main(int argc, char** argv) {
         pipeline::EndpointRecordFactory factory{context, "device-1", std::string(64, 'b'), std::nullopt, 1};
         for (auto source : {state::PersistenceSource::scheduled_tasks, state::PersistenceSource::wmi_subscriptions, state::PersistenceSource::startup,
             state::PersistenceSource::active_setup, state::PersistenceSource::image_execution,
-            state::PersistenceSource::com_activation, state::PersistenceSource::startup_approval}) {
+            state::PersistenceSource::com_activation, state::PersistenceSource::startup_approval,
+            state::PersistenceSource::browser_registration, state::PersistenceSource::office_addins}) {
             const std::string category = state::persistence_source_name(source);
             state::PersistenceLimits limits; limits.page_entries = 16; limits.soft_budget_ms = 15000;
             Json ids = Json::array(); std::size_t rows = 0;

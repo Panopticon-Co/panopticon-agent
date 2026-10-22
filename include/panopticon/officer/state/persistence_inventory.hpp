@@ -8,7 +8,7 @@
 #include <string_view>
 
 namespace panopticon::officer::state {
-enum class PersistenceSource { scheduled_tasks, wmi_subscriptions, startup, active_setup, image_execution, com_activation, startup_approval };
+enum class PersistenceSource { scheduled_tasks, wmi_subscriptions, startup, active_setup, image_execution, com_activation, startup_approval, browser_registration, office_addins };
 using PersistenceLimits = NativeInventoryLimits;
 // Local, caller-visible, non-atomic state only. The budget is checked between
 // native calls, not a hard deadline on COM/RPC or native allocations.

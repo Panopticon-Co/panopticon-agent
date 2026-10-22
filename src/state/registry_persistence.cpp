@@ -119,6 +119,50 @@ bool registry_mechanism_scope(Pager& pager, PersistenceSource source, HKEY hive,
                     view, {}, mechanism) && complete;
             }
             break;
+        case PersistenceSource::browser_registration: {
+            constexpr const wchar_t* registration[]{L"path", L"version", L"update_url"};
+            constexpr const wchar_t* host_manifest[]{L""};
+            constexpr const wchar_t* settings[]{L"ExtensionSettings", L"BlockExternalExtensions", L"DeveloperToolsAvailability",
+                L"ExtensionManifestV2Availability", L"NativeMessagingUserLevelHosts", L"NativeMessagingBlocklist", L"NativeMessagingAllowlist"};
+            constexpr const wchar_t* extension_settings[]{L"installation_mode", L"update_url", L"blocked_permissions", L"allowed_permissions",
+                L"runtime_blocked_hosts", L"runtime_allowed_hosts", L"minimum_version_required"};
+            for (const auto* browser : {L"Google\\Chrome", L"Microsoft\\Edge", L"Chromium"}) {
+                const auto root = path(L"Software") + L"\\" + browser;
+                complete = children(pager, hive, hive_name, root + L"\\Extensions", view, mechanism,
+                    [&](const std::wstring& child) { return values(child, registration); }) && complete;
+                complete = children(pager, hive, hive_name, root + L"\\NativeMessagingHosts", view, mechanism,
+                    [&](const std::wstring& child) { return values(child, host_manifest); }) && complete;
+                const auto policy = path(L"Software\\Policies") + L"\\" + browser;
+                complete = values(policy, settings) && complete;
+                for (const auto* list : {L"ExtensionInstallForcelist", L"ExtensionInstallAllowlist", L"ExtensionInstallBlocklist",
+                    L"ExtensionInstallSources", L"NativeMessagingAllowlist", L"NativeMessagingBlocklist"}) {
+                    if (!pager.active()) { complete = false; break; }
+                    complete = registry_values(pager, hive, hive_name, policy + L"\\" + list, view, {}, mechanism) && complete;
+                }
+                complete = children(pager, hive, hive_name, policy + L"\\ExtensionSettings", view, mechanism,
+                    [&](const std::wstring& child) { return values(child, extension_settings); }) && complete;
+            }
+            // Only native host registration paths are observed for Firefox;
+            // policies.json, extension databases and profile contents are not read.
+            complete = children(pager, hive, hive_name, path(L"Software\\Mozilla\\NativeMessagingHosts"), view, mechanism,
+                [&](const std::wstring& child) { return values(child, host_manifest); }) && complete;
+            break;
+        }
+        case PersistenceSource::office_addins: {
+            constexpr const wchar_t* addin_fields[]{L"FriendlyName", L"Description", L"LoadBehavior", L"Manifest", L"CommandLineSafe"};
+            constexpr const wchar_t* security_fields[]{L"VBAWarnings", L"AccessVBOM", L"BlockContentExecutionFromInternet",
+                L"DisableAllActiveX", L"DisableAllAddins", L"RequireAddinSig", L"DisableAllApplicationAddins"};
+            for (const auto* application : {L"Word", L"Excel", L"PowerPoint", L"Outlook", L"Access", L"Visio", L"Project", L"OneNote"}) {
+                const auto office = path(L"Software\\Microsoft\\Office");
+                complete = children(pager, hive, hive_name, office + L"\\" + application + L"\\Addins", view, mechanism,
+                    [&](const std::wstring& child) { return values(child, addin_fields); }) && complete;
+                for (const auto* version : {L"15.0", L"16.0"}) {
+                    complete = values(office + L"\\" + version + L"\\" + application + L"\\Security", security_fields) && complete;
+                    complete = values(path(L"Software\\Policies\\Microsoft\\Office") + L"\\" + version + L"\\" + application + L"\\Security", security_fields) && complete;
+                }
+            }
+            break;
+        }
         default: throw std::invalid_argument("not an extended registry persistence source");
         }
     }

@@ -1,17 +1,17 @@
 # Windows endpoint engineering handoff
 
-Updated: 2026-10-21
+Updated: 2026-10-22
 
 This handoff is for the next engineer continuing the Windows endpoint mission. The approved source plan is preserved verbatim in [FULL_SURFACE_ENGINEERING_PLAN.md](FULL_SURFACE_ENGINEERING_PLAN.md). The implementation remains incomplete; this handoff does not change the plan's A–AN scope or Definition of Done.
 
 ## Read these first
 
 1. [Full Surface Engineering Plan](FULL_SURFACE_ENGINEERING_PLAN.md) — approved requirements, A–AN capability matrix and completion criteria.
-2. [Capability matrix](CAPABILITY_MATRIX.md) — living implementation/gap ledger. Its current header says no domain is qualified complete; its last stated update is 2026-10-07.
+2. [Capability matrix](CAPABILITY_MATRIX.md) — living implementation/gap ledger. Its current header says no domain is qualified complete; its current update is 2026-10-22.
 3. [Validation ledger](VALIDATION.md) — evidence ledger. It contains later entries, including a 2026-10-09 native memory-region component wave. Reconcile this later evidence into the matrix as work proceeds; do not assume the matrix header is current.
 4. [Windows VM workflow](WINDOWS_VM.md) — owned guest, installation, evidence, snapshots and validation procedures. Verify actual VM state before use.
 
-The authoritative Windows endpoint repository is `panopticon-agent` inside the top-level Panopticon workspace. The implementation baseline before this documentation handoff is `d6afc2ff1bc1c98b6be50fc08d454699a3e924ed` (`feat: expand native Windows endpoint coverage`). This handoff adds documentation only.
+The authoritative Windows endpoint repository is `panopticon-agent` inside the top-level Panopticon workspace. The implementation baseline before this documentation handoff is `d6afc2ff1bc1c98b6be50fc08d454699a3e924ed` (`feat: expand native Windows endpoint coverage`). That was the original documentation-only handoff; subsequent implementation waves are recorded below.
 
 ## Direction and boundaries
 
@@ -38,7 +38,7 @@ Use each ledger entry to distinguish implementation, component evidence, real-Wi
 
 For any change that needs privileged kernel components, document the qualification dependency and continue independent user-mode work. Completion requires evidence across the plan's complete capability surface and explicit satisfaction of its Definition of Done, not merely a working VM or green test suite.
 
-## Continuation update � 2026-10-22
+## Continuation update � 2026-10-22
 
 Added [native module inventory](MODULE_INVENTORY.md), canonical paged runtime
 integration and independent stale-capture health. Fixed the native category
@@ -49,7 +49,7 @@ validation entry for exact checks performed. No VM was started or changed in
 this wave. Windows guest runtime, source completeness, protected targets, native
 faults, recovery and performance qualification remain open.
 
-## Extended registry persistence continuation � 2026-10-22
+## Extended registry persistence continuation � 2026-10-22
 
 Added four independent native registry mechanism workers: Active Setup,
 image-execution hooks (IFEO/filter/SilentProcessExit/boot/AppCert), COM
@@ -70,3 +70,26 @@ now have distinct retained capture sets; the first eight host module/memory
 candidates all refused access, so successful runtime metadata for those two
 sources is not established by that host run. Refer to the newest validation
 entry for consolidated guest results and remaining gates.
+
+## Standalone breadth continuation - 2026-10-22
+
+The current wave adds native browser profile manifest inventory, browser/Office
+registration context, read-only Defender preferences, configured-root FIM and
+ETW ownership recovery. Read APPLICATION_CONTEXT.md, BROWSER_INVENTORY.md,
+DEFENDER_PREFERENCES.md, FILE_INTEGRITY.md and ETW_SESSION_OWNERSHIP.md.
+The runtime now dispatches nine persistence sources plus separate identity,
+software, thread, memory, module, browser-profile and Defender-preference workers.
+FIM is disabled unless --fim-root supplies explicit absolute local directories
+(up to eight); monitoring is direct-child only, with no recursive claim.
+
+The combined main executable compiles; new collectors/recovery have not been
+runtime verified. The user explicitly deferred further testing until a final
+integration stage. Keep this debt visible rather than treating compilation or
+historical passing suites as current evidence. The prior guest retry terminated
+with partial state success and process ETW failure from a historical fixed-name
+orphan. New session ownership code never blindly stops that legacy session.
+
+Next priorities remain native continuous network/DNS, response durable lifecycle
+and target safety, lifecycle/reconciliation, source-loss/resource controls,
+signed policy/update boundaries, and consolidated Windows fault/restart/security
+qualification. Do not deepen integration with the current Detection Engine.

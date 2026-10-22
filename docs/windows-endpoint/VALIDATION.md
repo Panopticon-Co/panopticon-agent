@@ -1,5 +1,39 @@
 # Windows endpoint validation ledger
 
+Standalone endpoint breadth wave, 2026-10-22: implemented browser profile extension
+metadata (current caller profile only), browser/Office registry context, read-only
+Defender preference WMI telemetry, explicitly configured direct-child FIM, and
+journal-bound unique ETW session ownership/recovery. Native state sources use
+independent durable begin/page/manifest and freshness integration. FIM uses
+atomic record/checkpoint acceptance, bounded native notifications/hash reads,
+held-handle path/identity guards and explicit restart/overflow/refusal gaps.
+See BROWSER_INVENTORY.md, APPLICATION_CONTEXT.md, DEFENDER_PREFERENCES.md,
+FILE_INTEGRITY.md and ETW_SESSION_OWNERSHIP.md for exact scope and limitations.
+
+One consolidated compilation caught and corrected an undeclared FIM directory
+flag. The fresh Release officer-agent target then builds successfully with MSVC
+14.44.35207 in build-vm-release-x64. No new runtime or test suite was executed
+for the combined wave, following the user's request to defer testing to the
+final integration stage. Historical passing tests do not validate this code.
+The two application registry sources had earlier component-suite evidence
+(44/44, 27.65 seconds) before these new collectors and ETW changes. New browser,
+Defender preference, FIM and ownership-recovery behavior is implemented and
+compiled, but component/runtime/guest verification remains pending.
+
+Correction to the earlier guest retry status below: the retry is terminal and
+failed overall. Its 75-second capture completed the required state assemblies,
+including 9,219 COM rows with explicit prefix bounds, but process ETW could not
+start because an earlier abruptly terminated run left the historical fixed-name
+session alive. The owned-process stop gate consequently failed. The exported
+runtime-report records 4,224 canonical originals, 3,791 native log records and
+58 health records. This is partial state/durability evidence, not a passing
+endpoint runtime or process lifecycle result. Export directory:
+C:\Users\Acer\Documents\Panopticon-Windows-Validation\evidence\guest-registry-retry-20261022.
+The new ownership implementation responds to this observed failure; it has not
+yet been verified by another guest run. No new guest validation was started
+following the testing deferral. Full A-AN Definition of Done remains unmet.
+
+
 Extended native registry persistence wave, 2026-10-22: four independent raw
 registry mechanism workers now capture selected Active Setup, image-execution
 (IFEO/filter/SilentProcessExit/Session Manager/AppCert), COM CLSID/AppID activation
@@ -43,7 +77,7 @@ memory-pressure override (4,388 MiB host availability before start). No other VM
 was stopped or modified. Guest Control hostname and a current Windows licensing
 probe succeeded: LicenseStatus 1, GracePeriodRemaining 107365 minutes. A new
 hashed package `build-20261022-144707` is staged. The elevated harness was launched
-once with the lifecycle fixture and normal UAC approval; observation is ongoing.
+once with the lifecycle fixture and normal UAC approval; that observation has since terminated (see correction above).
 The first harness terminates before its final runtime report because the COM
 manifest is absent at the fixed 20-second cutoff. All 26 component results are
 zero and not timed out. Exported originals independently assemble current
@@ -55,9 +89,9 @@ run. Export: `C:\Users\Acer\Documents\Panopticon-Windows-Validation\evidence\gue
 The fixture now defaults to a bounded 75-second capture and retains a transcript;
 package `build-20261022-145653` contains the same native binaries and the updated
 harness. A single retry is launched for the missing gate; no duplicate live run
-is intentionally started. Guest qualification remains partial pending its report.
+is intentionally started. Guest qualification remains partial; its terminal failure is recorded above.
 Protected targets, fair full registry traversal, change/rollback reconciliation,
-service-account/privacy/fault/OS/performance/soak and complete A–AN qualification
+service-account/privacy/fault/OS/performance/soak and complete Aï¿½AN qualification
 remain open. See [registry persistence](REGISTRY_PERSISTENCE.md).
 
 
@@ -95,7 +129,7 @@ performed for this wave. Module file identity/signatures, manual/datafile mappin
 coverage, module instance lifetime, continuous load/unload correlation, memory
 contents and injection detection remain absent. Corrected thread/module/memory
 worker routing and durable capture must be revalidated in a consolidated guest
-run. C/R/AF and the complete A–AN Definition of Done remain partial/unmet.
+run. C/R/AF and the complete Aï¿½AN Definition of Done remain partial/unmet.
 See [module inventory](MODULE_INVENTORY.md).
 
 

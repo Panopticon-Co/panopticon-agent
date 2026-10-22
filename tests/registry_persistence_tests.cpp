@@ -44,8 +44,13 @@ int main() {
         scratch.set(L"Software\\Classes\\CLSID\\{fixture}\\TreatAs", L"", L"{unresolved-target}");
         scratch.set(L"Software\\Classes\\AppID\\{fixture}", L"DllSurrogate", inert);
         scratch.set(L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run", L"fixture", inert);
+        scratch.set(L"Software\\Google\\Chrome\\Extensions\\fixture", L"path", inert);
+        scratch.set(L"Software\\Microsoft\\Edge\\NativeMessagingHosts\\fixture", L"", inert);
+        scratch.set(L"Software\\Policies\\Microsoft\\Edge\\ExtensionInstallForcelist", L"1", inert);
+        scratch.set(L"Software\\Microsoft\\Office\\Word\\Addins\\fixture", L"Manifest", inert);
         for (const auto source : {state::PersistenceSource::active_setup, state::PersistenceSource::image_execution,
-            state::PersistenceSource::com_activation, state::PersistenceSource::startup_approval}) {
+            state::PersistenceSource::com_activation, state::PersistenceSource::startup_approval,
+            state::PersistenceSource::browser_registration, state::PersistenceSource::office_addins}) {
             state::PersistenceLimits limits; limits.page_entries = 3;
             std::size_t rows = 0, matches = 0, page_index = 0;
             bool saw32 = false, saw64 = false;

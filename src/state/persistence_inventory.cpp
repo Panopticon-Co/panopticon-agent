@@ -14,6 +14,8 @@ const char* persistence_source_name(PersistenceSource source) {
     case PersistenceSource::image_execution: return "image_execution_inventory";
     case PersistenceSource::com_activation: return "com_activation_inventory";
     case PersistenceSource::startup_approval: return "startup_approval_inventory";
+    case PersistenceSource::browser_registration: return "browser_registration_inventory";
+    case PersistenceSource::office_addins: return "office_addin_inventory";
     }
     throw std::invalid_argument("unknown persistence source");
 }
@@ -31,7 +33,9 @@ Json collect_persistence_inventory_pages(PersistenceSource source, const std::fu
     case PersistenceSource::active_setup:
     case PersistenceSource::image_execution:
     case PersistenceSource::com_activation:
-    case PersistenceSource::startup_approval: return registry_mechanism(pager, source);
+    case PersistenceSource::startup_approval:
+    case PersistenceSource::browser_registration:
+    case PersistenceSource::office_addins: return registry_mechanism(pager, source);
     }
     throw std::invalid_argument("unknown persistence source");
 }

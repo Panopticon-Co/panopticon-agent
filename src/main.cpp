@@ -35,7 +35,10 @@
 #include "panopticon/officer/state/thread_inventory.hpp"
 #include "panopticon/officer/state/memory_inventory.hpp"
 #include "panopticon/officer/state/module_inventory.hpp"
+#include "panopticon/officer/state/browser_inventory.hpp"
+#include "panopticon/officer/state/defender_preferences.hpp"
 #include "panopticon/officer/collectors/usn_journal.hpp"
+#include "panopticon/officer/collectors/file_integrity.hpp"
 #include "panopticon/officer/state/service_inventory.hpp"
 #include "panopticon/officer/state/driver_inventory.hpp"
 #include "panopticon/officer/state/socket_inventory.hpp"
@@ -90,6 +93,7 @@ struct CliOptions {
     SourceSelection source = SourceSelection::all;
     std::optional<std::string> manager_url;
     std::string spool_directory = "spool";
+    std::vector<std::string> fim_roots;
     bool insecure_tls = false;
     bool enable_response = false;
     std::string identity_path = "officer-identity.txt";
@@ -283,6 +287,7 @@ std::optional<CliOptions> parse_arguments(int argc, char* argv[]) {
                       << "                            them (requires --manager-url). Off by default.\n"
                       << "  --identity-path           Where to load/store this agent's enrolled identity.\n"
                       << "  --spool-directory         Protected durable record directory, including offline capture.\n"
+                      << "  --fim-root                Explicit absolute directory for FIM (repeat up to 8); disabled without roots.\n"
                       << "  --bootstrap-token-path    One-shot enrollment token file, read only if\n"
                       << "                            --identity-path does not yet exist.\n"
                       << "  --file-collection-root    Allow-listed root for COLLECT_FILE/QUARANTINE_FILE.\n"
@@ -299,6 +304,13 @@ std::optional<CliOptions> parse_arguments(int argc, char* argv[]) {
         if (argument == "--enable-response") {
             options.enable_response = true;
             continue;
+        }
+        if (argument == "--fim-root") {
+            if (index + 1 >= argc || options.fim_roots.size() >= 8 || !argv[index + 1][0]) {
+                std::cerr << "--fim-root requires a nonempty absolute directory; at most 8 roots.\n";
+                return std::nullopt;
+            }
+            options.fim_roots.emplace_back(argv[++index]); continue;
         }
         if (argument == "--manager-url") {
             if (index + 1 >= argc) {
@@ -908,7 +920,20 @@ int run_endpoint(int argc, char* argv[], HANDLE service_stop = nullptr,
 
     std::vector<std::unique_ptr<collectors::TelemetryCollector>> all_collectors;
     if (options->source == SourceSelection::all || options->source == SourceSelection::etw) {
-        all_collectors.push_back(std::make_unique<collectors::EtwProcessCollector>());
+        collectors::EtwSessionCallbacks callbacks;
+        callbacks.installation_scope = installation_id; callbacks.boot_id = boot_id;
+        callbacks.load = [&] {
+            return uploader ? uploader->source_checkpoint("etw.process.session") : offline_journal->source_checkpoint("etw.process.session");
+        };
+        callbacks.commit = [&](nlohmann::json body, const std::string& checkpoint, std::uint64_t revision) {
+            const auto line = record_factory.gap("etw.session_ownership", std::move(body)).dump();
+            bool accepted = false;
+            if (uploader) accepted = uploader->enqueue_checkpointed(line, "etw.process.session", checkpoint, revision);
+            else { try { offline_journal->append_checkpointed(line, "etw.process.session", checkpoint, revision); accepted = true; } catch (const std::exception&) {} }
+            if (accepted) (void)diagnostic_stdout.try_submit(line);
+            return accepted;
+        };
+        all_collectors.push_back(std::make_unique<collectors::EtwProcessCollector>(std::move(callbacks)));
     }
     if (options->source == SourceSelection::all || options->source == SourceSelection::sysmon) {
         all_collectors.push_back(std::make_unique<collectors::SysmonEventCollector>());
@@ -1890,7 +1915,9 @@ int run_endpoint(int argc, char* argv[], HANDLE service_stop = nullptr,
         panopticon::officer::state::PersistenceSource::active_setup,
         panopticon::officer::state::PersistenceSource::image_execution,
         panopticon::officer::state::PersistenceSource::com_activation,
-        panopticon::officer::state::PersistenceSource::startup_approval};
+        panopticon::officer::state::PersistenceSource::startup_approval,
+        panopticon::officer::state::PersistenceSource::browser_registration,
+        panopticon::officer::state::PersistenceSource::office_addins};
     constexpr std::array identity_sources{
         panopticon::officer::state::IdentitySource::accounts,
         panopticon::officer::state::IdentitySource::groups,
@@ -1899,6 +1926,8 @@ int run_endpoint(int argc, char* argv[], HANDLE service_stop = nullptr,
     constexpr std::array software_sources{
         panopticon::officer::state::SoftwareSource::msi,
         panopticon::officer::state::SoftwareSource::uninstall_registry};
+    constexpr std::array native_extra_categories{
+        "thread_inventory", "memory_region_inventory", "module_inventory", "browser_extension_inventory", "defender_preferences_inventory"};
     const auto native_category = [&](std::size_t index) {
         if (index < persistence_sources.size()) return panopticon::officer::state::persistence_source_name(persistence_sources[index]);
         index -= persistence_sources.size();
@@ -1906,9 +1935,9 @@ int run_endpoint(int argc, char* argv[], HANDLE service_stop = nullptr,
         index -= identity_sources.size();
         if (index < software_sources.size()) return panopticon::officer::state::software_source_name(software_sources[index]);
         index -= software_sources.size();
-        return index == 0 ? "thread_inventory" : index == 1 ? "memory_region_inventory" : "module_inventory";
+        return native_extra_categories.at(index);
     };
-    constexpr auto native_worker_count = persistence_sources.size() + identity_sources.size() + software_sources.size() + 3;
+    constexpr auto native_worker_count = persistence_sources.size() + identity_sources.size() + software_sources.size() + native_extra_categories.size();
     std::array<nlohmann::json, native_worker_count> persistence_health;
     std::array<std::jthread, native_worker_count> persistence_workers;
     for (std::size_t index = 0; index < persistence_workers.size(); ++index)
@@ -1969,9 +1998,13 @@ int run_endpoint(int argc, char* argv[], HANDLE service_stop = nullptr,
                     else if (category == "memory_region_inventory") {
                         panopticon::officer::state::MemoryInventoryLimits bounds; bounds.after_pid = memory_after_pid;
                         manifest = panopticon::officer::state::collect_memory_inventory_pages(context->host.id, boot_id, consume, bounds, cancelled);
-                    } else {
+                    } else if (category == "module_inventory") {
                         panopticon::officer::state::ModuleInventoryLimits bounds; bounds.after_pid = memory_after_pid;
                         manifest = panopticon::officer::state::collect_module_inventory_pages(context->host.id, boot_id, consume, bounds, cancelled);
+                    } else if (category == "browser_extension_inventory") {
+                        manifest = panopticon::officer::state::collect_browser_inventory_pages(consume, {}, cancelled);
+                    } else {
+                        manifest = panopticon::officer::state::collect_defender_preferences_pages(consume, {}, cancelled);
                     }
                     manifest["format"] = "paged_" + category + "_v1";
                     manifest["capture_id"] = capture_id; manifest["page_record_ids"] = page_ids;
@@ -2018,6 +2051,28 @@ int run_endpoint(int argc, char* argv[], HANDLE service_stop = nullptr,
                 "endpoint_shutdown", "memory worker stopped; last committed evidence historical");
         }};
     }
+
+    std::unique_ptr<collectors::FileIntegritySensor> file_integrity;
+    std::string file_integrity_init_error;
+    try {
+        collectors::FileIntegrityCallbacks callbacks;
+        callbacks.load = [&](const std::string& source) {
+            return uploader ? uploader->source_checkpoint(source) : offline_journal->source_checkpoint(source);
+        };
+        callbacks.make_record = [&](const std::string&, nlohmann::json body, bool gap) {
+            return gap ? record_factory.gap("filesystem.file_integrity", std::move(body)).dump() :
+                record_factory.state("file_integrity_observation", std::move(body)).dump();
+        };
+        callbacks.commit = [&](const std::string& line, const std::string& source, const std::string& cursor, std::uint64_t revision) {
+            bool accepted = false;
+            if (uploader) accepted = uploader->enqueue_checkpointed(line, source, cursor, revision);
+            else { try { offline_journal->append_checkpointed(line, source, cursor, revision); accepted = true; } catch (const std::exception&) {} }
+            if (accepted) (void)diagnostic_stdout.try_submit(line);
+            return accepted;
+        };
+        callbacks.changed = [&] { SetEvent(health_changed.get()); };
+        file_integrity = std::make_unique<collectors::FileIntegritySensor>(options->fim_roots, std::move(callbacks));
+    } catch (const std::exception& error) { file_integrity_init_error = error.what(); }
 
     std::unique_ptr<collectors::UsnJournal> usn_journal;
     std::string usn_init_error;
@@ -2286,6 +2341,12 @@ int run_endpoint(int argc, char* argv[], HANDLE service_stop = nullptr,
 
         health["sources"] = source_health;
         health["windows_event_log"] = log_health;
+        health["file_integrity"] = file_integrity ? file_integrity->snapshot() :
+            nlohmann::json{{"state", "unavailable"}, {"reason", file_integrity_init_error}};
+        const auto fim_state = health["file_integrity"].value("state", "unavailable");
+        coverage.set("filesystem.file_integrity", fim_state == "disabled" ? CapabilityState::disabled :
+            fim_state == "blind" ? CapabilityState::blind : fim_state == "degraded" ? CapabilityState::degraded : CapabilityState::unavailable,
+            "configured-root native FIM health; independent per-root detail retained", "bounded baseline/hash and native change candidates; actor, lifetime and full filesystem coverage unverified");
         health["usn_journal"] = usn_journal ? usn_journal->snapshot() : nlohmann::json{{"state", "unavailable"}, {"reason", usn_init_error}};
         const auto usn_state = health["usn_journal"]["state"].get<std::string>();
         coverage.set("filesystem.usn_journal", usn_state == "degraded" ? CapabilityState::degraded :
@@ -2474,6 +2535,7 @@ int run_endpoint(int argc, char* argv[], HANDLE service_stop = nullptr,
     device_guard_worker.request_stop();
     for (auto& worker : persistence_workers) worker.request_stop();
     if (windows_logs) windows_logs->stop();
+    if (file_integrity) file_integrity->stop();
     if (usn_journal) usn_journal->stop();
     inventory_worker.join();
     process_inventory_worker.join();

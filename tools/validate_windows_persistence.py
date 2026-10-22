@@ -24,6 +24,8 @@ PERSISTENCE_SOURCES = (
     "image_execution_inventory",
     "com_activation_inventory",
     "startup_approval_inventory",
+    "browser_registration_inventory",
+    "office_addin_inventory",
 )
 IDENTITY_SOURCES = (
     "account_inventory",

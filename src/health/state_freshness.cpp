@@ -39,6 +39,10 @@ constexpr Source sources[]{
     {"image_execution_inventory", {"state.image_execution_inventory"}},
     {"com_activation_inventory", {"state.com_activation_inventory"}},
     {"startup_approval_inventory", {"state.startup_approval_inventory"}},
+    {"browser_registration_inventory", {"state.browser_registration_inventory"}},
+    {"office_addin_inventory", {"state.office_addin_inventory"}},
+    {"browser_extension_inventory", {"state.browser_extension_inventory"}},
+    {"defender_preferences_inventory", {"state.defender_preferences_inventory"}},
     {"account_inventory", {"state.account_inventory"}},
     {"local_group_inventory", {"state.local_group_inventory"}},
     {"logon_session_inventory", {"state.logon_session_inventory"}},
@@ -101,7 +105,7 @@ void apply_state_capture_freshness(Json& health, std::uint64_t now) {
     // refusal must not erase fresh Defender reports on Server (or the reverse).
     if (health.contains("defender_status") && health.contains("capabilities") && health["capabilities"].is_array()) {
         bool available = false, blind = false;
-        for (const auto* key : {"security_center_state", "defender_status"}) {
+        for (const auto* key : {"security_center_state", "defender_status", "defender_preferences_inventory"}) {
             const auto found = health.find(key);
             if (found == health.end() || !found->is_object()) continue;
             available |= found->contains("state") && positive(found->at("state"));
@@ -121,6 +125,8 @@ void apply_state_capture_freshness(Json& health, std::uint64_t now) {
         struct Group { const char* id; std::array<const char*, 8> state_sources; const char* log_channel; };
         constexpr Group groups[]{
             {"J.persistence", {"service_inventory", "scheduled_task_inventory", "wmi_subscription_inventory", "startup_inventory", "active_setup_inventory", "image_execution_inventory", "com_activation_inventory", "startup_approval_inventory"}, nullptr},
+            {"S.browser", {"browser_registration_inventory", "browser_extension_inventory"}, nullptr},
+            {"T.office", {"office_addin_inventory"}, nullptr},
             {"L.scheduled_task", {"scheduled_task_inventory"}, "Microsoft-Windows-TaskScheduler/Operational"},
             {"M.wmi", {"wmi_subscription_inventory"}, "Microsoft-Windows-WMI-Activity/Operational"},
             {"D.user_session", {"account_inventory", "local_group_inventory", "logon_session_inventory", "terminal_session_inventory"}, nullptr},

@@ -22,6 +22,8 @@ add_library(officer-core STATIC
     src/state/host_inventory.cpp
     src/state/process_inventory.cpp
     src/state/thread_inventory.cpp
+    src/state/browser_inventory.cpp
+    src/state/defender_preferences.cpp
     src/state/module_inventory.cpp
     src/state/memory_inventory.cpp
     src/state/process_token.cpp
@@ -66,13 +68,14 @@ add_library(officer-collectors STATIC
     src/collectors/windows_event_log.cpp
     src/collectors/usn_decoder.cpp
     src/collectors/usn_journal.cpp
+    src/collectors/file_integrity.cpp
 )
 
 target_include_directories(officer-collectors PUBLIC include)
 target_compile_features(officer-collectors PUBLIC cxx_std_20)
 target_link_libraries(officer-collectors
     PUBLIC officer-core
-    PRIVATE advapi32 tdh wevtapi tinyxml2::tinyxml2
+    PRIVATE advapi32 tdh wevtapi bcrypt ole32 tinyxml2::tinyxml2
 )
 
 add_library(officer-delivery STATIC

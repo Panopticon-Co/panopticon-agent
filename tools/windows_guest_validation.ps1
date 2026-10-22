@@ -172,7 +172,7 @@ foreach ($line in [IO.File]::ReadLines($recoveredPath)) {
         $record.data.process.pid -eq $lifecycleExpected.Pid -and $record.data.process.start_time_ticks -eq $lifecycleExpected.CreationTicks) {
         $lifecycleStops.Add($record)
     }
-    if ($record.kind -eq 'health' -or $record.category -match '^(thread_inventory|memory_region_inventory|module_inventory|active_setup_inventory|image_execution_inventory|com_activation_inventory|startup_approval_inventory|device_guard_state|scheduled_task_inventory|wmi_subscription_inventory|startup_inventory|account_inventory|local_group_inventory|logon_session_inventory|terminal_session_inventory|msi_product_inventory|uninstall_registry_inventory)') { $selectedRecords.Add($record) }
+    if ($record.kind -eq 'health' -or $record.category -match '^(thread_inventory|memory_region_inventory|module_inventory|active_setup_inventory|image_execution_inventory|com_activation_inventory|startup_approval_inventory|browser_registration_inventory|office_addin_inventory|device_guard_state|scheduled_task_inventory|wmi_subscription_inventory|startup_inventory|account_inventory|local_group_inventory|logon_session_inventory|terminal_session_inventory|msi_product_inventory|uninstall_registry_inventory)') { $selectedRecords.Add($record) }
 }
 $lifecycleVerified = $false
 $retainedGraphVerified = $false
@@ -265,7 +265,7 @@ if ($ExerciseFileFixtures) {
     [pscustomobject]@{Expected=$fileFixtureExpected;MatchingRows=$usnFixtureRows.ToArray();BeforeReasonMask=$beforeReasons;AfterReasonMask=$afterReasons;Verified=[bool]$fileVerified;ActorAttributionVerified=$false;FullFileCoverageVerified=$false} | ConvertTo-Json -Depth 15 | Set-Content -LiteralPath (Join-Path $destination 'usn-runtime-fixture-report.json') -Encoding UTF8
     if(!$fileVerified){throw 'Owned runtime USN create/ADS/rename/delete fixture not observed; originals retained'}
 }
-foreach ($source in @('thread_inventory','memory_region_inventory','module_inventory','active_setup_inventory','image_execution_inventory','com_activation_inventory','startup_approval_inventory','scheduled_task_inventory','wmi_subscription_inventory','startup_inventory','account_inventory','local_group_inventory','logon_session_inventory','terminal_session_inventory','msi_product_inventory','uninstall_registry_inventory')) {
+foreach ($source in @('thread_inventory','memory_region_inventory','module_inventory','active_setup_inventory','image_execution_inventory','com_activation_inventory','startup_approval_inventory','browser_registration_inventory','office_addin_inventory','scheduled_task_inventory','wmi_subscription_inventory','startup_inventory','account_inventory','local_group_inventory','logon_session_inventory','terminal_session_inventory','msi_product_inventory','uninstall_registry_inventory')) {
     $capture = @($records | Where-Object category -EQ $source)
     if ($capture.Count -ne 1) { throw "Missing or ambiguous guest persistence capture: $source" }
     $pages = @($records | Where-Object { $_.category -eq ($source + '_page') -and $_.data.capture_id -eq $capture[0].data.capture_id })

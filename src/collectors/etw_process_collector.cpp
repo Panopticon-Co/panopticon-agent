@@ -6,6 +6,7 @@
 #include <evntrace.h>
 #include <evntcons.h>
 #include <tdh.h>
+#include <objbase.h>
 
 #include <atomic>
 #include <algorithm>
@@ -15,6 +16,7 @@
 #include <cstring>
 #include <exception>
 #include <limits>
+#include <stdexcept>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -25,7 +27,96 @@
 namespace panopticon::officer::collectors {
 namespace {
 
-constexpr wchar_t kSessionName[] = L"Panopticon-Officer-Process";
+constexpr char kOwnedSessionFormat[] = "windows_etw_owned_session_v1";
+constexpr wchar_t kOwnedSessionPrefix[] = L"Panopticon-Officer-Process-";
+using Json = nlohmann::json;
+std::uint64_t native_ticks(FILETIME value) {
+    return (std::uint64_t(value.dwHighDateTime) << 32) | value.dwLowDateTime;
+}
+std::wstring guid_text(const GUID& guid) {
+    wchar_t value[40]{};
+    if (!StringFromGUID2(guid, value, 40)) throw std::runtime_error("ETW session GUID formatting failed");
+    return value;
+}
+std::string ascii(const std::wstring& value) {
+    std::string result;
+    for (const auto ch : value) {
+        if (ch > 127 || ch == 0) throw std::invalid_argument("non-ASCII ETW ownership identifier");
+        result.push_back(static_cast<char>(ch));
+    }
+    return result;
+}
+GUID parse_owned_guid(const std::string& text) {
+    if (text.size() != 38) throw std::invalid_argument("invalid persisted ETW session GUID");
+    const std::wstring wide(text.begin(), text.end()); GUID guid{};
+    if (FAILED(CLSIDFromString(wide.c_str(), &guid)) || ascii(guid_text(guid)) != text || IsEqualGUID(guid, GUID_NULL))
+        throw std::invalid_argument("noncanonical persisted ETW session GUID");
+    return guid;
+}
+std::uint64_t ownership_ticks(const Json& value, const char* field) {
+    const auto text = value.at(field).get<std::string>();
+    if (text.empty() || text.size() > 20 || (text.size() > 1 && text[0] == '0') ||
+        text.find_first_not_of("0123456789") != std::string::npos)
+        throw std::invalid_argument("invalid ETW owner creation token");
+    std::size_t consumed = 0; const auto result = std::stoull(text, &consumed);
+    if (!result || consumed != text.size()) throw std::invalid_argument("invalid ETW owner creation token");
+    return result;
+}
+// This helper never enumerates or stops sessions by a shared name/prefix.
+// Only an authenticated journal checkpoint's exact name plus GUID may be reclaimed.
+Json reclaim_owned_session(const Json& previous, const EtwSessionCallbacks& callbacks) {
+    if (previous.at("format") != kOwnedSessionFormat || previous.at("installation_scope") != callbacks.installation_scope)
+        throw std::invalid_argument("ETW session checkpoint scope mismatch");
+    const auto guid = parse_owned_guid(previous.at("session_guid").get<std::string>());
+    const auto expected_name = std::wstring(kOwnedSessionPrefix) + guid_text(guid);
+    if (previous.at("session_name") != ascii(expected_name)) throw std::invalid_argument("ETW session checkpoint name/GUID mismatch");
+    std::vector<std::byte> storage(sizeof(EVENT_TRACE_PROPERTIES) + 2048 * sizeof(wchar_t));
+    auto* props = reinterpret_cast<EVENT_TRACE_PROPERTIES*>(storage.data());
+    props->Wnode.BufferSize = static_cast<ULONG>(storage.size()); props->LoggerNameOffset = sizeof(EVENT_TRACE_PROPERTIES);
+    props->LogFileNameOffset = sizeof(EVENT_TRACE_PROPERTIES) + 1024 * sizeof(wchar_t);
+    auto status = ControlTraceW(0, expected_name.c_str(), props, EVENT_TRACE_CONTROL_QUERY);
+    if (status == ERROR_WMI_INSTANCE_NOT_FOUND)
+        return {{"state", "absent"}, {"session_name", ascii(expected_name)}, {"stopped", false}};
+    if (status != ERROR_SUCCESS) throw std::runtime_error("owned ETW session query refused: " + std::to_string(status));
+    if (!IsEqualGUID(props->Wnode.Guid, guid)) throw std::runtime_error("ETW session GUID changed; replacement left untouched");
+    if (!callbacks.boot_id || previous.at("boot_id") != *callbacks.boot_id)
+        throw std::runtime_error("cannot reclaim an existing ETW session without matching native boot identity");
+    const auto& pid_field = previous.at("owner_pid");
+    if (!pid_field.is_number_unsigned() || pid_field.get<std::uint64_t>() > std::numeric_limits<std::uint32_t>::max())
+        throw std::invalid_argument("invalid persisted ETW owner PID");
+    const auto pid = pid_field.get<std::uint32_t>();
+    const auto creation = ownership_ticks(previous, "owner_creation_ticks");
+    if (!pid) throw std::invalid_argument("zero ETW owner PID");
+    HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, FALSE, pid);
+    if (!process) {
+        const auto error = GetLastError();
+        if (error != ERROR_INVALID_PARAMETER) throw std::runtime_error("cannot verify prior ETW owner absence: " + std::to_string(error));
+    } else {
+        FILETIME born{}, exited{}, kernel{}, user{};
+        const bool queried = GetProcessTimes(process, &born, &exited, &kernel, &user) != FALSE;
+        const auto error = queried ? ERROR_SUCCESS : GetLastError();
+        const auto wait = queried ? WaitForSingleObject(process, 0) : WAIT_FAILED;
+        const auto wait_error = wait == WAIT_FAILED ? GetLastError() : ERROR_SUCCESS;
+        CloseHandle(process);
+        if (!queried) throw std::runtime_error("cannot verify prior ETW owner identity: " + std::to_string(error));
+        if (native_ticks(born) == creation && wait != WAIT_OBJECT_0)
+            throw std::runtime_error(wait == WAIT_TIMEOUT ? "prior exact ETW owner is still alive; session left untouched" :
+                "cannot verify prior ETW owner exit: " + std::to_string(wait_error));
+        // A different creation token proves PID reuse, not a live original owner.
+    }
+    // Requery immediately before mutation. Native administrator replacement races
+    // are not an atomic fencing guarantee and remain a qualification boundary.
+    props->Wnode.BufferSize = static_cast<ULONG>(storage.size());
+    status = ControlTraceW(0, expected_name.c_str(), props, EVENT_TRACE_CONTROL_QUERY);
+    if (status == ERROR_WMI_INSTANCE_NOT_FOUND) return {{"state", "absent_after_owner_check"}, {"stopped", false}};
+    if (status != ERROR_SUCCESS || !IsEqualGUID(props->Wnode.Guid, guid))
+        throw std::runtime_error("owned ETW session changed during owner verification; left untouched");
+    status = ControlTraceW(0, expected_name.c_str(), props, EVENT_TRACE_CONTROL_STOP);
+    if (status != ERROR_SUCCESS && status != ERROR_WMI_INSTANCE_NOT_FOUND)
+        throw std::runtime_error("owned orphan ETW stop refused: " + std::to_string(status));
+    return {{"state", "owned_orphan_reclaimed"}, {"session_name", ascii(expected_name)},
+        {"session_guid", ascii(guid_text(guid))}, {"stopped", status == ERROR_SUCCESS}, {"native_status", std::to_string(status)}};
+}
 constexpr wchar_t kProviderName[] = L"Microsoft-Windows-Kernel-Process";
 constexpr std::uint16_t kProcessStartEventId = 1;
 constexpr std::uint16_t kProcessStopEventId = 2;
@@ -394,6 +485,34 @@ std::optional<telemetry::RawProcessEvent> detail::decode_etw_process_record(cons
 
 struct EtwProcessCollector::Impl {
     mutable std::mutex mutex;
+    EtwSessionCallbacks ownership;
+    std::wstring session_name;
+    GUID session_guid{};
+    explicit Impl(EtwSessionCallbacks callbacks) : ownership(std::move(callbacks)) {}
+    void prepare_session() {
+        if (ownership.installation_scope.empty() || ownership.installation_scope.size() > 128 || !ownership.load || !ownership.commit)
+            throw std::invalid_argument("durable ETW session ownership callbacks and installation scope required");
+        auto prior = ownership.load();
+        Json recovery{{"state", "no_prior_checkpoint"}, {"stopped", false}};
+        if (prior) recovery = reclaim_owned_session(Json::parse(prior->value), ownership);
+        if (FAILED(CoCreateGuid(&session_guid))) throw std::runtime_error("ETW session UUID generation failed");
+        session_name = std::wstring(kOwnedSessionPrefix) + guid_text(session_guid);
+        FILETIME born{}, exited{}, kernel{}, user{};
+        if (!GetProcessTimes(GetCurrentProcess(), &born, &exited, &kernel, &user) || !native_ticks(born))
+            throw std::runtime_error("cannot obtain exact current ETW owner creation token");
+        Json intent{{"format", kOwnedSessionFormat}, {"installation_scope", ownership.installation_scope},
+            {"boot_id", ownership.boot_id ? Json(*ownership.boot_id) : Json(nullptr)},
+            {"session_name", ascii(session_name)}, {"session_guid", ascii(guid_text(session_guid))},
+            {"owner_pid", GetCurrentProcessId()}, {"owner_creation_ticks", std::to_string(native_ticks(born))},
+            {"phase", "start_intent"}};
+        Json evidence = intent;
+        evidence["prior_session_recovery"] = recovery;
+        evidence["lost_native_events"] = nullptr;
+        evidence["continuity_complete"] = false;
+        evidence["scope"] = "durable intent before native start; no event replay; shared legacy sessions never stopped";
+        if (!ownership.commit(std::move(evidence), intent.dump(), prior ? prior->revision : 0))
+            throw std::runtime_error("ETW ownership intent not durably accepted; no new session created");
+    }
     std::vector<std::byte> properties_buffer;
     EVENT_TRACE_LOGFILEW trace_logfile{};
     TRACEHANDLE session_handle{};
@@ -468,6 +587,13 @@ struct EtwProcessCollector::Impl {
 
     void stop_session_only() noexcept {
         if (session_handle != 0 && !properties_buffer.empty()) {
+            auto* query = properties();
+            query->Wnode.BufferSize = static_cast<ULONG>(properties_buffer.size());
+            const auto observed = ControlTraceW(session_handle, nullptr, query, EVENT_TRACE_CONTROL_QUERY);
+            if (observed != ERROR_SUCCESS || !IsEqualGUID(query->Wnode.Guid, session_guid)) {
+                // Never disable/stop a replaced or unverifiable session.
+                session_handle = 0; return;
+            }
             EnableTraceEx2(
                 session_handle,
                 &kKernelProcessProvider,
@@ -479,7 +605,7 @@ struct EtwProcessCollector::Impl {
                 nullptr);
             ControlTraceW(
                 session_handle,
-                kSessionName,
+                session_name.c_str(),
                 properties(),
                 EVENT_TRACE_CONTROL_STOP);
             session_handle = 0;
@@ -487,7 +613,7 @@ struct EtwProcessCollector::Impl {
     }
 };
 
-EtwProcessCollector::EtwProcessCollector() : impl_(std::make_unique<Impl>()) {}
+EtwProcessCollector::EtwProcessCollector(EtwSessionCallbacks callbacks) : impl_(std::make_unique<Impl>(std::move(callbacks))) {}
 
 EtwProcessCollector::~EtwProcessCollector() {
     stop();
@@ -516,22 +642,28 @@ bool EtwProcessCollector::start(
     impl_->error_sink = std::move(error_sink);
     impl_->stop_requested.store(false);
 
-    constexpr std::size_t session_name_bytes = sizeof(kSessionName);
+    try { impl_->prepare_session(); }
+    catch (const std::exception& error) {
+        impl_->event_sink = {}; impl_->error_sink = {};
+        error_message = "ETW ownership/recovery refused: " + std::string(error.what()); return false;
+    }
+    const auto session_name_bytes = (impl_->session_name.size() + 1) * sizeof(wchar_t);
     impl_->properties_buffer.assign(
         sizeof(EVENT_TRACE_PROPERTIES) + session_name_bytes,
         std::byte{});
     auto* properties = impl_->properties();
     properties->Wnode.BufferSize = static_cast<ULONG>(impl_->properties_buffer.size());
     properties->Wnode.ClientContext = 1;
+    properties->Wnode.Guid = impl_->session_guid;
     properties->Wnode.Flags = WNODE_FLAG_TRACED_GUID;
     properties->LogFileMode = EVENT_TRACE_REAL_TIME_MODE | EVENT_TRACE_SYSTEM_LOGGER_MODE;
     properties->LoggerNameOffset = sizeof(EVENT_TRACE_PROPERTIES);
     std::memcpy(
         impl_->properties_buffer.data() + properties->LoggerNameOffset,
-        kSessionName,
+        impl_->session_name.c_str(),
         session_name_bytes);
 
-    ULONG status = StartTraceW(&impl_->session_handle, kSessionName, properties);
+    ULONG status = StartTraceW(&impl_->session_handle, impl_->session_name.c_str(), properties);
     if (status != ERROR_SUCCESS) {
         impl_->session_handle = 0;
         impl_->properties_buffer.clear();
@@ -565,7 +697,7 @@ bool EtwProcessCollector::start(
     }
 
     impl_->trace_logfile = {};
-    impl_->trace_logfile.LoggerName = const_cast<LPWSTR>(kSessionName);
+    impl_->trace_logfile.LoggerName = impl_->session_name.data();
     impl_->trace_logfile.ProcessTraceMode =
         PROCESS_TRACE_MODE_REAL_TIME | PROCESS_TRACE_MODE_EVENT_RECORD;
     impl_->trace_logfile.EventRecordCallback = &Impl::event_record_callback;
@@ -654,6 +786,10 @@ CollectorStatus EtwProcessCollector::status() {
     if (error != ERROR_SUCCESS) {
         result.statistics_error = "ETW statistics query failed: " + win32_error_message(error);
         return result;
+    }
+    if (!IsEqualGUID(properties->Wnode.Guid, impl_->session_guid)) {
+        result.statistics_error = "owned ETW session GUID mismatch; foreign/replaced statistics refused";
+        result.continuity_fault = true; return result;
     }
     result.statistics_available = true;
     result.events_lost = properties->EventsLost;

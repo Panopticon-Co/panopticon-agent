@@ -1,17 +1,26 @@
 #pragma once
 
 #include "panopticon/officer/collectors/telemetry_collector.hpp"
+#include "panopticon/officer/delivery/journal.hpp"
 
 #include <memory>
 
 namespace panopticon::officer::collectors {
+struct EtwSessionCallbacks {
+    std::string installation_scope;
+    std::optional<std::string> boot_id;
+    std::function<std::optional<delivery::SourceCheckpoint>()> load;
+    // Commit a canonical lifecycle/gap record and encrypted checkpoint together.
+    // False means no native new-session creation is allowed.
+    std::function<bool(nlohmann::json, const std::string&, std::uint64_t)> commit;
+};
 namespace detail {
 [[nodiscard]] std::optional<telemetry::RawProcessEvent> decode_etw_process_record(const void* event_record, std::string& error);
 }
 
 class EtwProcessCollector final : public TelemetryCollector {
 public:
-    EtwProcessCollector();
+    explicit EtwProcessCollector(EtwSessionCallbacks callbacks = {});
     ~EtwProcessCollector() override;
 
     EtwProcessCollector(const EtwProcessCollector&) = delete;
