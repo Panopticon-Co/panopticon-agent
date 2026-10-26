@@ -3,6 +3,8 @@
 #include <tinyxml2.h>
 
 #include <charconv>
+#include <algorithm>
+#include <limits>
 #include <chrono>
 #include <cstdint>
 #include <optional>
@@ -66,12 +68,15 @@ std::optional<unsigned int> decimal_component(std::string_view text, std::size_t
 }
 
 // Sysmon UtcTime: "yyyy-MM-dd HH:mm:ss.fff" (millisecond fraction, no zone).
-std::optional<telemetry::UtcTimestamp> parse_sysmon_utc(std::string_view text, std::string& error_message) {
+std::optional<telemetry::UtcTimestamp> parse_sysmon_utc(
+    std::string_view text,
+    std::string& error_message) {
     if (text.size() < 19 || text[4] != '-' || text[7] != '-' ||
         (text[10] != ' ' && text[10] != 'T') || text[13] != ':' || text[16] != ':') {
         error_message = "Sysmon UtcTime has an unsupported format: '" + std::string{text} + "'.";
         return std::nullopt;
     }
+
     const auto year = decimal_component(text, 0, 4);
     const auto month = decimal_component(text, 5, 2);
     const auto day = decimal_component(text, 8, 2);
@@ -80,39 +85,61 @@ std::optional<telemetry::UtcTimestamp> parse_sysmon_utc(std::string_view text, s
     const auto second = decimal_component(text, 17, 2);
     if (!year || !month || !day || !hour || !minute || !second ||
         *hour > 23 || *minute > 59 || *second > 60) {
-        error_message = "Sysmon UtcTime contains an invalid date or time: '" + std::string{text} + "'.";
+        error_message = "Sysmon UtcTime contains an invalid date or time: '" +
+                        std::string{text} + "'.";
         return std::nullopt;
     }
+
     const std::chrono::year_month_day date{
         std::chrono::year{static_cast<int>(*year)},
         std::chrono::month{*month},
         std::chrono::day{*day}};
-    if (!date.ok()) {
-        error_message = "Sysmon UtcTime contains an invalid calendar date: '" + std::string{text} + "'.";
+    if (!date.ok() || *year < 1678 || *year > 2261) {
+        error_message = "Sysmon UtcTime contains an invalid calendar date: '" +
+                        std::string{text} + "'.";
         return std::nullopt;
     }
+
     std::chrono::nanoseconds fraction{};
-    if (text.size() > 20 && text[19] == '.') {
-        std::size_t fraction_end = 20;
-        while (fraction_end < text.size() && text[fraction_end] >= '0' && text[fraction_end] <= '9') {
-            ++fraction_end;
-        }
-        const std::size_t digits = fraction_end - 20;
-        if (digits != 0 && digits <= 9) {
-            const auto parsed_fraction = decimal_component(text, 20, digits);
-            if (parsed_fraction) {
-                std::uint64_t nanoseconds = *parsed_fraction;
-                for (std::size_t index = digits; index < 9; ++index) {
-                    nanoseconds *= 10;
-                }
-                fraction = std::chrono::nanoseconds{nanoseconds};
+    if (text.size() > 19) {
+        if (text[19] != '.') {
+            if (text[19] != 'Z' || text.size() != 20) {
+                error_message = "Sysmon UtcTime has an invalid suffix: '" +
+                                std::string{text} + "'.";
+                return std::nullopt;
             }
+        } else {
+            std::size_t fraction_end = 20;
+            while (fraction_end < text.size() && text[fraction_end] >= '0' &&
+                   text[fraction_end] <= '9') {
+                ++fraction_end;
+            }
+            const std::size_t digits = fraction_end - 20;
+            if (digits == 0 || digits > 9 ||
+                (fraction_end < text.size() &&
+                 !(fraction_end + 1 == text.size() && text[fraction_end] == 'Z'))) {
+                error_message = "Sysmon UtcTime has an invalid fractional value: '" +
+                                std::string{text} + "'.";
+                return std::nullopt;
+            }
+            const auto parsed_fraction = decimal_component(text, 20, digits);
+            if (!parsed_fraction) {
+                error_message = "Sysmon UtcTime has an invalid fractional value.";
+                return std::nullopt;
+            }
+            std::uint64_t nanoseconds = *parsed_fraction;
+            for (std::size_t index = digits; index < 9; ++index) {
+                nanoseconds *= 10;
+            }
+            fraction = std::chrono::nanoseconds{nanoseconds};
         }
     }
+
     const auto base = std::chrono::sys_days{date} + std::chrono::hours{*hour} +
                       std::chrono::minutes{*minute} + std::chrono::seconds{*second};
     return telemetry::UtcTimestamp{
-        std::chrono::duration_cast<std::chrono::nanoseconds>(base.time_since_epoch()) + fraction};
+        std::chrono::duration_cast<std::chrono::nanoseconds>(base.time_since_epoch()) +
+        fraction};
 }
 
 std::optional<std::string> extract_sha256(const std::optional<std::string>& hashes) {
@@ -203,12 +230,45 @@ telemetry::RawProcessContext make_process_context(const FieldMap& fields) {
     return ctx;
 }
 
+std::optional<telemetry::RawProcessContext> exact_source_context(
+    const FieldMap& fields, const std::string& prefix, std::string& error) {
+    const auto pid_name = prefix + "ProcessId";
+    const auto pid = parse_integer<std::uint32_t>(field(fields, pid_name.c_str()), pid_name.c_str(), error);
+    if (!pid) { if (error.empty()) error = "Sysmon event is missing " + pid_name; return std::nullopt; }
+    telemetry::RawProcessContext result;
+    result.pid = *pid;
+    result.executable = field(fields, (prefix + "Image").c_str());
+    result.user_name = field(fields, (prefix + "User").c_str());
+    const auto lower = field(fields, (prefix + "ProcessGuid").c_str());
+    const auto upper = field(fields, (prefix + "ProcessGUID").c_str());
+    if (lower && upper && *lower != *upper) { error = "Conflicting Sysmon process GUID aliases"; return std::nullopt; }
+    result.process_guid = lower ? lower : upper;
+    return result;
+}
+
+std::optional<std::uint64_t> hex_value(const FieldMap& fields, const char* name, std::string& error) {
+    const auto value = field(fields, name);
+    if (!value) return std::nullopt;
+    std::string_view digits = *value;
+    if (digits.starts_with("0x") || digits.starts_with("0X")) digits.remove_prefix(2);
+    std::uint64_t number{};
+    const auto [end, status] = std::from_chars(digits.data(), digits.data() + digits.size(), number, 16);
+    if (digits.empty() || status != std::errc{} || end != digits.data() + digits.size()) {
+        error = "Invalid or overflowing Sysmon hexadecimal field: " + std::string{name}; return std::nullopt;
+    }
+    return number;
+}
+
 }  // namespace
 
 std::optional<telemetry::RawEvent> SysmonTelemetryDecoder::decode_xml(
     std::string_view xml,
     std::string& error_message) {
     error_message.clear();
+    if (xml.empty() || xml.size() > 256u * 1024 || xml.find('\0') != std::string_view::npos) {
+        error_message = "Sysmon XML exceeds the 256 KiB decoded-event admission bound";
+        return std::nullopt;
+    }
     tinyxml2::XMLDocument document;
     if (document.Parse(xml.data(), xml.size()) != tinyxml2::XML_SUCCESS) {
         error_message = "Could not parse Sysmon event XML: " + std::string{document.ErrorStr()};
@@ -218,9 +278,16 @@ std::optional<telemetry::RawEvent> SysmonTelemetryDecoder::decode_xml(
     const auto* event = document.FirstChildElement("Event");
     const auto* system = event == nullptr ? nullptr : event->FirstChildElement("System");
     const auto* event_data = event == nullptr ? nullptr : event->FirstChildElement("EventData");
-    if (event == nullptr || system == nullptr || event_data == nullptr) {
+    if (event == nullptr || system == nullptr || event_data == nullptr || event->NextSiblingElement() ||
+        system->NextSiblingElement("System") || event_data->NextSiblingElement("EventData")) {
         error_message = "Sysmon XML is missing Event, System, or EventData.";
         return std::nullopt;
+    }
+    for (const auto* name : {"Provider", "Channel", "EventID", "EventRecordID", "TimeCreated"}) {
+        const auto* first = system->FirstChildElement(name);
+        if (first && first->NextSiblingElement(name)) {
+            error_message = "Ambiguous duplicate Sysmon System field"; return std::nullopt;
+        }
     }
 
     const auto event_id_text = child_text(system, "EventID");
@@ -236,8 +303,12 @@ std::optional<telemetry::RawEvent> SysmonTelemetryDecoder::decode_xml(
     for (const auto* data = event_data->FirstChildElement("Data"); data != nullptr;
          data = data->NextSiblingElement("Data")) {
         if (const char* name = data->Attribute("Name")) {
-            fields.insert_or_assign(name, data->GetText() == nullptr ? "" : data->GetText());
-        }
+            if (std::string_view{name}.empty() || std::string_view{name}.size() > 128 || fields.size() >= 64 ||
+                !fields.emplace(name, data->GetText() == nullptr ? "" : data->GetText()).second) {
+                error_message = "Sysmon named field is duplicate, invalid or beyond the field-count bound";
+                return std::nullopt;
+            }
+        } else { error_message = "Sysmon Data field has no name"; return std::nullopt; }
     }
 
     // Prefer the Event Log's own System/TimeCreated over EventData/UtcTime.
@@ -280,11 +351,64 @@ std::optional<telemetry::RawEvent> SysmonTelemetryDecoder::decode_xml(
         std::string record_error;
         source.record_id = parse_integer<std::uint64_t>(
             child_text(system, "EventRecordID"), "System/EventRecordID", record_error);
+        if (!record_error.empty()) { error_message = record_error; return std::nullopt; }
     }
 
     telemetry::RawProcessContext process = make_process_context(fields);
 
     switch (*event_id) {
+        case 8:
+        case 10:
+        case 22: {
+            const auto* native_provider = system->FirstChildElement("Provider");
+            if (!native_provider || !native_provider->Attribute("Name") || source.provider != "Microsoft-Windows-Sysmon" ||
+                source.channel != std::optional<std::string>{"Microsoft-Windows-Sysmon/Operational"}) {
+                error_message = "Extended Sysmon event has the wrong provider/channel"; return std::nullopt;
+            }
+            telemetry::RawSysmonExtendedEvent out;
+            out.source = source;
+            out.event_id = static_cast<std::uint16_t>(*event_id);
+            out.timestamp = *timestamp;
+            out.event_time_field = "System/TimeCreated";
+            // Match training adapter semantics: Sysmon's own event clock is primary.
+            if (utc_text) {
+                const auto source_time = parse_sysmon_utc(*utc_text, error_message);
+                if (!source_time) return std::nullopt;
+                out.timestamp = *source_time; out.event_time_field = "EventData/UtcTime";
+            } else if (!system->FirstChildElement("TimeCreated")) {
+                error_message = "Extended Sysmon event has no event clock"; return std::nullopt;
+            }
+            auto actor = exact_source_context(fields, *event_id == 22 ? "" : "Source", error_message);
+            if (!actor) return std::nullopt;
+            out.process = std::move(*actor);
+            if (*event_id != 22) {
+                out.target = exact_source_context(fields, "Target", error_message);
+                if (!out.target) return std::nullopt;
+            }
+            if (*event_id == 10) {
+                out.granted_access = hex_value(fields, "GrantedAccess", error_message);
+                if (!error_message.empty()) return std::nullopt;
+                if (out.granted_access && *out.granted_access > std::numeric_limits<std::uint32_t>::max()) {
+                    error_message = "Sysmon access mask exceeds 32 bits"; return std::nullopt;
+                }
+                out.call_trace = field(fields, "CallTrace");
+            } else if (*event_id == 8) {
+                out.start_address = hex_value(fields, "StartAddress", error_message);
+                if (!error_message.empty()) return std::nullopt;
+                out.new_thread_id = parse_integer<std::uint32_t>(field(fields, "NewThreadId"), "NewThreadId", error_message);
+                if (!error_message.empty()) return std::nullopt;
+                out.start_module = field(fields, "StartModule");
+                out.start_function = field(fields, "StartFunction");
+            } else {
+                out.query_name = field(fields, "QueryName");
+                out.query_results = field(fields, "QueryResults");
+                out.query_status = parse_integer<std::uint32_t>(field(fields, "QueryStatus"), "QueryStatus", error_message);
+                if (!error_message.empty()) return std::nullopt;
+            }
+            out.source_fields.assign(fields.begin(), fields.end());
+            std::sort(out.source_fields.begin(), out.source_fields.end());
+            return telemetry::RawEvent{std::move(out)};
+        }
         case 3: {
             telemetry::RawNetworkEvent out;
             out.source = source;
@@ -306,8 +430,10 @@ std::optional<telemetry::RawEvent> SysmonTelemetryDecoder::decode_xml(
             out.destination_hostname = field(fields, "DestinationHostname");
             std::string port_error;
             out.source_port = parse_port(field(fields, "SourcePort"), "SourcePort", port_error);
+            if (!port_error.empty()) { error_message = port_error; return std::nullopt; }
             out.destination_port =
                 parse_port(field(fields, "DestinationPort"), "DestinationPort", port_error);
+            if (!port_error.empty()) { error_message = port_error; return std::nullopt; }
             return telemetry::RawEvent{std::move(out)};
         }
         case 7: {
@@ -380,7 +506,7 @@ std::optional<telemetry::RawEvent> SysmonTelemetryDecoder::decode_xml(
         }
         default:
             error_message = "Sysmon Event ID " + std::to_string(*event_id) +
-                            " is not a supported telemetry family (expected 3, 7, 11, 12, 13, 14, 23, or 26).";
+                            " is not a supported telemetry family (expected 3, 7, 8, 10, 11, 12, 13, 14, 22, 23, or 26).";
             return std::nullopt;
     }
 }

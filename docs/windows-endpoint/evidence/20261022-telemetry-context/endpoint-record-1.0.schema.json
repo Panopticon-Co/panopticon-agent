@@ -1,0 +1,349 @@
+{
+  "$defs": {
+    "EndpointIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "agent_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Agent Id",
+          "type": "string"
+        },
+        "host_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Host Id",
+          "type": "string"
+        },
+        "device_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Device Id",
+          "type": "string"
+        },
+        "installation_id": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Installation Id",
+          "type": "string"
+        },
+        "boot_id": {
+          "anyOf": [
+            {
+              "pattern": "^boot_[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Boot Id"
+        }
+      },
+      "required": [
+        "agent_id",
+        "host_id",
+        "device_id",
+        "installation_id",
+        "boot_id"
+      ],
+      "title": "EndpointIdentity",
+      "type": "object"
+    },
+    "ProcessReference": {
+      "additionalProperties": false,
+      "properties": {
+        "observed_pid": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "title": "Observed Pid",
+          "type": "integer"
+        },
+        "entity_id": {
+          "anyOf": [
+            {
+              "pattern": "^proc_[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Entity Id"
+        },
+        "resolution": {
+          "enum": [
+            "native_exact",
+            "source_scoped",
+            "native_unscoped",
+            "unresolved"
+          ],
+          "title": "Resolution",
+          "type": "string"
+        },
+        "native_creation_ticks": {
+          "anyOf": [
+            {
+              "pattern": "^(0|[1-9][0-9]{0,19})$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Native Creation Ticks"
+        },
+        "source_guid": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Source Guid"
+        },
+        "boot_id": {
+          "anyOf": [
+            {
+              "pattern": "^boot_[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Boot Id"
+        },
+        "source_namespace": {
+          "maxLength": 1024,
+          "minLength": 1,
+          "title": "Source Namespace",
+          "type": "string"
+        }
+      },
+      "required": [
+        "observed_pid",
+        "entity_id",
+        "resolution",
+        "native_creation_ticks",
+        "source_guid",
+        "boot_id",
+        "source_namespace"
+      ],
+      "title": "ProcessReference",
+      "type": "object"
+    },
+    "Provenance": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Kind",
+          "type": "string"
+        },
+        "provider": {
+          "maxLength": 512,
+          "minLength": 1,
+          "title": "Provider",
+          "type": "string"
+        },
+        "channel": {
+          "anyOf": [
+            {
+              "maxLength": 512,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Channel"
+        },
+        "native_record_id": {
+          "anyOf": [
+            {
+              "pattern": "^(0|[1-9][0-9]{0,19})$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Native Record Id"
+        },
+        "native_observation_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Native Observation Id"
+        },
+        "continuity": {
+          "enum": [
+            "unverified",
+            "continuous",
+            "gap",
+            "snapshot"
+          ],
+          "title": "Continuity",
+          "type": "string"
+        },
+        "collector_epoch": {
+          "pattern": "^epoch_[0-9a-f]{64}$",
+          "title": "Collector Epoch",
+          "type": "string"
+        },
+        "collector_generation": {
+          "anyOf": [
+            {
+              "pattern": "^[1-9][0-9]{0,19}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Collector Generation"
+        },
+        "capture_clock": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Capture Clock"
+        },
+        "capture_uptime_ms": {
+          "anyOf": [
+            {
+              "pattern": "^(0|[1-9][0-9]{0,19})$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Capture Uptime Ms"
+        },
+        "sequence": {
+          "pattern": "^[1-9][0-9]{0,19}$",
+          "title": "Sequence",
+          "type": "string"
+        },
+        "received_at": {
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$",
+          "title": "Received At",
+          "type": "string"
+        },
+        "event_time_ns": {
+          "pattern": "^-?(0|[1-9][0-9]{0,18})$",
+          "title": "Event Time Ns",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "provider",
+        "channel",
+        "native_record_id",
+        "native_observation_id",
+        "continuity",
+        "collector_epoch",
+        "sequence",
+        "received_at",
+        "event_time_ns"
+      ],
+      "title": "Provenance",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "record_id": {
+      "pattern": "^rec_[0-9a-f]{64}$",
+      "title": "Record Id",
+      "type": "string"
+    },
+    "kind": {
+      "enum": [
+        "observation",
+        "state",
+        "health",
+        "gap",
+        "evidence",
+        "command_result"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
+    "category": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Category",
+      "type": "string"
+    },
+    "observed_at": {
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$",
+      "title": "Observed At",
+      "type": "string"
+    },
+    "endpoint": {
+      "$ref": "#/$defs/EndpointIdentity"
+    },
+    "provenance": {
+      "$ref": "#/$defs/Provenance"
+    },
+    "subject": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ProcessReference"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "data": {
+      "additionalProperties": true,
+      "title": "Data",
+      "type": "object"
+    }
+  },
+  "required": [
+    "schema_version",
+    "record_id",
+    "kind",
+    "category",
+    "observed_at",
+    "endpoint",
+    "provenance",
+    "subject",
+    "data"
+  ],
+  "title": "EndpointRecord",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://panopticon.example/schema/endpoint-record/1.0"
+}

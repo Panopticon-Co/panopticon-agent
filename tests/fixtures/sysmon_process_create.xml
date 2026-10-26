@@ -16,5 +16,12 @@
     <Data Name="Hashes">SHA256=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA,MD5=SANITIZED</Data>
     <Data Name="ParentProcessId">1000</Data>
     <Data Name="ParentImage">C:\Windows\System32\powershell.exe</Data>
+    <Data Name="ParentCommandLine">powershell.exe -NoProfile</Data>
+    <Data Name="IntegrityLevel">Medium</Data>
+    <Data Name="OriginalFileName">OFFICER-DEMO.EXE</Data>
+    <Data Name="CurrentDirectory">C:\Sanitized\</Data>
+    <Data Name="LogonId">0x00000000000003e7</Data>
+    <Data Name="LogonGuid">{SANITIZED-LOGON-GUID}</Data>
+    <Data Name="TerminalSessionId">1</Data>
   </EventData>
 </Event>

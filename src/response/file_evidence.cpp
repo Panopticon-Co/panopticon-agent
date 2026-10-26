@@ -39,7 +39,7 @@ private:
 std::optional<std::wstring> final_path(HANDLE handle) {
     const DWORD needed = GetFinalPathNameByHandleW(handle, nullptr, 0, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
     if (needed == 0 || needed > 32768) return std::nullopt;
-    std::wstring path(static_cast<std::size_t>(needed), L'\\0');
+    std::wstring path(static_cast<std::size_t>(needed), L'\0');
     const DWORD written = GetFinalPathNameByHandleW(handle, path.data(), needed, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
     if (written == 0 || written >= needed) return std::nullopt;
     path.resize(written);

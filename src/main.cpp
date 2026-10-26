@@ -1011,6 +1011,22 @@ int run_endpoint(int argc, char* argv[], HANDLE service_stop = nullptr,
             (void)diagnostic_stdout.try_submit(record.dump());
             return;
         }
+        if (const auto* extension = std::get_if<telemetry::RawSysmonExtendedEvent>(&raw_event)) {
+            nlohmann::json record;
+            try { record = record_factory.sysmon_extended(*extension); }
+            catch (const std::exception& error) {
+                ++normalization_failures;
+                record = record_factory.normalization_failure(raw_event, error.what());
+            }
+            const auto body = record.dump();
+            if (!persist_record(body)) {
+                ++observation_admission_failures; SetEvent(health_changed.get());
+                throw std::runtime_error("Sysmon extended observation was not durably accepted");
+            }
+            if (record["category"] == "normalization_failure") ++failure_evidence_committed;
+            (void)diagnostic_stdout.try_submit(body);
+            return;
+        }
         const auto source_record = raw_event;
         std::string normalization_error;
         std::optional<telemetry::PanopticonEvent> normalized;
@@ -1034,6 +1050,9 @@ int run_endpoint(int argc, char* argv[], HANDLE service_stop = nullptr,
                     return pipeline::normalize_registry_event(raw, *context, normalization_error);
                 } else if constexpr (std::is_same_v<Event, telemetry::RawImageLoadEvent>) {
                     return pipeline::normalize_image_load_event(raw, *context, normalization_error);
+                } else {
+                    normalization_error = "Sysmon extension requires canonical normalization";
+                    return std::nullopt;
                 }
             },
             std::move(raw_event));
@@ -2732,7 +2751,7 @@ int run_endpoint(int argc, char* argv[], HANDLE service_stop = nullptr,
                             "committed Win32_EncryptableVolume status in record " + pending_id,
                             "bounded caller-visible WMI association/status only; no hardware/key-protector/escrow or full-disk claim");
                     } else volume_encryption_health["commit_failures"] = std::to_string(++failures);
-                    volume_encryption_health["state"] = accepted ? status.value("state", std::string("unavailable")) : nlohmann::json("unavailable");
+                    volume_encryption_health["state"] = accepted ? status.value("state", std::string("unavailable")) : std::string("unavailable");
                     volume_encryption_health["pending_durable_acceptance"] = !pending.empty();
                     volume_encryption_health["collection_in_progress"] = false;
                     SetEvent(health_changed.get());

@@ -73,16 +73,23 @@ path silently switches to future-only collection. Cursor schema v2 wraps the
 native bookmark with the channel log creation time and last accepted native
 record ID. Existing native-XML cursors are treated as legacy and atomically
 migrated with a generation-unknown gap. Before subscription and every five
-seconds, the worker compares generation, oldest retained record, and retained
-record-count estimate with its committed cursor. A changed/unknown generation,
+seconds, the worker compares generation, oldest retained record, and the newest
+native record ID with its committed cursor. The newest ID is queried from the
+channel in reverse order; it is not derived from the retained record count, because
+native IDs can have holes. These separate native queries are non-atomic samples.
+A changed/unknown generation,
 record-ID regression, overwritten interval, malformed cursor, or stale native
 bookmark emits a per-channel durable lifecycle gap and resets to the oldest
 retained record when continuity cannot be proven. Gap and replacement cursor
-share one source-checkpoint transaction. Event-ID repetition/regression under
+share one source-checkpoint transaction. Native record-ID repetition/regression under
 the same generation is recorded as a gap and the offending body is not retained.
 Native loss counts/ranges remain unknown or approximate: the Event Log API does
-not prove provider-side loss, and record-count/newest-ID arithmetic is only an
-estimate. Explicit XML render refusal,
+not prove provider-side loss, and a missing record-ID interval is not a count of
+lost provider events. Record IDs are rendered with a selected value context using
+[EvtCreateRenderContext](https://learn.microsoft.com/en-us/windows/win32/api/winevt/nf-winevt-evtcreaterendercontext)
+and EvtRender, not EvtGetEventInfo. The 2026-10-22 native Application log regression
+verifies refusal/retry plus strict restart with two owned tokens; it does not
+qualify log-clear/retention faults. Explicit XML render refusal,
 conversion failure or bound excess creates a checkpointed gap counting one
 unretained delivered body, with native error and unknown provider loss count.
 

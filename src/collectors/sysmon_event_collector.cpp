@@ -31,7 +31,7 @@ constexpr wchar_t kSysmonChannel[] = L"Microsoft-Windows-Sysmon/Operational";
 // (7), file create/delete (11, 23, 26) and registry key/value (12, 13, 14).
 constexpr wchar_t kTelemetryQuery[] =
     L"*[System[(EventID=1 or EventID=5 or EventID=3 or EventID=7 or EventID=11 or EventID=12 or "
-    L"EventID=13 or EventID=14 or EventID=23 or EventID=26)]]";
+    L"EventID=13 or EventID=14 or EventID=23 or EventID=26 or EventID=8 or EventID=10 or EventID=22)]]";
 
 // Cheap EventID sniff from the rendered XML so deliver() can route to the right
 // decoder without a second full parse.

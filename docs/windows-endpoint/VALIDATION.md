@@ -1,5 +1,82 @@
 # Windows endpoint validation ledger
 
+## Build restoration and Sysmon process context — 2026-10-22
+
+Code candidate: `550113962b73f31426350358e3452c54b9defc98`, based on main
+`6898d77dcbd06202a102deca4b2e01e80eed1da7`. Repairs are in `e8831a1`; extended
+process source facts are in `5501139`. Documentation/evidence commits may follow
+without changing this tested source candidate.
+
+Development host: Windows 11 Home Single Language, version 10.0.26200, x64;
+MSVC 14.51.36231, Windows SDK 10.0.26100.0, Ninja, x64-windows vcpkg dependencies.
+This is native development-host evidence, not the dedicated VM or OS compatibility
+matrix. The separate `build-officer-telemetry-debug` and Release directories avoid
+replacing an executable held by a running agent in the earlier lab build directory.
+That running agent was not stopped or reconfigured.
+
+The baseline exposed compile failures in DNS HKEY constant initialization and COM
+declarations, BitLocker BSTR use, registry callback field arrays, Defender event
+JSON initialization, audit-policy buffer indirection, Event Log record-ID access,
+IP-interface fields absent from the SDK, and a string/JSON conditional in main.
+The repairs preserve unknown interface fields as null with reasons and fix a
+wide NUL literal in file evidence. CI now checks Debug and Release with a bounded
+per-test timeout.
+
+Real Application log regression: `oldest + retained count - 1` is not the newest
+native record ID when IDs have holes. Using it as clear/regression evidence caused
+false bookmark resets and replay. The collector now queries the actual newest ID
+and renders record IDs using an explicit Event Log value context. The live test
+also allows legacy cursor migration before injecting refusal of a delivered event.
+The corrected test records exactly two owned tokens across refusal/retry and restart.
+An unavailable Secure Boot firmware report now includes common `value: null`;
+successful observations include the interpreted boolean. Tests use checked field
+access so a missing field becomes a diagnostic rather than a Debug assertion dialog.
+
+Debug: fresh configure/build succeeded; **44/44 CTest cases passed**, 59.93 seconds.
+New regressions cover EID1 XML through canonical source facts, missing/duplicate
+fields, EID5 exclusion, exact logon/time text without invented native ticks, all
+extended string capacities at queue admission, embedded NUL/invalid UTF-8 handling,
+and byte-identical protocol-2 encrypted-journal recovery after reopen.
+Release: fresh configure/build succeeded; **44/44 CTest cases passed**, 52.44 seconds.
+Both Debug and Release also passed [GitHub CI run 39812485546](https://github.com/Panopticon-Co/panopticon-agent/actions/runs/39812485546)
+at documentation head `3d3148d`, with unchanged production code. The explicit live
+probe is added by `9eb3cce`/`6e5b895`; it is not an automatic privileged CTest.
+
+Evidence: [Debug summary](evidence/20261022-telemetry-context/debug-ctest.log),
+[full test output](evidence/20261022-telemetry-context/debug-test-output.log),
+[synthetic context record](evidence/20261022-telemetry-context/sysmon-context-synthetic.json),
+[pinned schema](evidence/20261022-telemetry-context/endpoint-record-1.0.schema.json).
+The synthetic record validates with Draft202012Validator against contracts snapshot
+`1d96f731a80ea57c1d610bd6ee4523889714c3b8`, not contracts master. Its SHA-256 is
+`EDC17457C9E5DC9D3974DC4AEBF1DAC2A4D19AD659601B0F6AB91BE475548C43`.
+Logs replace the workspace prefix with `<workspace>`; evidence text uses LF line endings.
+
+Live Sysmon **verified** with normal UAC elevation: the repeatable validation script
+checks read access, subscribes using the native `SysmonEventCollector`, creates one
+owned benign marked cmd.exe process, captures canonical output, and independently
+reads the same native EID1 XML. Final run at 2026-10-22 16:38:03–16:38:04 UTC captures
+record **663335**, owned PID **25608**, and compares all nine added source fields
+exactly. IntegrityLevel is `High`; OriginalFileName is `Cmd.Exe`. The canonical
+record survives encrypted journal reopen byte-for-byte and passes the pinned JSON
+schema with format checking. The script confirms channel ACL/enablement unchanged.
+The earlier inaccessible-channel statement was an access limitation of the
+unelevated session, not proof that Sysmon was absent or disabled.
+
+Raw XML, full canonical output, report and encrypted journal remain in the workspace
+at `output/sysmon-live-20261022-220803-62342f40`; see the
+[live manifest](evidence/20261022-telemetry-context/live-capture-manifest.json) and
+[safe summary](evidence/20261022-telemetry-context/live-capture-summary.json).
+The manifest pins the probe binary/source commit and raw artifact SHA-256 values.
+Full command/account/path values remain local. Envelope identity is probe-local,
+not a production enrollment. Repeat with
+`tools/validation/run_sysmon_live_probe.ps1`; it never changes channel permissions.
+
+Not proved: ETW/Sysmon exact alias binding, full capture recall, auth joins,
+EID8/10/22 canonical coverage, dedicated-VM behavior, fleet/chaos/soak qualification,
+Manager acceptance or engine train/serve parity. No model/engine code changed.
+See [feature parity](FEATURE_FIELD_PARITY.md) for consumer requirements. The A–AN
+Definition of Done remains unmet.
+
 WFP Security audit event semantics wave, 2026-10-22: the isolated
 `SecurityAuditSemantics` enrichment now classifies exact Security-channel,
 Security-Auditing-provider event IDs 5152, 5156 and 5157 as WFP blocked packet,

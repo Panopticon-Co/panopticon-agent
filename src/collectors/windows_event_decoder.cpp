@@ -1,6 +1,7 @@
 #include "panopticon/officer/collectors/windows_event_log.hpp"
 #include "panopticon/officer/collectors/powershell_script_telemetry.hpp"
 #include "panopticon/officer/collectors/security_audit_semantics.hpp"
+#include "panopticon/officer/collectors/authentication_telemetry.hpp"
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
@@ -68,7 +69,10 @@ DecodedWindowsEvent decode_windows_event_xml(const std::string& xml, const std::
         {"decode_state", "degraded"}, {"provider_name", nullptr}, {"event_record_id", nullptr},
         {"event_data", Json::array()}, {"semantic_family", "unclassified"}};
     const auto attach_security_semantics = [&]() {
-        if (requested == "Security") data["security_audit_semantics"] = SecurityAuditSemantics::enrich(data);
+        if (requested == "Security") {
+            data["security_audit_semantics"] = SecurityAuditSemantics::enrich(data);
+            if (const auto auth = decode_authentication(data)) data["authentication"] = *auth;
+        }
     };
     tinyxml2::XMLDocument document;
     if (xml.size() > 196608 || xml.find('\0') != std::string::npos || document.Parse(xml.data(),xml.size()) != tinyxml2::XML_SUCCESS) {
@@ -97,6 +101,7 @@ DecodedWindowsEvent decode_windows_event_xml(const std::string& xml, const std::
     data["native_system_time"] = attribute(child(system,"TimeCreated"),"SystemTime"); result.event_time = timestamp(data["native_system_time"]);
     if (ambiguous) { result.event_time.reset(); data["event_record_id"] = nullptr; data["validation_error"] = "ambiguous_system_fields"; }
     if (const auto* values = child(root,"EventData")) {
+        if (values->NextSiblingElement("EventData")) data["event_data_ambiguous"] = true;
         unsigned count = 0;
         for (auto* value = values->FirstChildElement(); value; value = value->NextSiblingElement()) {
             if (++count > 1024) { data["event_data_bound_exceeded"] = true; break; }
@@ -223,7 +228,7 @@ DecodedWindowsEvent decode_windows_event_xml(const std::string& xml, const std::
             {"source_label_basis", "Microsoft Defender Antivirus event documentation and ASR event guidance"},
             {"raw_event_data_preserved", true}, {"event_data_fields_interpreted", false},
             {"process_and_action_attribution", {{"state", "unverified"}, {"subject_process_id", nullptr},
-                {"reason", "raw event fields and reported writer metadata are not independently verified or correlated to a process instance"}},
+                {"reason", "raw event fields and reported writer metadata are not independently verified or correlated to a process instance"}}},
             {"privacy_scope", "retained raw XML/EventData may include threat names, file paths, usernames, and security configuration values"}
         };
     }
@@ -262,7 +267,7 @@ DecodedWindowsEvent decode_windows_event_xml(const std::string& xml, const std::
             {"script_block_fragment", source.value("script_block_fragment", nlohmann::json(nullptr))}
         };
     }
-    if (!ambiguous && system && provider && id && record && result.event_time && data["channel_matches_request"] == true && !data.contains("event_data_bound_exceeded")) data["decode_state"] = "healthy";
+    if (!ambiguous && system && provider && id && record && result.event_time && data["channel_matches_request"] == true && !data.contains("event_data_bound_exceeded") && !data.contains("event_data_ambiguous")) data["decode_state"] = "healthy";
     attach_security_semantics();
     return result;
 }

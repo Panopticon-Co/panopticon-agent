@@ -34,6 +34,11 @@ Rules:
 
 ## 2. Schema version
 
+Canonical Windows endpoint additions use endpoint record 1.0 and versioned
+Windows bodies/source facts. They supersede the experimental legacy-0.5 branch
+for EID 5/8/10/22. Legacy output stays at 0.4 for compatibility; canonical 1.0 and
+legacy 0.x are distinct schema namespaces. This is not a legacy version bump.
+
 `schema/event.schema.json` carries its own `schema_version` (currently `0.3`,
 additive over `0.2`). It is versioned **independently** of the coordinated
 release tag because producers and consumers negotiate it: the detection-engine

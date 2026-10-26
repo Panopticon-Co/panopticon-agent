@@ -268,7 +268,7 @@ Json SecurityAuditSemantics::query_system_policy() {
     if (!subcategories || count == 0) return unavailable_policy("no_system_audit_subcategories_returned");
     if (count > kMaxAuditSubcategories) return unavailable_policy("system_audit_subcategory_count_exceeds_bound");
 
-    PAUDIT_POLICY_INFORMATION* policy = nullptr;
+    PAUDIT_POLICY_INFORMATION policy = nullptr;
     if (!AuditQuerySystemPolicy(subcategories, count, &policy))
         return unavailable_policy("AuditQuerySystemPolicy_failed", GetLastError());
     AuditBuffer policy_buffer; policy_buffer.value = policy;
@@ -277,8 +277,7 @@ Json SecurityAuditSemantics::query_system_policy() {
     Json records = Json::array();
     bool partial = false;
     for (ULONG i = 0; i < count; ++i) {
-        const auto* item = policy[i];
-        if (!item) { partial = true; continue; }
+        const auto* item = &policy[i];
         PWSTR display_name = nullptr;
         const bool has_name = AuditLookupSubCategoryNameW(&item->AuditSubCategoryGuid, &display_name) != FALSE;
         AuditBuffer name_buffer; name_buffer.value = display_name;

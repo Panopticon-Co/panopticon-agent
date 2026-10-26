@@ -280,6 +280,13 @@ std::optional<telemetry::RawProcessEvent> SysmonProcessDecoder::decode_xml(
     result.command_line = field(fields, "CommandLine");
     result.user_name = field(fields, "User");
     result.sha256 = extract_sha256(field(fields, "Hashes"));
+    if (*event_id == 1) {
+        result.sysmon_fields.emplace();
+        for (std::size_t index = 0; index < telemetry::SysmonProcessFields::names.size(); ++index) {
+            const auto found = fields.find(std::string{telemetry::SysmonProcessFields::names[index]});
+            if (found != fields.end()) result.sysmon_fields->fields[index] = found->second;
+        }
+    }
     if (*event_id == 5) {
         result.terminated = true; result.termination_time = *timestamp;
         result.process_start_time = {}; // EID 5 provides no native creation clock.
