@@ -1875,3 +1875,26 @@ Clean incremental build, 0 warnings, 44/44 CTest.
 
 Not proven: no producer emits the new kinds or variant yet (Waves 2–4). No
 Manager or contracts-repo validation of `process_interaction` records (Wave 6).
+
+## Merge of origin/main and contract conformance — 2026-10-26
+
+`d2674d3` merges origin/main (PR #5: canonical Sysmon EID 8/10/22, auth facts,
+independent build fixes) into this branch; main's Event Log/USN fixes supersede
+ours, the unproduced `process_interaction` scaffold is retired, and Sysmon
+extended records now commit under `output_mutex`. Clean x64 Debug, `/WX`, 0
+warnings, 46/46.
+
+Contract work (host, component level): `officer-contract-fixtures` drives the
+production decoders/factory over synthetic inputs and emits 21 records in 13
+families. All pass the contracts envelope schema, the new family schemas and
+identity-digest checks. `officer-contract-fixture-conformance` re-runs this
+in CTest against the sibling contracts checkout (exit 77 = skipped when
+unavailable; a deliberately broken schema made it fail). 47/47.
+
+Consumer finding fixed in the producer: `process_stop` carried no `data.event`,
+so the Detection Engine legacy adapter read it as `process_create`. It now
+carries `{category: process_stop, type: stop}`; DE ML branch maps it to
+`process_terminate`, DE main yields unmapped `process_stop_stop`.
+
+Not proven: no real capture for minifilter (not implemented), EID 8/10/22 live
+capture, Manager acceptance of the family records.

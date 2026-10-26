@@ -80,14 +80,11 @@ File events add `open`, `write`, `set_information` and `overwrite`, plus
 A failed completion is still the same operation type. The status is evidence,
 not a success verdict.
 
-`RawProcessInteractionEvent` covers one process acting on another process's
-memory or threads, or loading code: allocate, write, protect, section map,
-remote thread, APC, thread context, library load, process access. It has an
-actor, an optional target with its own identity, and exact address, size,
-protection and access values. It has no legacy 0.3 family. It becomes a direct
-canonical `observation`/`process_interaction` record, as process stop does,
-with `data.interaction.verdict` always null. Wave 3 hooks and Sysmon EID 8/10
-are intended producers; neither exists yet.
+The Wave 1 `RawProcessInteractionEvent`/`process_interaction` scaffold was retired
+when origin/main was merged: it had no producer, and main's Sysmon `dns`,
+`process_access` and `remote_thread` families already define that vocabulary.
+API-hook events (Wave 3) will be specified against those families through the
+contract catalog before a wire category is added.
 
 Every `if constexpr` chain over `RawEvent` ends in a `static_assert`, and
 Officer targets build with `/WX` (`OFFICER_WARNINGS_AS_ERRORS`, default ON).

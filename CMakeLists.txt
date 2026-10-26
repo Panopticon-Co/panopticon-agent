@@ -254,6 +254,25 @@ if(BUILD_TESTING)
         target_compile_options(officer-source-facts-tests PRIVATE /W4 ${OFFICER_WX} /permissive- /EHsc /utf-8)
     endif()
     add_test(NAME officer-source-facts-tests COMMAND officer-source-facts-tests)
+    # Canonical endpoint-record fixtures from production decoders/factory (synthetic inputs).
+    add_executable(officer-contract-fixtures tests/contract_fixtures.cpp)
+    target_link_libraries(officer-contract-fixtures PRIVATE officer-core officer-collectors officer-delivery)
+    target_compile_definitions(officer-contract-fixtures PRIVATE OFFICER_SYSMON_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
+    if(MSVC)
+        target_compile_options(officer-contract-fixtures PRIVATE /W4 ${OFFICER_WX} /permissive- /EHsc /utf-8)
+    endif()
+    add_custom_command(TARGET officer-contract-fixtures POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:tinyxml2::tinyxml2> $<TARGET_FILE_DIR:officer-contract-fixtures>)
+    # Producer conformance against the authoritative contracts repo (skipped, not passed, when unavailable).
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    set(OFFICER_CONTRACTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../panopticon-contracts" CACHE PATH "panopticon-contracts checkout")
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME officer-contract-fixture-conformance
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/contract/check_fixtures.py
+                --generator $<TARGET_FILE:officer-contract-fixtures> --contracts ${OFFICER_CONTRACTS_DIR}
+                --out ${CMAKE_CURRENT_BINARY_DIR}/contract-fixtures)
+        set_tests_properties(officer-contract-fixture-conformance PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 60)
+    endif()
     add_executable(officer-sysmon-extended-tests tests/sysmon_extended_tests.cpp)
     target_link_libraries(officer-sysmon-extended-tests PRIVATE officer-core officer-collectors officer-delivery)
     target_compile_definitions(officer-sysmon-extended-tests PRIVATE OFFICER_SYSMON_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
