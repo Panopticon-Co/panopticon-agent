@@ -20,7 +20,8 @@ struct UsnCallbacks {
 };
 class UsnJournal {
 public:
-    // Empty volume list discovers at most 16 native volume GUIDs at startup.
+    // Empty volume list rediscovers at most 16 native volume GUIDs every 30 seconds;
+    // each durable set transition starts/stops per-volume workers.
     // Explicit volumes must use the native volume GUID path, never a drive letter.
     explicit UsnJournal(UsnCallbacks callbacks, std::vector<std::string> volumes = {});
     ~UsnJournal();

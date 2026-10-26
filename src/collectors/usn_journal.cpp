@@ -270,6 +270,10 @@ struct UsnJournal::Impl {
         return false;
     }
     void update_discovery_snapshot(const VolumeDiscovery& scan, bool durable, const char* reason = nullptr) {
+        record_discovery_snapshot(scan, durable, reason);
+        notify(); // Never under discovery_mutex: callbacks may read snapshot().
+    }
+    void record_discovery_snapshot(const VolumeDiscovery& scan, bool durable, const char* reason) {
         std::scoped_lock lock{discovery_mutex};
         discovery["enumeration_complete"] = scan.complete;
         discovery["bound_exceeded"] = scan.bound_exceeded;
@@ -287,7 +291,6 @@ struct UsnJournal::Impl {
             discovery["reason"] = reason ? reason : (scan.bound_exceeded ? "native volume discovery bound exceeded; volume set is incomplete" : "native volume enumeration unavailable or discovery transition not durable");
             discovery["pending_durable_acceptance"] = !durable;
         }
-        notify();
     }
     void sync_workers(const std::vector<std::string>& volumes) {
         const std::set<std::string> present(volumes.begin(), volumes.end());

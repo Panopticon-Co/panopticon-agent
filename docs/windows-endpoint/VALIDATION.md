@@ -1744,3 +1744,35 @@ unqualified. Sysmon EID 8/10 interaction events are not wired end-to-end, and
 RDP/WinRM listener inventory is not implemented. All source-only additions
 must remain labeled unbuilt/unverified until the deferred consolidated
 validation phase. The approved A–AN Definition of Done is not met.
+
+## Wave 0 green baseline — 2026-10-26
+
+Branch `windows-endpoint-completion`. First configure/build/test of the
+source-only waves after `c2f14a2`.
+
+- Host: Windows 11 25H2 (10.0.26200), elevated, MSVC 14.51.36231, Ninja,
+  vcpkg `x64-windows`, Debug, `/W4 /permissive-`.
+- `cmake --build build-officer-x64 --clean-first`: success, **0 compiler
+  warnings**.
+- `ctest --test-dir build-officer-x64 -j 4`: **44/44 passed** on three
+  consecutive runs. `officer-windows-event-log-tests` and
+  `officer-usn-journal-tests` are `RUN_SERIAL`: under parallel system-volume
+  churn the USN restart replay exceeded its 15 s bound (passes in ~8 s alone).
+- Live paths exercised on this host (not a VM): Application Event Log pull,
+  refusal, bookmark and restart; USN journal read, refusal, offline replay
+  (`live=true`); USN volume rediscovery against the real volume set with an
+  in-memory checkpoint store (initial set, unchanged restart, removal, blind
+  recovery, malformed checkpoint, refused commit).
+
+Defects found by running, not by review: the Event Log collector treated
+`oldestRecordNumber + count - 1` as the newest record ID. This host reports
+oldest 1 / count 18728 while actual record IDs span 246–18973, so the
+`record_id_regressed_after_log_clear_or_recreate` check reset a valid cursor
+to the oldest record and replayed the channel; in the live loop it would recur
+every 5 s. The check was removed (generation and per-event record-ID checks
+remain). `final_path` initialized its buffer with `L'\0'` (backslash), not NUL.
+
+What this does not prove: no VM/guest run, no service lifecycle, no Manager
+round-trip, no real volume hotplug/removal, no minifilter or API hooks (not yet
+written). Many source-only collectors compile and have component tests but
+no runtime evidence in the agent service; the capability matrix is unchanged.
