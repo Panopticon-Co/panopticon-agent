@@ -29,7 +29,8 @@ constexpr char kGenerator[] = "officer-contract-fixtures";
 
 void require(bool value, const std::string& message) { if (!value) throw std::runtime_error(message); }
 
-pipeline::NormalizationContext context() { return {{"agent-fixture", "1.0-dev"}, {"host-fixture", "FIXTURE-HOST", {"Windows", "26100"}}}; }
+// agent-1/host-1 match the Manager test enrollment, so fixtures post without re-deriving digests.
+pipeline::NormalizationContext context() { return {{"agent-1", "1.0-dev"}, {"host-1", "FIXTURE-HOST", {"Windows", "26100"}}}; }
 
 std::string read_sample(const std::string& name) {
     std::ifstream file(fs::path(OFFICER_SYSMON_FIXTURE_DIR) / name, std::ios::binary);
@@ -213,7 +214,7 @@ int main(int argc, char** argv) {
         health::CoverageRegistry coverage;
         write_family(out, "endpoint_health", {{"input", "default coverage registry"},
             {"producer_chain", "CoverageRegistry::snapshot -> EndpointRecordFactory::health"}, {"provisional", false}},
-            Json::array({factory.health(coverage.snapshot("agent-fixture", "host-fixture"))}));
+            Json::array({factory.health(coverage.snapshot("agent-1", "host-1"))}));
 
         std::cout << "contract fixtures written to " << out.string() << '\n';
         return 0;
