@@ -7,6 +7,7 @@
 #include <windows.h>
 #include <iphlpapi.h>
 #include <netioapi.h>
+#include <objbase.h>
 
 #include <algorithm>
 #include <array>
@@ -173,7 +174,9 @@ Json registry_value(HKEY key, const wchar_t* name, const DnsStateLimits& limits,
 
 void collect_global_policy(PageWriter& writer, Json& partitions, bool& source_failed) {
     struct Root { HKEY hive; const wchar_t* path; const char* name; };
-    constexpr Root roots[] = {
+    // HKEY_LOCAL_MACHINE is a reinterpret_cast of a literal, so it is not a
+    // constant expression; use static const, not constexpr.
+    static const Root roots[] = {
         {HKEY_LOCAL_MACHINE, L"SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters", "tcpip_global_parameters"},
         {HKEY_LOCAL_MACHINE, L"SOFTWARE\\Policies\\Microsoft\\Windows NT\\DNSClient", "dnsclient_policy"},
         {HKEY_LOCAL_MACHINE, L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\DNSClient", "dnsclient_machine_configuration"}
@@ -197,10 +200,11 @@ void collect_global_policy(PageWriter& writer, Json& partitions, bool& source_fa
         bool failed = false;
         for (const auto* name : values) {
             bool field_failed = false;
-            std::wstring key_name(name);
+            bool name_refused = false;
+            const auto key_name = utf8(name, 512, name_refused);
             auto value = registry_value(key.get(), name, writer.limits, "RegQueryValueExW", field_failed);
-            failed = failed || field_failed || (value.value("state", "unavailable") != "healthy" && value.value("state", "unavailable") != "not_present");
-            row["values"][std::string(key_name.begin(), key_name.end())] = std::move(value);
+            failed = failed || field_failed || name_refused || (value.value("state", "unavailable") != "healthy" && value.value("state", "unavailable") != "not_present");
+            if (!name_refused) row["values"][key_name] = std::move(value);
         }
         row["state"] = failed ? "degraded" : "healthy";
         source_failed = source_failed || failed;
@@ -211,7 +215,7 @@ void collect_global_policy(PageWriter& writer, Json& partitions, bool& source_fa
 
 void collect_nrpt(PageWriter& writer, Json& partitions, bool& source_failed) {
     struct Root { HKEY hive; const wchar_t* path; const char* name; };
-    constexpr Root roots[] = {
+    static const Root roots[] = {
         {HKEY_LOCAL_MACHINE, L"SOFTWARE\\Policies\\Microsoft\\Windows NT\\DNSClient\\DnsPolicyConfig", "group_policy_nrpt"},
         {HKEY_LOCAL_MACHINE, L"SYSTEM\\CurrentControlSet\\Services\\Dnscache\\Parameters\\DnsPolicyConfig", "local_nrpt"}
     };
@@ -265,10 +269,11 @@ void collect_nrpt(PageWriter& writer, Json& partitions, bool& source_failed) {
             Json row{{"entry_kind", "nrpt_rule"}, {"state", path_refused || rule_refused ? "degraded" : "healthy"}, {"source", "Windows Registry"}, {"registry_path", path_refused || rule_refused ? Json(nullptr) : Json(root_path + "\\" + rule_name)}, {"hive", "HKEY_LOCAL_MACHINE"}, {"registry_subkey_index", std::to_string(index)}, {"values", Json::object()}, {"scope", "persisted rule fields only; registry order is not policy precedence and active NRPT evaluation is not queried"}};
             for (const auto* value_name : values) {
                 bool field_failed = false;
-                std::wstring value_key(value_name);
+                bool name_refused = false;
+                const auto value_key = utf8(value_name, 512, name_refused);
                 auto value = registry_value(child.get(), value_name, writer.limits, "RegQueryValueExW", field_failed);
-                failed = failed || field_failed || (value.value("state", "unavailable") != "healthy" && value.value("state", "unavailable") != "not_present");
-                row["values"][std::string(value_key.begin(), value_key.end())] = std::move(value);
+                failed = failed || field_failed || name_refused || (value.value("state", "unavailable") != "healthy" && value.value("state", "unavailable") != "not_present");
+                if (!name_refused) row["values"][value_key] = std::move(value);
             }
             row["state"] = failed ? "degraded" : "healthy";
             source_failed = source_failed || failed;

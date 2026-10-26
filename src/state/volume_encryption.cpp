@@ -271,8 +271,8 @@ Json call_method(IWbemServices* services, const BSTR object_path, IWbemClassObje
         result["outputs"]["self_encryption_drive_method"] = std::move(field);
     }
     bool outputs_healthy = true;
-    for (const auto& [_, output] : result["outputs"].items())
-        if (!output.is_object() || output.value("state", std::string("unavailable")) != "healthy") outputs_healthy = false;
+    for (const auto& [_, output_entry] : result["outputs"].items())
+        if (!output_entry.is_object() || output_entry.value("state", std::string("unavailable")) != "healthy") outputs_healthy = false;
     result["state"] = method_hr == S_OK && provider_success && outputs_healthy ? "healthy" : "degraded";
     result["method_return_success"] = provider_success;
     result["scope"] = "read-only WMI method output; no key protectors or escrow material queried";
@@ -329,7 +329,9 @@ Json collect_volume_encryption_state() {
         nullptr, RPC_C_AUTHN_LEVEL_CALL, RPC_C_IMP_LEVEL_IMPERSONATE, nullptr, EOAC_NONE);
     if (!step("CoSetProxyBlanket(IWbemServices)", blanket)) return finish();
     Com<IWbemClassObject> class_object;
-    const auto class_hr = services.value->GetObject(L"Win32_EncryptableVolume", 0, nullptr,
+    Bstr class_name{L"Win32_EncryptableVolume"};
+    if (!class_name.value) { result["validation_error"] = "bstr_allocation_failed"; return finish(); }
+    const auto class_hr = services.value->GetObject(class_name.value, 0, nullptr,
         &class_object.value, nullptr);
     if (!step("IWbemServices::GetObject(Win32_EncryptableVolume)", class_hr) || !class_object.value) return finish();
     Com<IEnumWbemClassObject> rows;

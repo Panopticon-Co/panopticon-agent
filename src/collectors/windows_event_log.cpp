@@ -80,7 +80,7 @@ std::uint64_t log_info_u64(EVT_HANDLE log, EVT_LOG_PROPERTY_ID property, EVT_VAR
     EVT_VARIANT value{}; DWORD required = 0;
     if (!EvtGetLogInfo(log, property, sizeof(value), &value, &required))
         throw NativeError("EvtGetLogInfo", GetLastError());
-    if (value.Type != expected) throw NativeError("EvtGetLogInfo unexpected property type", ERROR_INVALID_DATA);
+    if (value.Type != static_cast<DWORD>(expected)) throw NativeError("EvtGetLogInfo unexpected property type", ERROR_INVALID_DATA);
     return expected == EvtVarTypeFileTime ? value.FileTimeVal : value.UInt64Val;
 }
 
@@ -147,10 +147,26 @@ std::string encode_cursor(const std::string& bookmark, const ChannelLogInfo& log
 }
 
 std::uint64_t native_event_record_id(EVT_HANDLE event) {
-    EVT_VARIANT value{}; DWORD required = 0;
-    if (!EvtGetEventInfo(event, EvtEventRecordId, sizeof(value), &value, &required))
-        throw NativeError("EvtGetEventInfo record ID", GetLastError());
-    if (value.Type != EvtVarTypeUInt64) throw NativeError("EvtGetEventInfo record ID type", ERROR_INVALID_DATA);
+    // The record ID is a System property, obtained by rendering the event's
+    // system values and indexing EvtSystemEventRecordId -- not EvtGetEventInfo,
+    // whose EVT_EVENT_PROPERTY_ID set is only query IDs and path.
+    EVT_HANDLE context = EvtCreateRenderContext(0, nullptr, EvtRenderContextSystem);
+    if (!context) throw NativeError("EvtCreateRenderContext system", GetLastError());
+    struct ContextGuard { EVT_HANDLE handle; ~ContextGuard() { if (handle) EvtClose(handle); } } guard{context};
+    DWORD required = 0, property_count = 0;
+    if (EvtRender(context, event, EvtRenderEventValues, 0, nullptr, &required, &property_count) ||
+        GetLastError() != ERROR_INSUFFICIENT_BUFFER)
+        throw NativeError("EvtRender system sizing", GetLastError());
+    if (!required || required > 64 * 1024 || required < sizeof(EVT_VARIANT)) throw NativeError("EvtRender system size bound", ERROR_FILE_TOO_LARGE);
+    std::vector<unsigned char> buffer(required);
+    if (!EvtRender(context, event, EvtRenderEventValues, required, buffer.data(), &required, &property_count))
+        throw NativeError("EvtRender system", GetLastError());
+    if (property_count <= static_cast<DWORD>(EvtSystemEventRecordId) ||
+        required < (static_cast<DWORD>(EvtSystemEventRecordId) + 1) * sizeof(EVT_VARIANT))
+        throw NativeError("EvtRender system record ID index", ERROR_INVALID_DATA);
+    const auto* values = reinterpret_cast<const EVT_VARIANT*>(buffer.data());
+    const auto& value = values[EvtSystemEventRecordId];
+    if (value.Type != EvtVarTypeUInt64) throw NativeError("EvtRender system record ID type", ERROR_INVALID_DATA);
     return value.UInt64Val;
 }
 }
@@ -261,8 +277,10 @@ struct WindowsEventLog::Impl {
                         return "log_generation_changed_clear_or_recreate";
                     if (saved.generation != current.generation && (saved.generation == "unknown" || current.generation == "unknown"))
                         return "log_generation_identity_unavailable_or_changed";
-                    if (saved.last_record_id_known && current.newest_record_estimate && current.newest_record_estimate < saved.last_record_id)
-                        return "record_id_regressed_after_log_clear_or_recreate";
+                    // No regression check against newest_record_estimate: oldest+count-1 is not a
+                    // newest record ID (real logs report a stale oldest number and non-contiguous
+                    // IDs), so it falsely reset live cursors. Clear/recreate is caught by the
+                    // generation check above and by the per-event record ID check on delivery.
                     if (saved.last_record_id_known && current.oldest_record_id && saved.last_record_id <
                         std::numeric_limits<std::uint64_t>::max() && current.oldest_record_id > saved.last_record_id + 1)
                         return "retention_overwrote_records_after_checkpoint";

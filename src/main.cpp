@@ -637,7 +637,8 @@ response::CommandReceipt execute_command(ResponseRuntime& runtime, const respons
                 SecureZeroMemory(key.data(), key.size());
                 forensics::FileAcquisitionRequest request;
                 request.capture_id = received.file_capture_id;
-                request.relative_path = std::filesystem::u8path(received.file_target_path);
+                request.relative_path = std::filesystem::path(std::u8string(
+                    received.file_target_path.begin(), received.file_target_path.end()));
                 request.maximum_bytes = received.file_maximum_bytes;
                 request.command_id = received.command_id;
                 request.command_correlation_id = received.correlation_id;
@@ -2223,7 +2224,9 @@ int run_endpoint(int argc, char* argv[], HANDLE service_stop = nullptr,
                 if (source && pending.empty() && source->status().value("state", std::string{}) == "running") {
                     auto rows = source->drain(1);
                     source_work = !rows.empty();
-                    for (auto& row : rows) {
+                    // drain(1): one immutable serialized record is retried before another source drain.
+                    if (!rows.empty()) {
+                        auto& row = rows.front();
                         const auto kind = row.value("kind", std::string{});
                         if (kind == "network_state_snapshot") {
                             row["capture_id"] = capture_id;
@@ -2232,12 +2235,11 @@ int run_endpoint(int argc, char* argv[], HANDLE service_stop = nullptr,
                             snapshot_states.push_back(record.at("data").value("state", std::string("unknown")));
                             { std::scoped_lock lock{inventory_mutex}; network_change_health["pending_kind"] = "snapshot"; }
                             retain(record);
-                            break; // One immutable serialized record is retried before another source drain.
+                        } else {
+                            const auto record = record_factory.state("network_state_change", std::move(row));
+                            { std::scoped_lock lock{inventory_mutex}; network_change_health["pending_kind"] = "notification"; }
+                            retain(record);
                         }
-                        const auto record = record_factory.state("network_state_change", std::move(row));
-                        { std::scoped_lock lock{inventory_mutex}; network_change_health["pending_kind"] = "notification"; }
-                        retain(record);
-                        break;
                     }
                     if (rows.empty()) {
                         const auto current = source->status();
@@ -2732,7 +2734,7 @@ int run_endpoint(int argc, char* argv[], HANDLE service_stop = nullptr,
                             "committed Win32_EncryptableVolume status in record " + pending_id,
                             "bounded caller-visible WMI association/status only; no hardware/key-protector/escrow or full-disk claim");
                     } else volume_encryption_health["commit_failures"] = std::to_string(++failures);
-                    volume_encryption_health["state"] = accepted ? status.value("state", std::string("unavailable")) : nlohmann::json("unavailable");
+                    volume_encryption_health["state"] = accepted ? status.value("state", std::string("unavailable")) : std::string("unavailable");
                     volume_encryption_health["pending_durable_acceptance"] = !pending.empty();
                     volume_encryption_health["collection_in_progress"] = false;
                     SetEvent(health_changed.get());
