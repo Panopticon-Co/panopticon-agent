@@ -7,6 +7,7 @@
 #include <windows.h>
 #include <bcrypt.h>
 #include <chrono>
+#include <iterator>
 #include <limits>
 #include <stdexcept>
 #include <type_traits>
@@ -84,7 +85,7 @@ Json EndpointRecordFactory::observation(const telemetry::RawEvent& raw, const te
             time = event.timestamp;
             if (event.process.process_guid && (event.process.process_guid->empty() || event.process.process_guid->size() > 256 || !valid_utf8(*event.process.process_guid)))
                 throw std::invalid_argument("source process GUID cannot be represented in canonical reference");
-            reference = processes_.observe(event.process.pid, std::nullopt, event.process.process_guid, source_namespace);
+            reference = processes_.observe(event.process.pid, event.process.start_time_ticks, event.process.process_guid, source_namespace);
             data["process"]["parent"]["entity_id"] = nullptr;
         }
         data["process"]["entity_id"] = nullable(reference.entity_id);
@@ -120,6 +121,42 @@ void EndpointRecordFactory::accepted_process_stop(const telemetry::RawProcessEve
     if (!event.terminated || !event.termination_time) throw std::invalid_argument("invalid accepted stop");
     const auto scope = observed_source_kind_name(event.source.kind) + ":" + event.source.provider + ":" + event.source.channel.value_or("");
     processes_.terminate(processes_.observe(event.pid, event.start_time_ticks, event.process_guid, scope), *event.termination_time);
+}
+Json EndpointRecordFactory::process_interaction(const telemetry::RawProcessInteractionEvent& event) {
+    // Direct canonical record: interactions have no legacy 0.3 family, so this
+    // bypasses PanopticonEvent like process_stop does.
+    const auto kind = observed_source_kind_name(event.source.kind);
+    const auto scope = kind + ":" + event.source.provider + ":" + event.source.channel.value_or("");
+    const auto valid_guid = [](const std::optional<std::string>& guid) {
+        return !guid || (!guid->empty() && guid->size() <= 256 && valid_utf8(*guid));
+    };
+    if (event.source.provider.empty() || event.source.provider.size() > 512 || !valid_utf8(scope) || scope.size() > 1024 ||
+        (event.source.channel && event.source.channel->size() > 512) || !valid_guid(event.process.process_guid) ||
+        (event.target && !valid_guid(event.target->process_guid)))
+        throw std::invalid_argument("invalid process interaction provenance");
+    if (format_utc_timestamp(event.timestamp).empty()) throw std::invalid_argument("native interaction time cannot be rendered as UTC");
+    const auto actor = processes_.observe(event.process.pid, event.process.start_time_ticks, event.process.process_guid, scope);
+    Json target = nullptr;
+    if (event.target) {
+        const auto reference = processes_.observe(event.target->pid, event.target->start_time_ticks, event.target->process_guid, scope);
+        target = {{"pid", event.target->pid}, {"entity_id", nullable(reference.entity_id)},
+            {"start_time_ticks", reference.native_creation_ticks ? Json(std::to_string(*reference.native_creation_ticks)) : Json(nullptr)},
+            {"identity", reference.json()}};
+    }
+    static constexpr const char* names[]{"memory_allocate", "memory_write", "memory_protect", "section_map",
+        "remote_thread_create", "apc_queue", "thread_context_set", "library_load", "process_access"};
+    const auto index = static_cast<std::size_t>(event.interaction);
+    if (index >= std::size(names)) throw std::invalid_argument("unknown process interaction");
+    Json data{{"process", {{"pid", event.process.pid}, {"entity_id", nullable(actor.entity_id)},
+        {"start_time_ticks", actor.native_creation_ticks ? Json(std::to_string(*actor.native_creation_ticks)) : Json(nullptr)},
+        {"parent", {{"entity_id", nullptr}}}}},
+        {"interaction", {{"type", names[index]}, {"target", std::move(target)}, {"verdict", nullptr},
+            {"semantics", "observed call or source report only; no injection or maliciousness inference"}}},
+        {"source_facts", source_facts(telemetry::RawEvent{event})}, {"enrichment", enrichment_facts(telemetry::RawEvent{event})}};
+    return envelope("observation", "process_interaction", event.timestamp,
+        {{"kind", kind}, {"provider", event.source.provider}, {"channel", nullable(event.source.channel)},
+        {"native_record_id", event.source.record_id ? Json(std::to_string(*event.source.record_id)) : Json(nullptr)},
+        {"native_observation_id", nullptr}, {"continuity", "unverified"}}, actor.json(), std::move(data));
 }
 Json EndpointRecordFactory::capture_scope() const {
     return {{"installation_id", installation_id_}, {"boot_id", nullable(boot_id_)},
@@ -171,7 +208,7 @@ Json EndpointRecordFactory::normalization_failure(const telemetry::RawEvent& raw
         const auto scope = valid_scope ? original_namespace : "Officer-Decoded-Facts:invalid-source-scope";
         if constexpr (std::is_same_v<Event, telemetry::RawProcessEvent>)
             reference = processes_.observe(event.pid, event.start_time_ticks, guid, scope);
-        else reference = processes_.observe(event.process.pid, std::nullopt, guid, scope);
+        else reference = processes_.observe(event.process.pid, event.process.start_time_ticks, guid, scope);
         // A failure is captured now; the original event clock/value is retained
         // in source_facts even when it cannot be rendered as a valid UTC date.
         return envelope("evidence", "normalization_failure", now(), {{"kind", "agent"},

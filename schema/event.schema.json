@@ -31,7 +31,7 @@
       "properties": {
         "kind": {
           "type": "string",
-          "enum": ["etw", "sysmon", "windows_event_log", "linux_procfs"]
+          "enum": ["etw", "sysmon", "windows_event_log", "linux_procfs", "minifilter", "api_hook"]
         },
         "provider": { "type": "string", "minLength": 1 },
         "channel": { "$ref": "#/$defs/nullableString" },
@@ -140,7 +140,7 @@
       "description": "Sysmon EventID 11 (create), 23/26 (delete). Metadata only - file contents are never read.",
       "required": ["operation", "path", "target_path", "previous_path", "hash"],
       "properties": {
-        "operation": { "enum": ["create", "delete", "rename"] },
+        "operation": { "enum": ["create", "delete", "rename", "open", "write", "set_information", "overwrite"] },
         "path": { "$ref": "#/$defs/nullableString" },
         "target_path": { "$ref": "#/$defs/nullableString" },
         "previous_path": { "$ref": "#/$defs/nullableString" },
@@ -194,7 +194,7 @@
       "if": { "properties": { "event": { "properties": { "category": { "const": "file" } } } } },
       "then": {
         "required": ["file"],
-        "properties": { "event": { "properties": { "type": { "enum": ["create", "delete", "rename"] } } } }
+        "properties": { "event": { "properties": { "type": { "enum": ["create", "delete", "rename", "open", "write", "set_information", "overwrite"] } } } }
       }
     },
     {

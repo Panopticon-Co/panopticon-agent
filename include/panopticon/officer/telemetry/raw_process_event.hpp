@@ -94,7 +94,10 @@ struct RawNetworkEvent {
     bool operator==(const RawNetworkEvent&) const = default;
 };
 
-enum class FileOperation { create, remove, rename };
+// open/write/set_information/overwrite are minifilter IRP-level operations:
+// open is IRP_MJ_CREATE of an existing file, overwrite a create disposition that
+// replaces data, set_information a non-rename/non-delete metadata change.
+enum class FileOperation { create, remove, rename, open, write, set_information, overwrite };
 
 struct RawFileEvent {
     SourceProvenance source;
@@ -105,6 +108,9 @@ struct RawFileEvent {
     std::optional<std::string> target_path;
     std::optional<std::string> previous_path;
     std::optional<std::string> sha256;
+    // Sources without a pre/post split (Sysmon) leave phase=reported and no status.
+    OperationPhase phase{OperationPhase::reported};
+    std::optional<NativeStatus> status;
 
     bool operator==(const RawFileEvent&) const = default;
 };
@@ -138,13 +144,49 @@ struct RawImageLoadEvent {
     bool operator==(const RawImageLoadEvent&) const = default;
 };
 
+// One process acting on another process's memory/threads, or loading code into
+// itself. Carries API instrumentation (officer-hook) and Sysmon EID 8/10. The
+// actor is `process`; `target` is absent when the source does not identify one.
+enum class ProcessInteraction {
+    memory_allocate, memory_write, memory_protect, section_map,
+    remote_thread_create, apc_queue, thread_context_set, library_load, process_access,
+};
+
+struct RawProcessInteractionEvent {
+    SourceProvenance source;
+    UtcTimestamp timestamp;
+    RawProcessContext process;
+    std::optional<RawProcessContext> target;
+    ProcessInteraction interaction{ProcessInteraction::process_access};
+    OperationPhase phase{OperationPhase::reported};
+    std::optional<NativeStatus> status;
+    // Source-reported API or event name, retained exactly (e.g. "VirtualAllocEx").
+    std::optional<std::string> api;
+    std::optional<std::uint64_t> address;
+    std::optional<std::uint64_t> size;
+    // Raw PAGE_* / access-mask values; never decoded into a verdict here.
+    std::optional<std::uint32_t> protection;
+    std::optional<std::uint32_t> previous_protection;
+    std::optional<std::uint32_t> granted_access;
+    std::optional<std::uint32_t> target_thread_id;
+    std::optional<std::string> module_path;
+    std::optional<std::string> call_trace;
+
+    bool operator==(const RawProcessInteractionEvent&) const = default;
+};
+
 // New raw event types are added to this variant without changing collector
-// ownership or downstream sink interfaces.
+// ownership or downstream sink interfaces. Every `if constexpr` chain over it
+// ends in `static_assert(unhandled_raw_event_v<T>)` so a new alternative is a
+// compile error at each site rather than a silently dropped event.
 using RawEvent = std::variant<
     RawProcessEvent,
     RawNetworkEvent,
     RawFileEvent,
     RawRegistryEvent,
-    RawImageLoadEvent>;
+    RawImageLoadEvent,
+    RawProcessInteractionEvent>;
+
+template <class> inline constexpr bool unhandled_raw_event_v = false;
 
 }  // namespace panopticon::officer::telemetry

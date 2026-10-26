@@ -10,6 +10,7 @@ public:
     [[nodiscard]] nlohmann::json observation(const telemetry::RawEvent& raw, const telemetry::PanopticonEvent& normalized);
     [[nodiscard]] nlohmann::json process_stop(const telemetry::RawProcessEvent& event);
     void accepted_process_stop(const telemetry::RawProcessEvent& event);
+    [[nodiscard]] nlohmann::json process_interaction(const telemetry::RawProcessInteractionEvent& event);
     [[nodiscard]] nlohmann::json state(std::string category, nlohmann::json data);
     [[nodiscard]] nlohmann::json health(nlohmann::json data);
     [[nodiscard]] nlohmann::json gap(std::string source, nlohmann::json data);

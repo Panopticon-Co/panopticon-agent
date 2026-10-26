@@ -54,3 +54,37 @@ qualification remain open. Registry value data is serialized only when it alread
 exists in the decoded structure; this feature does not enable new collection.
 The new payload increases record size; earlier small-record throughput numbers
 are not qualifications of this representation.
+
+## Pipeline extension for minifilter, API hook and interaction sources
+
+Two source kinds were added, `minifilter` (Officer's FltMgr filter) and
+`api_hook` (Officer's in-process instrumentation). The kind-to-name mapping
+lives in exactly one place, `telemetry::source_kind_name`. Source facts,
+normalization, event identity and the legacy serializer/schema all use it.
+
+`RawProcessContext.start_time_ticks` carries native creation ticks for the
+acting process when a source obtained them for that exact instance. Family
+observations and failure evidence then resolve the actor as `native_exact`
+instead of source-scoped or unresolved. It is never filled from a PID lookup
+alone.
+
+File events add `open`, `write`, `set_information` and `overwrite`, plus
+`phase` (`reported` for sources without a pre/post split, `attempted`,
+`completed`) and an uninterpreted native `status` (NTSTATUS or Win32 code).
+A failed completion is still the same operation type. The status is evidence,
+not a success verdict.
+
+`RawProcessInteractionEvent` covers one process acting on another process's
+memory or threads, or loading code: allocate, write, protect, section map,
+remote thread, APC, thread context, library load, process access. It has an
+actor, an optional target with its own identity, and exact address, size,
+protection and access values. It has no legacy 0.3 family. It becomes a direct
+canonical `observation`/`process_interaction` record, as process stop does,
+with `data.interaction.verdict` always null. Wave 3 hooks and Sysmon EID 8/10
+are intended producers; neither exists yet.
+
+Every `if constexpr` chain over `RawEvent` ends in a `static_assert`, and
+Officer targets build with `/WX` (`OFFICER_WARNINGS_AS_ERRORS`, default ON).
+Adding a variant without handling it at each visit site is therefore a compile
+error, not a silently dropped event. This was verified by adding a probe
+variant: the build failed at `source_facts` and `raw_event_charge`.

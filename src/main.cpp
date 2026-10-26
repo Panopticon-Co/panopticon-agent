@@ -992,24 +992,33 @@ int run_endpoint(int argc, char* argv[], HANDLE service_stop = nullptr,
             if (failure_record) ++failure_evidence_committed;
             (void)diagnostic_stdout.try_submit(line);
         };
+    // Records with no legacy 0.3 family (process stop, process interaction) are
+    // built canonically; a build failure becomes durable normalization_failure.
+    const auto emit_direct = [&](const telemetry::RawEvent& raw_event, const auto& build) {
+        std::scoped_lock lock{output_mutex};
+        nlohmann::json record;
+        bool failed = false;
+        try { record = build(); }
+        catch (const std::exception& error) {
+            ++normalization_failures; failed = true;
+            record = record_factory.normalization_failure(raw_event, error.what());
+        }
+        if (!persist_record(record.dump())) {
+            ++observation_admission_failures; SetEvent(health_changed.get());
+            throw std::runtime_error("direct canonical record was not durably accepted");
+        }
+        if (failed) ++failure_evidence_committed;
+        (void)diagnostic_stdout.try_submit(record.dump());
+        return !failed;
+    };
     const collectors::RawEventSink process_raw_event = [&](telemetry::RawEvent raw_event) {
         if (const auto* stopped = std::get_if<telemetry::RawProcessEvent>(&raw_event); stopped && stopped->terminated) {
-            std::scoped_lock lock{output_mutex};
-            nlohmann::json record;
-            try { record = record_factory.process_stop(*stopped); }
-            catch (const std::exception& error) {
-                // emit_normalized owns the same output lock; release before
-                // re-entering it is not possible here, so retain explicit failure.
-                ++normalization_failures;
-                record = record_factory.normalization_failure(raw_event, error.what());
-            }
-            if (!persist_record(record.dump())) {
-                ++observation_admission_failures; SetEvent(health_changed.get());
-                throw std::runtime_error("process stop was not durably accepted");
-            }
-            if (record["category"] == "process_stop") record_factory.accepted_process_stop(*stopped);
-            else ++failure_evidence_committed;
-            (void)diagnostic_stdout.try_submit(record.dump());
+            if (emit_direct(raw_event, [&] { return record_factory.process_stop(*stopped); }))
+                record_factory.accepted_process_stop(*stopped);
+            return;
+        }
+        if (const auto* interaction = std::get_if<telemetry::RawProcessInteractionEvent>(&raw_event)) {
+            (void)emit_direct(raw_event, [&] { return record_factory.process_interaction(*interaction); });
             return;
         }
         const auto source_record = raw_event;
@@ -1035,6 +1044,10 @@ int run_endpoint(int argc, char* argv[], HANDLE service_stop = nullptr,
                     return pipeline::normalize_registry_event(raw, *context, normalization_error);
                 } else if constexpr (std::is_same_v<Event, telemetry::RawImageLoadEvent>) {
                     return pipeline::normalize_image_load_event(raw, *context, normalization_error);
+                } else if constexpr (std::is_same_v<Event, telemetry::RawProcessInteractionEvent>) {
+                    throw std::logic_error("process interaction must use the direct canonical path");
+                } else {
+                    static_assert(telemetry::unhandled_raw_event_v<Event>, "normalization: unhandled RawEvent alternative");
                 }
             },
             std::move(raw_event));

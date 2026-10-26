@@ -13,6 +13,15 @@ std::size_t raw_event_charge(const telemetry::RawEvent& event) {
     };
     const auto optional = [&](const std::optional<std::string>& value) { if (value) add(*value); };
     const auto source = [&](const telemetry::SourceProvenance& value) { add(value.provider); optional(value.channel); };
+    const auto context = [&](const telemetry::RawProcessContext& process) {
+        optional(process.executable); optional(process.process_name); optional(process.user_name);
+        optional(process.user_sid); optional(process.process_guid);
+        if (process.cached_context) {
+            const auto& cached = *process.cached_context;
+            source(cached.source); add(cached.process_guid); optional(cached.executable);
+            optional(cached.user_name); optional(cached.user_sid);
+        }
+    };
     std::visit([&](const auto& raw) {
         using T = std::decay_t<decltype(raw)>;
         source(raw.source);
@@ -20,14 +29,7 @@ std::size_t raw_event_charge(const telemetry::RawEvent& event) {
             optional(raw.process_guid); optional(raw.parent_process_guid); optional(raw.parent_executable);
             optional(raw.executable); optional(raw.command_line); optional(raw.user_sid); optional(raw.user_name); optional(raw.sha256);
         } else {
-            const auto& process = raw.process;
-            optional(process.executable); optional(process.process_name); optional(process.user_name);
-            optional(process.user_sid); optional(process.process_guid);
-            if (process.cached_context) {
-                const auto& cached = *process.cached_context;
-                source(cached.source); add(cached.process_guid); optional(cached.executable);
-                optional(cached.user_name); optional(cached.user_sid);
-            }
+            context(raw.process);
             if constexpr (std::is_same_v<T, telemetry::RawNetworkEvent>) {
                 optional(raw.source_ip); optional(raw.destination_ip); optional(raw.destination_hostname);
             } else if constexpr (std::is_same_v<T, telemetry::RawFileEvent>) {
@@ -36,6 +38,11 @@ std::size_t raw_event_charge(const telemetry::RawEvent& event) {
                 optional(raw.key_path); optional(raw.value_name); optional(raw.value_type); optional(raw.value_data);
             } else if constexpr (std::is_same_v<T, telemetry::RawImageLoadEvent>) {
                 optional(raw.path); optional(raw.signature_status); optional(raw.sha256);
+            } else if constexpr (std::is_same_v<T, telemetry::RawProcessInteractionEvent>) {
+                if (raw.target) context(*raw.target);
+                optional(raw.api); optional(raw.module_path); optional(raw.call_trace);
+            } else {
+                static_assert(telemetry::unhandled_raw_event_v<T>, "raw_event_charge: unhandled RawEvent alternative");
             }
         }
     }, event);

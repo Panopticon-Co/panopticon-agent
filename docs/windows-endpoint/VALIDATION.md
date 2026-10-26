@@ -1776,3 +1776,25 @@ What this does not prove: no VM/guest run, no service lifecycle, no Manager
 round-trip, no real volume hotplug/removal, no minifilter or API hooks (not yet
 written). Many source-only collectors compile and have component tests but
 no runtime evidence in the agent service; the capability matrix is unchanged.
+
+## Wave 1 pipeline foundations — 2026-10-26
+
+Host-only component evidence, same environment as Wave 0, now with `/WX`.
+Clean incremental build, 0 warnings, 44/44 CTest.
+
+- `officer-core-tests`: every `TelemetrySourceKind` (5) × `FileOperation` (7)
+  file event normalizes, round-trips the legacy serializer exactly, and is
+  named in `schema/event.schema.json` enums.
+- `officer-source-facts-tests`: `process_interaction` record with exact actor
+  and target ticks (`native_exact` for both, distinct entities), exact uint64
+  address and uninterpreted NTSTATUS. A minifilter `write` observation joins
+  the hooked actor by native identity and keeps `attempted` phase. An invalid
+  target GUID is refused by the canonical builder, and its failure evidence
+  survives the durable journal byte-for-byte.
+- `officer-raw-handoff-tests`: interaction call trace and full target context
+  count toward the byte budget.
+- Guard check: a temporary unhandled variant failed the build with the
+  `static_assert` messages (reverted).
+
+Not proven: no producer emits the new kinds or variant yet (Waves 2–4). No
+Manager or contracts-repo validation of `process_interaction` records (Wave 6).

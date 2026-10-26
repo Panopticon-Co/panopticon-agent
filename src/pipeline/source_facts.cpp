@@ -3,6 +3,7 @@
 #define NOMINMAX
 #include <windows.h>
 #include <tdh.h>
+#include <cstdio>
 #include <limits>
 #include <type_traits>
 #include <stdexcept>
@@ -22,20 +23,32 @@ Json lossless_text(std::string_view text) {
     return {{"encoding", "hex"}, {"bytes", std::move(bytes)}, {"byte_length", std::to_string(text.size())}};
 }
 std::string observed_source_kind_name(telemetry::TelemetrySourceKind kind) {
-    switch (kind) {
-    case telemetry::TelemetrySourceKind::etw: return "etw";
-    case telemetry::TelemetrySourceKind::sysmon: return "sysmon";
-    case telemetry::TelemetrySourceKind::windows_event_log: return "windows_event_log";
-    }
-    return "unknown";
+    return std::string{telemetry::source_kind_name(kind)};
 }
 namespace {
 Json text(const std::optional<std::string>& value) { return value ? lossless_text(*value) : Json(nullptr); }
 Json number(const std::optional<std::uint16_t>& value) { return value ? Json(*value) : Json(nullptr); }
 Json decimal(const std::optional<std::uint64_t>& value) { return value ? Json(std::to_string(*value)) : Json(nullptr); }
 Json context(const telemetry::RawProcessContext& process) {
-    return {{"pid", process.pid}, {"executable", text(process.executable)}, {"process_name", text(process.process_name)},
-        {"user_name", text(process.user_name)}, {"user_sid", text(process.user_sid)}, {"process_guid", text(process.process_guid)}};
+    return {{"pid", process.pid}, {"start_time_ticks", decimal(process.start_time_ticks)}, {"executable", text(process.executable)},
+        {"process_name", text(process.process_name)}, {"user_name", text(process.user_name)}, {"user_sid", text(process.user_sid)},
+        {"process_guid", text(process.process_guid)}};
+}
+Json u32(const std::optional<std::uint32_t>& value) { return value ? Json(std::to_string(*value)) : Json(nullptr); }
+const char* phase_name(telemetry::OperationPhase phase) {
+    switch (phase) {
+    case telemetry::OperationPhase::reported: return "reported";
+    case telemetry::OperationPhase::attempted: return "attempted";
+    case telemetry::OperationPhase::completed: return "completed";
+    }
+    throw std::invalid_argument("unknown operation phase");
+}
+Json status(const std::optional<telemetry::NativeStatus>& value) {
+    if (!value) return nullptr;
+    char hex[11]{};
+    std::snprintf(hex, sizeof(hex), "0x%08X", value->value);
+    return {{"kind", value->kind == telemetry::NativeStatus::Kind::ntstatus ? "ntstatus" : "win32_error"},
+        {"value", std::to_string(value->value)}, {"hex", hex}, {"interpreted", false}};
 }
 }
 Json source_facts(const telemetry::RawEvent& raw) {
@@ -103,7 +116,8 @@ Json source_facts(const telemetry::RawEvent& raw) {
             } else if constexpr (std::is_same_v<Event, telemetry::RawFileEvent>) {
                 result["family"] = "file";
                 result["file"] = {{"operation_value", static_cast<int>(event.operation)}, {"path", text(event.path)},
-                    {"target_path", text(event.target_path)}, {"previous_path", text(event.previous_path)}, {"sha256", text(event.sha256)}};
+                    {"target_path", text(event.target_path)}, {"previous_path", text(event.previous_path)}, {"sha256", text(event.sha256)},
+                    {"phase", phase_name(event.phase)}, {"status", status(event.status)}};
             } else if constexpr (std::is_same_v<Event, telemetry::RawRegistryEvent>) {
                 result["family"] = "registry";
                 result["registry"] = {{"operation_value", static_cast<int>(event.operation)}, {"key_path", text(event.key_path)},
@@ -112,6 +126,17 @@ Json source_facts(const telemetry::RawEvent& raw) {
                 result["family"] = "image_load";
                 result["image"] = {{"path", text(event.path)}, {"is_signed", event.is_signed ? Json(*event.is_signed) : Json(nullptr)},
                     {"signature_status", text(event.signature_status)}, {"sha256", text(event.sha256)}};
+            } else if constexpr (std::is_same_v<Event, telemetry::RawProcessInteractionEvent>) {
+                result["family"] = "process_interaction";
+                result["interaction"] = {{"operation_value", static_cast<int>(event.interaction)},
+                    {"target", event.target ? context(*event.target) : Json(nullptr)},
+                    {"phase", phase_name(event.phase)}, {"status", status(event.status)}, {"api", text(event.api)},
+                    {"address", decimal(event.address)}, {"size", decimal(event.size)},
+                    {"protection", u32(event.protection)}, {"previous_protection", u32(event.previous_protection)},
+                    {"granted_access", u32(event.granted_access)}, {"target_thread_id", u32(event.target_thread_id)},
+                    {"module_path", text(event.module_path)}, {"call_trace", text(event.call_trace)}};
+            } else {
+                static_assert(telemetry::unhandled_raw_event_v<Event>, "source_facts: unhandled RawEvent alternative");
             }
         }
         return result;
