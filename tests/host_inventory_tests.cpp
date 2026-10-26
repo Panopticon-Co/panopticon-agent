@@ -57,9 +57,14 @@ int main(int argc, char** argv) {
         require(end >= start, "native collection window must be ordered on uptime clock");
         const std::set<std::string> states{"healthy", "degraded", "unavailable", "disabled", "unsupported", "blind"};
         for (const auto& field : snapshot["fields"]) {
-            require(states.contains(field["state"].get<std::string>()), "per-field capability state is explicit");
-            if (field["state"] == "unavailable") require(field["value"].is_null(), "unavailable query cannot invent an empty or false fact");
+            require(states.contains(field.at("state").get<std::string>()), "per-field capability state is explicit");
+            if (field.at("state") == "unavailable") require(field.at("value").is_null(), "unavailable query cannot invent an empty or false fact");
         }
+        const auto& secure_boot = snapshot.at("fields").at("secure_boot_firmware_variable_report");
+        require(secure_boot.contains("value"), "firmware observation retains the common nullable field shape");
+        if (secure_boot.at("state") == "healthy")
+            require(secure_boot.at("value").is_boolean() && secure_boot.at("value") == secure_boot.at("secure_boot_enabled"),
+                "successful firmware value matches its explicit Secure Boot interpretation");
         for (const auto* pending : {"virtualization"})
             require(snapshot["fields"][pending]["state"] == "unavailable", "unimplemented domains cannot be marked unsupported or healthy");
         const wchar_t multiple_paths[]{L'C', L':', L'\\', L'\0', L'C', L':', L'\\', L'm', L'n', L't', L'\\', L'\0', L'\0'};

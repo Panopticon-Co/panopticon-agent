@@ -5,6 +5,7 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <windows.h>
+#include <objbase.h>
 #include <iphlpapi.h>
 #include <netioapi.h>
 #include <objbase.h>
@@ -174,9 +175,7 @@ Json registry_value(HKEY key, const wchar_t* name, const DnsStateLimits& limits,
 
 void collect_global_policy(PageWriter& writer, Json& partitions, bool& source_failed) {
     struct Root { HKEY hive; const wchar_t* path; const char* name; };
-    // HKEY_LOCAL_MACHINE is a reinterpret_cast of a literal, so it is not a
-    // constant expression; use static const, not constexpr.
-    static const Root roots[] = {
+    const Root roots[] = {
         {HKEY_LOCAL_MACHINE, L"SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters", "tcpip_global_parameters"},
         {HKEY_LOCAL_MACHINE, L"SOFTWARE\\Policies\\Microsoft\\Windows NT\\DNSClient", "dnsclient_policy"},
         {HKEY_LOCAL_MACHINE, L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\DNSClient", "dnsclient_machine_configuration"}
@@ -215,7 +214,7 @@ void collect_global_policy(PageWriter& writer, Json& partitions, bool& source_fa
 
 void collect_nrpt(PageWriter& writer, Json& partitions, bool& source_failed) {
     struct Root { HKEY hive; const wchar_t* path; const char* name; };
-    static const Root roots[] = {
+    const Root roots[] = {
         {HKEY_LOCAL_MACHINE, L"SOFTWARE\\Policies\\Microsoft\\Windows NT\\DNSClient\\DnsPolicyConfig", "group_policy_nrpt"},
         {HKEY_LOCAL_MACHINE, L"SYSTEM\\CurrentControlSet\\Services\\Dnscache\\Parameters\\DnsPolicyConfig", "local_nrpt"}
     };

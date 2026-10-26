@@ -270,10 +270,7 @@ struct UsnJournal::Impl {
         return false;
     }
     void update_discovery_snapshot(const VolumeDiscovery& scan, bool durable, const char* reason = nullptr) {
-        record_discovery_snapshot(scan, durable, reason);
-        notify(); // Never under discovery_mutex: callbacks may read snapshot().
-    }
-    void record_discovery_snapshot(const VolumeDiscovery& scan, bool durable, const char* reason) {
+        {
         std::scoped_lock lock{discovery_mutex};
         discovery["enumeration_complete"] = scan.complete;
         discovery["bound_exceeded"] = scan.bound_exceeded;
@@ -291,6 +288,9 @@ struct UsnJournal::Impl {
             discovery["reason"] = reason ? reason : (scan.bound_exceeded ? "native volume discovery bound exceeded; volume set is incomplete" : "native volume enumeration unavailable or discovery transition not durable");
             discovery["pending_durable_acceptance"] = !durable;
         }
+        }
+        // Observers may synchronously read snapshot(); never notify under its lock.
+        notify();
     }
     void sync_workers(const std::vector<std::string>& volumes) {
         const std::set<std::string> present(volumes.begin(), volumes.end());
@@ -486,6 +486,12 @@ void UsnJournal::stop() {
         }
     }
     for (auto* worker : workers) if (worker->thread.joinable()) worker->thread.join();
+    {
+        std::scoped_lock lock{impl_->discovery_mutex};
+        impl_->discovery["state"] = "disabled";
+        impl_->discovery["reason"] = "endpoint_shutdown; discovery and volume workers joined; durable checkpoints retained";
+    }
+    impl_->notify();
 }
 nlohmann::json UsnJournal::snapshot() const {
     Json volumes = Json::array(); bool active = false, blind = false, disabled = false;
@@ -505,7 +511,7 @@ nlohmann::json UsnJournal::snapshot() const {
     Json discovery;
     { std::scoped_lock lock{impl_->discovery_mutex}; discovery = impl_->discovery; }
     const auto discovery_state = discovery.value("state", std::string("unavailable"));
-    return {{"state", (discovery_state == "blind" || discovery_state == "unavailable") ? "blind" :
+    return {{"state", discovery_state == "disabled" ? "disabled" : (discovery_state == "blind" || discovery_state == "unavailable") ? "blind" :
             (active ? "degraded" : blind ? "blind" : disabled ? "disabled" : "unavailable")},
         {"volumes", std::move(volumes)}, {"discovery", std::move(discovery)}, {"full_file_coverage_verified", false},
         {"resource_scope", "at most 16 workers; native volume discovery every 30 seconds; 16 KiB USN buffers; bounded application copies; native calls, discovery commit retry and worker joins lack a hard deadline"}};

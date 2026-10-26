@@ -34,7 +34,6 @@ Json context(const telemetry::RawProcessContext& process) {
         {"process_name", text(process.process_name)}, {"user_name", text(process.user_name)}, {"user_sid", text(process.user_sid)},
         {"process_guid", text(process.process_guid)}};
 }
-Json u32(const std::optional<std::uint32_t>& value) { return value ? Json(std::to_string(*value)) : Json(nullptr); }
 const char* phase_name(telemetry::OperationPhase phase) {
     switch (phase) {
     case telemetry::OperationPhase::reported: return "reported";
@@ -70,6 +69,22 @@ Json source_facts(const telemetry::RawEvent& raw) {
                 {"parent_pid", event.parent_pid ? Json(*event.parent_pid) : Json(nullptr)}, {"parent_executable", text(event.parent_executable)},
                 {"executable", text(event.executable)}, {"command_line", text(event.command_line)},
                 {"user_sid", text(event.user_sid)}, {"user_name", text(event.user_name)}, {"sha256", text(event.sha256)}};
+            if (event.sysmon_fields) {
+                if (event.source.kind != telemetry::TelemetrySourceKind::sysmon ||
+                    event.source.provider != "Microsoft-Windows-Sysmon" || event.terminated)
+                    throw std::invalid_argument("Sysmon process field source/operation mismatch");
+                Json fields = Json::object();
+                Json unavailable = Json::array();
+                for (std::size_t index = 0; index < telemetry::SysmonProcessFields::names.size(); ++index) {
+                    const auto name = std::string{telemetry::SysmonProcessFields::names[index]};
+                    const auto& value = event.sysmon_fields->fields[index];
+                    fields[name] = text(value);
+                    if (!value) unavailable.push_back({{"field", name}, {"reason", "source_field_absent"}});
+                }
+                result["process"]["sysmon_fields"] = {{"format", "windows_sysmon_process_fields_v1"},
+                    {"event_id", 1}, {"fields", std::move(fields)}, {"unavailable", std::move(unavailable)},
+                    {"values_interpreted", false}, {"native_creation_ticks_derived", false}};
+            }
             if (event.native_fields) {
                 const auto& native = *event.native_fields;
                 if (event.source.kind != telemetry::TelemetrySourceKind::etw ||
@@ -126,15 +141,14 @@ Json source_facts(const telemetry::RawEvent& raw) {
                 result["family"] = "image_load";
                 result["image"] = {{"path", text(event.path)}, {"is_signed", event.is_signed ? Json(*event.is_signed) : Json(nullptr)},
                     {"signature_status", text(event.signature_status)}, {"sha256", text(event.sha256)}};
-            } else if constexpr (std::is_same_v<Event, telemetry::RawProcessInteractionEvent>) {
-                result["family"] = "process_interaction";
-                result["interaction"] = {{"operation_value", static_cast<int>(event.interaction)},
-                    {"target", event.target ? context(*event.target) : Json(nullptr)},
-                    {"phase", phase_name(event.phase)}, {"status", status(event.status)}, {"api", text(event.api)},
-                    {"address", decimal(event.address)}, {"size", decimal(event.size)},
-                    {"protection", u32(event.protection)}, {"previous_protection", u32(event.previous_protection)},
-                    {"granted_access", u32(event.granted_access)}, {"target_thread_id", u32(event.target_thread_id)},
-                    {"module_path", text(event.module_path)}, {"call_trace", text(event.call_trace)}};
+            } else if constexpr (std::is_same_v<Event, telemetry::RawSysmonExtendedEvent>) {
+                result["family"] = event.event_id == 22 ? "dns" : event.event_id == 10 ? "process_access" : "remote_thread";
+                result["event_id"] = event.event_id;
+                result["event_time_field"] = event.event_time_field;
+                result["target"] = event.target ? context(*event.target) : Json(nullptr);
+                Json fields = Json::object();
+                for (const auto& [name, value] : event.source_fields) fields[name] = lossless_text(value);
+                result["windows_event_data"] = std::move(fields);
             } else {
                 static_assert(telemetry::unhandled_raw_event_v<Event>, "source_facts: unhandled RawEvent alternative");
             }

@@ -1,0 +1,31 @@
+{
+  "status": "passed",
+  "synthetic": false,
+  "source": "native_SysmonEventCollector_live_subscription",
+  "event_id": 1,
+  "native_record_id": "663335",
+  "owned_pid": 25608,
+  "field_names": [
+    "CurrentDirectory",
+    "Hashes",
+    "IntegrityLevel",
+    "LogonGuid",
+    "LogonId",
+    "OriginalFileName",
+    "ParentCommandLine",
+    "TerminalSessionId",
+    "UtcTime"
+  ],
+  "safe_sample": {
+    "TerminalSessionId": "3",
+    "IntegrityLevel": "High",
+    "UtcTime": "2026-10-22 16:38:03.325",
+    "OriginalFileName": "Cmd.Exe"
+  },
+  "all_nine_fields_match_native_xml": true,
+  "journal_restart_exact": true,
+  "raw_evidence": "Retained locally; hashes in live-capture-manifest.json. Full command/account/path facts are not published.",
+  "identity_scope": "probe_local_not_production_enrollment",
+  "native_creation_ticks_derived": false,
+  "raw_evidence_local_directory": "sysmon-live-20261022-220803-62342f40"
+}

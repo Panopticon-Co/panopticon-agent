@@ -20,9 +20,13 @@ struct UsnCallbacks {
 };
 class UsnJournal {
 public:
-    // Empty volume list rediscovers at most 16 native volume GUIDs every 30 seconds;
-    // each durable set transition starts/stops per-volume workers.
+    // Empty list rediscovers at most 16 GUIDs every 30 seconds. Discovery
+    // transitions/checkpoints commit before worker changes; incomplete scans
+    // retain the prior workers and report an unknown interval. Removal joins
+    // the worker and preserves its journal cursor for later reappearance.
     // Explicit volumes must use the native volume GUID path, never a drive letter.
+    // Explicit mode does not discover hotplug. stop() joins discovery before
+    // workers; snapshot() and changed callbacks may run concurrently.
     explicit UsnJournal(UsnCallbacks callbacks, std::vector<std::string> volumes = {});
     ~UsnJournal();
     UsnJournal(const UsnJournal&) = delete;

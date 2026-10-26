@@ -27,63 +27,33 @@ telemetry::RawProcessEvent process() {
     raw.sha256 = "invalid-source-hash";
     return raw;
 }
-telemetry::RawProcessInteractionEvent owned_interaction() {
-    telemetry::RawProcessInteractionEvent event;
-    event.source = {telemetry::TelemetrySourceKind::api_hook, "Officer-Hook", "officer-hook-v1", 9};
-    event.timestamp = telemetry::UtcTimestamp{std::chrono::nanoseconds{1725526400000000300ll}};
-    event.process.pid = 31;
-    event.process.start_time_ticks = 133700000000000031ull;
-    event.process.executable = "C:\\Owned\\injector.exe";
-    event.target = telemetry::RawProcessContext{};
-    event.target->pid = 32;
-    event.target->start_time_ticks = 133700000000000032ull;
-    event.target->executable = "C:\\Windows\\notepad.exe";
-    event.interaction = telemetry::ProcessInteraction::memory_write;
-    event.phase = telemetry::OperationPhase::completed;
-    event.status = telemetry::NativeStatus{telemetry::NativeStatus::Kind::ntstatus, 0xC0000022u};
-    event.api = "WriteProcessMemory";
-    event.address = UINT64_MAX;
-    event.size = 4096;
-    event.protection = 0x40;
-    return event;
-}
-void interaction_and_minifilter_tests() {
+// A minifilter actor with native creation ticks joins an ETW process start of
+// the same PID/ticks as one native_exact entity; different ticks never join.
+void minifilter_identity_tests() {
     pipeline::EndpointRecordFactory factory{context(), "device-1", std::string(64, 'b'), boot, 1};
-    const auto record = factory.process_interaction(owned_interaction());
-    require(record["kind"] == "observation" && record["category"] == "process_interaction" &&
-        record["provenance"]["kind"] == "api_hook", "interaction is a direct canonical observation");
-    require(record["subject"]["resolution"] == "native_exact" && record["subject"]["native_creation_ticks"] == "133700000000000031" &&
-        record["data"]["process"]["entity_id"] == record["subject"]["entity_id"], "verified actor ticks give an exact subject");
-    const auto& target = record["data"]["interaction"]["target"];
-    require(target["identity"]["resolution"] == "native_exact" && target["start_time_ticks"] == "133700000000000032" &&
-        target["entity_id"] != record["subject"]["entity_id"], "target keeps its own exact identity");
-    const auto& facts = record["data"]["source_facts"]["interaction"];
-    require(record["data"]["interaction"]["type"] == "memory_write" && facts["api"] == "WriteProcessMemory" &&
-        facts["phase"] == "completed" && facts["status"]["hex"] == "0xC0000022" && facts["status"]["interpreted"] == false &&
-        facts["address"] == "18446744073709551615" && facts["protection"] == "64", "interaction facts are exact and uninterpreted");
-    require(record["data"]["interaction"]["verdict"].is_null(), "no maliciousness verdict is attached");
-    auto untargeted = owned_interaction(); untargeted.target.reset();
-    require(factory.process_interaction(untargeted)["data"]["interaction"]["target"].is_null(), "absent target is null, not guessed");
-    auto invalid = owned_interaction(); invalid.target->process_guid = "";
-    bool refused = false;
-    try { (void)factory.process_interaction(invalid); } catch (const std::invalid_argument&) { refused = true; }
-    require(refused, "empty target GUID refused instead of creating a guessed reference");
-
+    auto start = process(); start.sha256.reset();
+    enrichment::EnrichedProcessEvent enriched; enriched.raw = start;
+    std::string error;
+    const auto normalized_start = pipeline::normalize_process_event(enriched, context(), error);
+    require(normalized_start.has_value(), "fixture process start normalizes");
+    const auto started = factory.observation(start, *normalized_start);
     telemetry::RawFileEvent file;
     file.source = {telemetry::TelemetrySourceKind::minifilter, "Panopticon-FsMon", std::nullopt, 77};
-    file.timestamp = owned_interaction().timestamp;
-    file.process.pid = 31;
-    file.process.start_time_ticks = 133700000000000031ull;
+    file.timestamp = start.process_start_time + std::chrono::seconds{1};
+    file.process.pid = start.pid;
+    file.process.start_time_ticks = start.start_time_ticks;
     file.operation = telemetry::FileOperation::write;
     file.path = "\\Device\\HarddiskVolume3\\owned.txt";
     file.phase = telemetry::OperationPhase::attempted;
-    std::string error;
     const auto normalized = pipeline::normalize_file_event(file, context(), error);
     require(normalized && normalized->event.type == "write" && normalized->source.kind == "minifilter", "minifilter write normalizes");
     const auto observed = factory.observation(file, *normalized);
-    require(observed["subject"]["resolution"] == "native_exact" && observed["subject"]["entity_id"] == record["subject"]["entity_id"] &&
+    require(observed["subject"]["resolution"] == "native_exact" && observed["subject"]["entity_id"] == started["subject"]["entity_id"] &&
         observed["data"]["source_facts"]["file"]["phase"] == "attempted" && observed["data"]["source_facts"]["file"]["status"].is_null(),
-        "minifilter actor joins the hooked actor by native identity and keeps attempt phase");
+        "minifilter actor joins the ETW process start by native identity and keeps attempt phase");
+    file.process.start_time_ticks = *start.start_time_ticks + 1;
+    const auto reused = factory.observation(file, *pipeline::normalize_file_event(file, context(), error));
+    require(reused["subject"]["entity_id"] != started["subject"]["entity_id"], "same PID with different creation ticks is a different instance");
 }
 Json failure_fixtures() {
     pipeline::EndpointRecordFactory factory{context(), "device-1", std::string(64, 'b'), boot, 1};
@@ -132,9 +102,6 @@ Json failure_fixtures() {
     image.signature_status = "invalid source signature status";
     image.sha256 = "invalid-image-hash";
     result.push_back(factory.normalization_failure(image, "invalid image hash"));
-    auto interaction = owned_interaction();
-    interaction.target->process_guid = std::string(1, static_cast<char>(0xfe));
-    result.push_back(factory.normalization_failure(interaction, "invalid target GUID encoding"));
     raw.source.provider = std::string(1025, 'p');
     raw.process_start_time = telemetry::UtcTimestamp{std::chrono::nanoseconds{std::numeric_limits<std::int64_t>::min()}};
     result.push_back(factory.normalization_failure(raw, "oversized provider and unrenderable source date"));
@@ -178,10 +145,51 @@ struct Scratch {
         if (path.parent_path() == root && path.filename().string().starts_with("officer-source-facts-")) fs::remove_all(path, error);
     }
 };
+Json sysmon_process_context_recovery() {
+    auto event = process();
+    event.source = {telemetry::TelemetrySourceKind::sysmon, "Microsoft-Windows-Sysmon",
+        "Microsoft-Windows-Sysmon/Operational", 99};
+    event.start_time_ticks.reset();
+    event.sha256 = std::string(64, 'A');
+    event.sysmon_fields.emplace();
+    auto& fields = event.sysmon_fields->fields;
+    fields[0] = std::string{"parent\0tail", 11};
+    fields[1] = "Medium";
+    fields[2] = std::string(1, static_cast<char>(0xff));
+    fields[3] = "";
+    fields[4] = "0xffffffffffffffff";
+    fields[5] = "-";
+    enrichment::EnrichedProcessEvent enriched;
+    enriched.raw = event; enriched.sha256 = event.sha256;
+    std::string error;
+    const auto normalized = pipeline::normalize_process_event(enriched, context(), error);
+    require(normalized.has_value(), "extended source facts must remain independent of legacy process normalization");
+    pipeline::EndpointRecordFactory factory{context(), "device-1", std::string(64, 'b'), boot, 1};
+    const auto record = factory.observation(telemetry::RawEvent{event}, *normalized);
+    const auto& facts = record.at("data").at("source_facts").at("process").at("sysmon_fields");
+    require(facts.at("fields").at("ParentCommandLine").get<std::string>() == *fields[0] &&
+        facts.at("fields").at("OriginalFileName").at("bytes") == "ff", "source text bytes survive without replacement or NUL truncation");
+    require(facts.at("fields").at("CurrentDirectory") == "" && facts.at("fields").at("LogonGuid") == "-" &&
+        facts.at("fields").at("TerminalSessionId").is_null() && facts.at("unavailable").size() == 3,
+        "empty, sentinel and absent source fields remain distinct");
+    require(facts.at("fields").at("LogonId") == "0xffffffffffffffff" &&
+        record.at("subject").at("native_creation_ticks").is_null(), "native source text never creates a response target token");
+    Scratch scratch;
+    { delivery::DurableJournal journal{{scratch.path}}; journal.append(record.dump()); }
+    { delivery::DurableJournal reopened{{scratch.path}};
+      const auto batch = reopened.peek(10, 1024 * 1024);
+      require(batch && batch->protocol == 2 && batch->entries.size() == 1 && batch->entries[0].body == record.dump(),
+          "extended canonical process context survives encrypted journal restart byte-for-byte"); }
+    return record;
+}
 int main(int argc, char** argv) {
     try {
+        const auto extended_context = sysmon_process_context_recovery();
+        if (argc == 2 && std::string{argv[1]} == "--emit-sysmon-context-fixture") {
+            std::cout << extended_context.dump() << '\n'; return 0;
+        }
         native_field_scope_tests();
-        interaction_and_minifilter_tests();
+        minifilter_identity_tests();
         const auto fixtures = failure_fixtures();
         if (argc == 2 && std::string{argv[1]} == "--emit-fixtures") { std::cout << fixtures.dump() << '\n'; return 0; }
         const auto& raw = fixtures[0]["data"]["source_facts"];
@@ -193,9 +201,7 @@ int main(int argc, char** argv) {
         require(fixtures[2]["data"]["source_facts"]["file"]["previous_path"] == "previous.txt", "all decoded file paths retained");
         require(fixtures[3]["data"]["source_facts"]["registry"]["value_name"] == "" && fixtures[3]["data"]["source_facts"]["registry"]["value_data"].get<std::string>() == std::string{"a\0b", 3}, "empty values and configured registry data remain exact");
         require(fixtures[4]["data"]["source_facts"]["image"]["is_signed"] == false, "false is distinct from absent signature data");
-        require(fixtures[5]["data"]["source_facts"]["interaction"]["target"]["process_guid"]["bytes"] == "fe" &&
-            fixtures[5]["subject"]["resolution"] == "native_exact", "interaction failure keeps raw target facts and exact actor");
-        require(fixtures[6]["data"]["source_facts"]["event_time_ns"] == "-9223372036854775808" && fixtures[6]["subject"]["resolution"] == "native_exact", "unrenderable date preserves native time and identity");
+        require(fixtures[5]["data"]["source_facts"]["event_time_ns"] == "-9223372036854775808" && fixtures[5]["subject"]["resolution"] == "native_exact", "unrenderable date preserves native time and identity");
         require(!pipeline::valid_utf8(std::string{"\xed\xa0\x80", 3}) && !pipeline::valid_utf8(std::string{"\xc0\xaf", 2}), "surrogate and overlong UTF-8 must not be silently repaired");
         require(pipeline::lossless_text("valid UTF-8 \xc3\xa9") == "valid UTF-8 \xc3\xa9", "valid unicode text remains text");
         auto event = process();

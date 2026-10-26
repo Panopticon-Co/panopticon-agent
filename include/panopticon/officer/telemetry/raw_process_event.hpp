@@ -9,6 +9,8 @@
 #include <string>
 #include <string_view>
 #include <variant>
+#include <vector>
+#include <utility>
 
 namespace panopticon::officer::telemetry {
 
@@ -38,6 +40,16 @@ struct EtwProcessNativeFields {
 
 // A source adapter publishes this structure. It contains observed facts only;
 // it does not contain JSON, transport, storage, or detection concerns.
+struct SysmonProcessFields {
+    // Retain exact source spelling and text, including empty strings and '-'.
+    // Nullable entries mean the source field was absent, not a default value.
+    static constexpr std::array<std::string_view, 9> names{
+        "ParentCommandLine", "IntegrityLevel", "OriginalFileName", "CurrentDirectory",
+        "LogonId", "LogonGuid", "TerminalSessionId", "Hashes", "UtcTime"};
+    std::array<std::optional<std::string>, names.size()> fields;
+    bool operator==(const SysmonProcessFields&) const = default;
+};
+
 struct RawProcessEvent {
     SourceProvenance source;
     UtcTimestamp process_start_time;
@@ -67,6 +79,7 @@ struct RawProcessEvent {
     std::optional<std::uint64_t> termination_time_ticks;
     std::optional<std::uint32_t> exit_code;
     std::optional<EtwProcessNativeFields> native_fields;
+    std::optional<SysmonProcessFields> sysmon_fields;
 
     bool operator==(const RawProcessEvent&) const = default;
 };
@@ -144,35 +157,26 @@ struct RawImageLoadEvent {
     bool operator==(const RawImageLoadEvent&) const = default;
 };
 
-// One process acting on another process's memory/threads, or loading code into
-// itself. Carries API instrumentation (officer-hook) and Sysmon EID 8/10. The
-// actor is `process`; `target` is absent when the source does not identify one.
-enum class ProcessInteraction {
-    memory_allocate, memory_write, memory_protect, section_map,
-    remote_thread_create, apc_queue, thread_context_set, library_load, process_access,
-};
-
-struct RawProcessInteractionEvent {
+// Windows-specific canonical families; never serialized as legacy schema 0.4.
+// Source fields preserve exact decoded spelling/text within the XML admission cap.
+struct RawSysmonExtendedEvent {
     SourceProvenance source;
     UtcTimestamp timestamp;
     RawProcessContext process;
+    std::uint16_t event_id = 0; // closed set: 8, 10, 22
+    std::string event_time_field;
     std::optional<RawProcessContext> target;
-    ProcessInteraction interaction{ProcessInteraction::process_access};
-    OperationPhase phase{OperationPhase::reported};
-    std::optional<NativeStatus> status;
-    // Source-reported API or event name, retained exactly (e.g. "VirtualAllocEx").
-    std::optional<std::string> api;
-    std::optional<std::uint64_t> address;
-    std::optional<std::uint64_t> size;
-    // Raw PAGE_* / access-mask values; never decoded into a verdict here.
-    std::optional<std::uint32_t> protection;
-    std::optional<std::uint32_t> previous_protection;
-    std::optional<std::uint32_t> granted_access;
-    std::optional<std::uint32_t> target_thread_id;
-    std::optional<std::string> module_path;
+    std::optional<std::uint64_t> granted_access;
+    std::optional<std::uint64_t> start_address;
+    std::optional<std::uint32_t> new_thread_id;
+    std::optional<std::uint32_t> query_status;
     std::optional<std::string> call_trace;
-
-    bool operator==(const RawProcessInteractionEvent&) const = default;
+    std::optional<std::string> start_module;
+    std::optional<std::string> start_function;
+    std::optional<std::string> query_name;
+    std::optional<std::string> query_results;
+    std::vector<std::pair<std::string, std::string>> source_fields;
+    bool operator==(const RawSysmonExtendedEvent&) const = default;
 };
 
 // New raw event types are added to this variant without changing collector
@@ -185,7 +189,7 @@ using RawEvent = std::variant<
     RawFileEvent,
     RawRegistryEvent,
     RawImageLoadEvent,
-    RawProcessInteractionEvent>;
+    RawSysmonExtendedEvent>;
 
 template <class> inline constexpr bool unhandled_raw_event_v = false;
 

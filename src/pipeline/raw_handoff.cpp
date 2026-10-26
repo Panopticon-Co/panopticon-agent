@@ -28,6 +28,7 @@ std::size_t raw_event_charge(const telemetry::RawEvent& event) {
         if constexpr (std::is_same_v<T, telemetry::RawProcessEvent>) {
             optional(raw.process_guid); optional(raw.parent_process_guid); optional(raw.parent_executable);
             optional(raw.executable); optional(raw.command_line); optional(raw.user_sid); optional(raw.user_name); optional(raw.sha256);
+            if (raw.sysmon_fields) for (const auto& field : raw.sysmon_fields->fields) optional(field);
         } else {
             context(raw.process);
             if constexpr (std::is_same_v<T, telemetry::RawNetworkEvent>) {
@@ -38,9 +39,15 @@ std::size_t raw_event_charge(const telemetry::RawEvent& event) {
                 optional(raw.key_path); optional(raw.value_name); optional(raw.value_type); optional(raw.value_data);
             } else if constexpr (std::is_same_v<T, telemetry::RawImageLoadEvent>) {
                 optional(raw.path); optional(raw.signature_status); optional(raw.sha256);
-            } else if constexpr (std::is_same_v<T, telemetry::RawProcessInteractionEvent>) {
+            } else if constexpr (std::is_same_v<T, telemetry::RawSysmonExtendedEvent>) {
+                add(raw.event_time_field);
+                optional(raw.call_trace); optional(raw.start_module); optional(raw.start_function);
+                optional(raw.query_name); optional(raw.query_results);
+                if (raw.source_fields.capacity() > (std::numeric_limits<std::size_t>::max() - bytes) / sizeof(raw.source_fields[0]))
+                    throw std::length_error("raw source fields charge overflow");
+                bytes += raw.source_fields.capacity() * sizeof(raw.source_fields[0]);
+                for (const auto& [name, value] : raw.source_fields) { add(name); add(value); }
                 if (raw.target) context(*raw.target);
-                optional(raw.api); optional(raw.module_path); optional(raw.call_trace);
             } else {
                 static_assert(telemetry::unhandled_raw_event_v<T>, "raw_event_charge: unhandled RawEvent alternative");
             }

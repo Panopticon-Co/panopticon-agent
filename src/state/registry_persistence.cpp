@@ -66,13 +66,13 @@ bool registry_mechanism_scope(Pager& pager, PersistenceSource source, HKEY hive,
         };
         switch (source) {
         case PersistenceSource::active_setup: {
-            static constexpr const wchar_t*selected[]{L"", L"StubPath", L"Version", L"Locale", L"IsInstalled", L"ComponentID"};
+            static constexpr const wchar_t* selected[]{L"", L"StubPath", L"Version", L"Locale", L"IsInstalled", L"ComponentID"};
             complete = children(pager, hive, hive_name, path(L"Software\\Microsoft\\Active Setup\\Installed Components"), view, mechanism,
                 [&](const std::wstring& child) { return values(child, selected); }) && complete;
             break;
         }
         case PersistenceSource::image_execution: {
-            static constexpr const wchar_t*selected[]{L"Debugger", L"GlobalFlag", L"VerifierDlls", L"VerifierFlags", L"UseFilter", L"FilterFullPath", L"MitigationOptions"};
+            static constexpr const wchar_t* selected[]{L"Debugger", L"GlobalFlag", L"VerifierDlls", L"VerifierFlags", L"UseFilter", L"FilterFullPath", L"MitigationOptions"};
             complete = children(pager, hive, hive_name, path(L"Software\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options"), view, mechanism,
                 [&](const std::wstring& child) {
                     const bool parent = values(child, selected);
@@ -80,22 +80,22 @@ bool registry_mechanism_scope(Pager& pager, PersistenceSource source, HKEY hive,
                         [&](const std::wstring& filter) { return values(filter, selected); }, 32);
                     return parent && filters;
                 }) && complete;
-            static constexpr const wchar_t*exit_fields[]{L"MonitorProcess", L"ReportingMode", L"IgnoreSelfExits", L"LocalDumpFolder", L"DumpType", L"MaxNumberOfDumpFiles"};
+            static constexpr const wchar_t* exit_fields[]{L"MonitorProcess", L"ReportingMode", L"IgnoreSelfExits", L"LocalDumpFolder", L"DumpType", L"MaxNumberOfDumpFiles"};
             const auto exit_path = path(L"Software\\Microsoft\\Windows NT\\CurrentVersion\\SilentProcessExit");
             complete = values(exit_path, exit_fields) && complete;
             complete = children(pager, hive, hive_name, exit_path, view, mechanism,
                 [&](const std::wstring& child) { return values(child, exit_fields); }) && complete;
-            static constexpr const wchar_t*boot_fields[]{L"BootExecute", L"SetupExecute", L"Execute"};
+            static constexpr const wchar_t* boot_fields[]{L"BootExecute", L"SetupExecute", L"Execute"};
             complete = values(path(L"System\\CurrentControlSet\\Control\\Session Manager"), boot_fields) && complete;
             if (pager.active()) complete = registry_values(pager, hive, hive_name,
                 path(L"System\\CurrentControlSet\\Control\\Session Manager\\AppCertDlls"), view, {}, mechanism) && complete;
             break;
         }
         case PersistenceSource::com_activation: {
-            static constexpr const wchar_t*clsid_fields[]{L"AppID", L"LocalService"};
-            static constexpr const wchar_t*inproc_fields[]{L"", L"ThreadingModel"};
-            static constexpr const wchar_t*local_fields[]{L"", L"ServerExecutable"};
-            static constexpr const wchar_t*default_field[]{L""};
+            static constexpr const wchar_t* clsid_fields[]{L"AppID", L"LocalService"};
+            static constexpr const wchar_t* inproc_fields[]{L"", L"ThreadingModel"};
+            static constexpr const wchar_t* local_fields[]{L"", L"ServerExecutable"};
+            static constexpr const wchar_t* default_field[]{L""};
             complete = children(pager, hive, hive_name, path(L"Software\\Classes\\CLSID"), view, mechanism,
                 [&](const std::wstring& child) {
                     bool ok = values(child, clsid_fields);
@@ -106,7 +106,7 @@ bool registry_mechanism_scope(Pager& pager, PersistenceSource source, HKEY hive,
                     ok = values(child + L"\\AutoTreatAs", default_field) && ok;
                     return ok;
                 }) && complete;
-            static constexpr const wchar_t*appid_fields[]{L"LocalService", L"ServiceParameters", L"DllSurrogate", L"DllSurrogateExecutable", L"RunAs", L"LaunchPermission", L"AccessPermission"};
+            static constexpr const wchar_t* appid_fields[]{L"LocalService", L"ServiceParameters", L"DllSurrogate", L"DllSurrogateExecutable", L"RunAs", L"LaunchPermission", L"AccessPermission"};
             complete = children(pager, hive, hive_name, path(L"Software\\Classes\\AppID"), view, mechanism,
                 [&](const std::wstring& child) { return values(child, appid_fields); }) && complete;
             break;
@@ -120,11 +120,11 @@ bool registry_mechanism_scope(Pager& pager, PersistenceSource source, HKEY hive,
             }
             break;
         case PersistenceSource::browser_registration: {
-            static constexpr const wchar_t*registration[]{L"path", L"version", L"update_url"};
-            static constexpr const wchar_t*host_manifest[]{L""};
-            static constexpr const wchar_t*settings[]{L"ExtensionSettings", L"BlockExternalExtensions", L"DeveloperToolsAvailability",
+            static constexpr const wchar_t* registration[]{L"path", L"version", L"update_url"};
+            static constexpr const wchar_t* host_manifest[]{L""};
+            static constexpr const wchar_t* settings[]{L"ExtensionSettings", L"BlockExternalExtensions", L"DeveloperToolsAvailability",
                 L"ExtensionManifestV2Availability", L"NativeMessagingUserLevelHosts", L"NativeMessagingBlocklist", L"NativeMessagingAllowlist"};
-            static constexpr const wchar_t*extension_settings[]{L"installation_mode", L"update_url", L"blocked_permissions", L"allowed_permissions",
+            static constexpr const wchar_t* extension_settings[]{L"installation_mode", L"update_url", L"blocked_permissions", L"allowed_permissions",
                 L"runtime_blocked_hosts", L"runtime_allowed_hosts", L"minimum_version_required"};
             for (const auto* browser : {L"Google\\Chrome", L"Microsoft\\Edge", L"Chromium"}) {
                 const auto root = path(L"Software") + L"\\" + browser;
@@ -149,8 +149,8 @@ bool registry_mechanism_scope(Pager& pager, PersistenceSource source, HKEY hive,
             break;
         }
         case PersistenceSource::office_addins: {
-            static constexpr const wchar_t*addin_fields[]{L"FriendlyName", L"Description", L"LoadBehavior", L"Manifest", L"CommandLineSafe"};
-            static constexpr const wchar_t*security_fields[]{L"VBAWarnings", L"AccessVBOM", L"BlockContentExecutionFromInternet",
+            static constexpr const wchar_t* addin_fields[]{L"FriendlyName", L"Description", L"LoadBehavior", L"Manifest", L"CommandLineSafe"};
+            static constexpr const wchar_t* security_fields[]{L"VBAWarnings", L"AccessVBOM", L"BlockContentExecutionFromInternet",
                 L"DisableAllActiveX", L"DisableAllAddins", L"RequireAddinSig", L"DisableAllApplicationAddins"};
             for (const auto* application : {L"Word", L"Excel", L"PowerPoint", L"Outlook", L"Access", L"Visio", L"Project", L"OneNote"}) {
                 const auto office = path(L"Software\\Microsoft\\Office");

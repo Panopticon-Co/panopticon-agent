@@ -1,9 +1,9 @@
 <!--
-  Panopticon Officer - REFERENCE Sysmon configuration for V3 multi-family telemetry.
+  Panopticon Officer - REFERENCE Sysmon configuration for canonical telemetry.
 
   STATUS: REFERENCE / STARTING POINT. This is NOT a mandated production policy and
   NOT the only configuration Officer supports. It documents the Sysmon *policy*
-  that makes Officer's five telemetry families populate. Officer consumes the
+  that makes the selected Officer telemetry families populate. Officer consumes the
   Microsoft-Windows-Sysmon/Operational channel via EvtSubscribe; it never reads
   this file.
 
@@ -21,14 +21,19 @@
       - does NOT set <ArchiveDirectory> (that would persist DELETED FILE CONTENTS
         to disk),
       - uses FileDeleteDetected (EID 26), never the archiving FileDelete (EID 23),
-      - does NOT enable clipboard capture, WMI, DNS-query, or pipe events.
+      - does NOT enable clipboard capture, WMI, or pipe events.
+      - DNS query names/results and bounded process-access call traces ARE retained.
 
   REQUIRED EVENT IDS FOR V3
       1           Process create        -> event.category=process     / type=start
+      5           Process terminate     -> canonical process stop
       3           Network connection    -> event.category=network      / type=connect
       7           Image / module load   -> event.category=image_load   / type=load   (HIGH VOLUME - scoped below)
+      8           Remote thread         -> canonical remote_thread (all)
+      10          Process access        -> canonical process_access (scoped below)
       11          File create           -> event.category=file         / type=create
       12,13,14    Registry key/value    -> event.category=registry     / type=add_key|set_value|rename_key
+      22          DNS query             -> canonical dns (all)
   OPTIONAL
       26          File delete (detected)-> event.category=file         / type=delete
       23          File delete (archive) -> intentionally NOT enabled (would capture file contents)
@@ -36,13 +41,46 @@
 <Sysmon schemaversion="4.90">
 
   <HashAlgorithms>SHA256</HashAlgorithms>
-  <!-- No <ArchiveDirectory>. No clipboard / WMI / DNS-query / pipe events. -->
+  <!-- No <ArchiveDirectory>. No clipboard / WMI / pipe events. -->
 
   <EventFiltering>
 
     <!-- EID 1 - process creation. Log everything; this is the V1/V2 baseline. -->
     <RuleGroup name="process-create" groupRelation="or">
       <ProcessCreate onmatch="exclude"/>
+    </RuleGroup>
+
+    <RuleGroup name="process-terminate" groupRelation="or">
+      <ProcessTerminate onmatch="exclude"/>
+    </RuleGroup>
+
+    <RuleGroup name="remote-thread" groupRelation="or">
+      <CreateRemoteThread onmatch="exclude"/>
+    </RuleGroup>
+
+    <!-- EID 10 can be extremely noisy. Beyond LSASS targets, include access
+         originating from selected interpreters/launchers and the explicit benign
+         validation probe. Other source/target pairs are a documented blind spot.
+         This limits scope, not event rate: measure queue/disk budgets before use.
+         Never apply this reference wholesale over an existing managed policy. -->
+    <RuleGroup name="process-access-selected" groupRelation="or">
+      <ProcessAccess onmatch="include">
+        <TargetImage condition="end with">\lsass.exe</TargetImage>
+        <SourceImage condition="end with">\powershell.exe</SourceImage>
+        <SourceImage condition="end with">\pwsh.exe</SourceImage>
+        <SourceImage condition="end with">\cmd.exe</SourceImage>
+        <SourceImage condition="end with">\rundll32.exe</SourceImage>
+        <SourceImage condition="end with">\regsvr32.exe</SourceImage>
+        <SourceImage condition="end with">\wmic.exe</SourceImage>
+        <SourceImage condition="end with">\mshta.exe</SourceImage>
+        <SourceImage condition="end with">\wscript.exe</SourceImage>
+        <SourceImage condition="end with">\cscript.exe</SourceImage>
+        <SourceImage condition="end with">\officer-sysmon-extended-live-probe.exe</SourceImage>
+      </ProcessAccess>
+    </RuleGroup>
+
+    <RuleGroup name="dns-query" groupRelation="or">
+      <DnsQuery onmatch="exclude"/>
     </RuleGroup>
 
     <!-- EID 3 - TCP/UDP connection metadata (5-tuple + resolved hostname).

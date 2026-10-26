@@ -992,7 +992,7 @@ int run_endpoint(int argc, char* argv[], HANDLE service_stop = nullptr,
             if (failure_record) ++failure_evidence_committed;
             (void)diagnostic_stdout.try_submit(line);
         };
-    // Records with no legacy 0.3 family (process stop, process interaction) are
+    // Records with no legacy 0.3 family (process stop, Sysmon EID 8/10/22) are
     // built canonically; a build failure becomes durable normalization_failure.
     const auto emit_direct = [&](const telemetry::RawEvent& raw_event, const auto& build) {
         std::scoped_lock lock{output_mutex};
@@ -1017,8 +1017,8 @@ int run_endpoint(int argc, char* argv[], HANDLE service_stop = nullptr,
                 record_factory.accepted_process_stop(*stopped);
             return;
         }
-        if (const auto* interaction = std::get_if<telemetry::RawProcessInteractionEvent>(&raw_event)) {
-            (void)emit_direct(raw_event, [&] { return record_factory.process_interaction(*interaction); });
+        if (const auto* extension = std::get_if<telemetry::RawSysmonExtendedEvent>(&raw_event)) {
+            (void)emit_direct(raw_event, [&] { return record_factory.sysmon_extended(*extension); });
             return;
         }
         const auto source_record = raw_event;
@@ -1044,8 +1044,8 @@ int run_endpoint(int argc, char* argv[], HANDLE service_stop = nullptr,
                     return pipeline::normalize_registry_event(raw, *context, normalization_error);
                 } else if constexpr (std::is_same_v<Event, telemetry::RawImageLoadEvent>) {
                     return pipeline::normalize_image_load_event(raw, *context, normalization_error);
-                } else if constexpr (std::is_same_v<Event, telemetry::RawProcessInteractionEvent>) {
-                    throw std::logic_error("process interaction must use the direct canonical path");
+                } else if constexpr (std::is_same_v<Event, telemetry::RawSysmonExtendedEvent>) {
+                    throw std::logic_error("Sysmon extension must use the direct canonical path");
                 } else {
                     static_assert(telemetry::unhandled_raw_event_v<Event>, "normalization: unhandled RawEvent alternative");
                 }

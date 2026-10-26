@@ -16,6 +16,7 @@
 #include <mutex>
 #include <memory>
 #include <stdexcept>
+#include <thread>
 using Json = nlohmann::json;
 namespace col = panopticon::officer::collectors;
 namespace delivery = panopticon::officer::delivery;
@@ -79,6 +80,34 @@ struct Scratch {
 };
 void write(const fs::path& path, const char* content) {
     std::ofstream stream(path, std::ios::binary); stream << content; require(bool(stream), "owned file write");
+}
+void discovery_lifecycle_tests() {
+    Scratch scratch;
+    delivery::DurableJournal journal{{scratch.root / "discovery"}};
+    pipeline::NormalizationContext context{{"agent-usn-discovery", "dev"}, {"host-usn-discovery", "LAB", {"Windows", "native"}}};
+    pipeline::EndpointRecordFactory factory{context, "device", std::string(64, 'b'), std::nullopt, 1};
+    std::atomic<col::UsnJournal*> current{nullptr};
+    std::atomic<unsigned> reentrant_reads{0};
+    col::UsnCallbacks callbacks;
+    callbacks.load = [&](const std::string& source) {
+        // Delay the first background scan until construction has returned.
+        require(until([&] { return current.load() != nullptr; }, 5000), "discovery owner published");
+        return journal.source_checkpoint(source);
+    };
+    callbacks.make_record = [&](const std::string& source, Json body, bool gap) { return factory.usn_journal(source, std::move(body), gap).dump(); };
+    callbacks.commit = [&](const std::string& line, const std::string& source, const std::string& cursor, std::uint64_t revision) {
+        journal.append_checkpointed(line, source, cursor, revision); return true;
+    };
+    callbacks.changed = [&] { if (auto* sensor = current.load()) { (void)sensor->snapshot(); ++reentrant_reads; } };
+    col::UsnJournal sensor{callbacks}; current = &sensor;
+    require(until([&] { return reentrant_reads.load() != 0; }, 10000), "discovery notification permits reentrant health read without deadlock");
+    std::jthread reader{[&](std::stop_token stop) { while (!stop.stop_requested()) { (void)sensor.snapshot(); Sleep(1); } }};
+    sensor.stop();
+    reader.request_stop(); reader.join();
+    require(sensor.snapshot()["state"] == "disabled" && sensor.snapshot()["discovery"]["state"] == "disabled", "joined automatic source reports disabled including empty worker sets");
+    sensor.stop();
+    const auto checkpoint = journal.source_checkpoint("usn:volume-discovery:v1");
+    require(checkpoint.has_value() && checkpoint->revision >= 1, "automatic volume-set transition and durable checkpoint exist");
 }
 Json live_tests(bool required) {
     Scratch scratch; std::array<wchar_t, 1024> mount{}, volume_name{};
@@ -349,7 +378,7 @@ int main(int argc, char** argv) {
             const std::string arg = argv[i]; if (arg == "--require-live") required = true;
             else if (arg == "--report" && i + 1 < argc) report = argv[++i]; else throw std::invalid_argument("unknown USN test argument");
         }
-        decoder_tests(); discovery_tests(); auto result = live_tests(required);
+        decoder_tests(); discovery_tests(); discovery_lifecycle_tests(); auto result = live_tests(required);
         pipeline::NormalizationContext context{{"agent-usn-fixture", "dev"}, {"host-usn-fixture", "LAB", {"Windows", "fixture"}}};
         pipeline::EndpointRecordFactory factory{context, "device-usn-fixture", std::string(64, 'c'), "boot_" + std::string(64, 'd'), 1};
         result["synthetic_contract_fixtures"] = Json::array();

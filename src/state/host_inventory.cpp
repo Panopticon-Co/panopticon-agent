@@ -221,8 +221,6 @@ Json secure_boot_firmware_variable(const Json& registry_report, const Json& firm
         firmware_report["value"].contains("type_value");
     const auto firmware_type_value = firmware_type_ok ? firmware_report["value"]["type_value"].get<int>() : static_cast<int>(FirmwareTypeUnknown);
     const auto firmware_type = static_cast<FIRMWARE_TYPE>(firmware_type_value);
-    // "value" keeps this report in the common per-field shape ({state, value, ...}):
-    // null unless the variable is read and interpreted (set in the healthy path).
     Json result{{"state", "unavailable"}, {"value", nullptr}, {"source", "GetFirmwareEnvironmentVariableExW"},
         {"variable_name", "SecureBoot"}, {"vendor_guid", "{8BE4DF61-93CA-11D2-AA0D-00E098032B8C}"},
         {"firmware_type", firmware_type_ok ? firmware_report["value"]["type"] : Json(nullptr)},

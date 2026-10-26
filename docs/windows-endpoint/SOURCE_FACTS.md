@@ -1,5 +1,11 @@
 # Decoded source facts and normalization failure evidence
 
+The 2026-10-22 process-context increment adds the optional, source-spelled
+`process.sysmon_fields` block for EID1. See [feature field parity](FEATURE_FIELD_PARITY.md)
+for its nine fields, absent-value reasons, consumer mapping requirements and evidence
+limits. The common decoded-facts representation remains v1; the optional block has its
+own `windows_sysmon_process_fields_v1` format. Legacy serialization is unchanged.
+
 Canonical observations retain `data.source_facts`, representation
 `decoded_source_facts_v1`, independently of legacy normalized aliases. It contains
 every field currently present in the five RawEvent structures: process, network,

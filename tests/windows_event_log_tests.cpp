@@ -131,6 +131,8 @@ void live_tests() {
     const std::string source = "winevt:v1:Application";
     const auto baseline = latest_bookmark();
     if (!baseline.empty()) journal.append_checkpointed(R"({"event":{"id":"owned-log-baseline"},"gap":"test_only_skip_prior_application_history"})",source,baseline,0);
+    const auto saved = journal.source_checkpoint(source);
+    auto revision = saved ? saved->revision : 0;
     std::atomic<bool> reject{true}, pending{false}, first_accepted{false}, second_accepted{false};
     std::mutex mutex; std::string immutable_pending; unsigned retries = 0; bool same_retry = true;
     std::atomic_uint64_t sequence{0};
@@ -142,9 +144,9 @@ void live_tests() {
         return Json{{"event",{{"id","live-log-" + std::to_string(++sequence)}}},{"channel",channel},{"gap",gap},{"data",event.data}}.dump();
     };
     callbacks.commit = [&](const std::string& line, const std::string& key, const std::string& cursor, std::uint64_t expected) {
-        // Refuse only the owned token record: the seeded raw bookmark is a legacy cursor whose
-        // migration gap must be durably admitted before the collector reports an active subscription.
-        if (!cursor.empty() && reject.load() && line.find(token) != std::string::npos) {
+        // Let legacy cursor migration finish before testing refusal of an event.
+        // Migration is a checkpointed gap, not a delivered Application record.
+        if (!cursor.empty() && !Json::parse(line).value("gap", false) && reject.load()) {
             std::scoped_lock lock{mutex}; if (immutable_pending.empty()) immutable_pending = line; else same_retry = same_retry && immutable_pending == line;
             ++retries; pending.store(true); return false;
         }
@@ -156,23 +158,25 @@ void live_tests() {
     {
         collectors::WindowsEventLog logs{callbacks,{"Application"}};
         expect(until([&] { return logs.snapshot()["channels"][0]["reason"] == "native pull subscription active; audit/provider policy and continuity unverified"; }), "real Application pull subscription established");
-        const auto migrated = journal.source_checkpoint(source);
-        const auto admitted_revision = migrated ? migrated->revision : 0;
+        const auto ready_checkpoint = journal.source_checkpoint(source);
+        revision = ready_checkpoint ? ready_checkpoint->revision : 0;
         report(token);
         expect(until([&] { std::scoped_lock lock{mutex}; return retries >= 2; }), "real source refuses and retries pending event");
         const auto unchanged = journal.source_checkpoint(source);
-        { std::scoped_lock lock{mutex}; expect((unchanged ? unchanged->revision : 0) == admitted_revision && same_retry && pending.load(), "actual collector refusal preserves cursor and immutable record bytes"); }
+        { std::scoped_lock lock{mutex}; expect((unchanged ? unchanged->revision : 0) == revision && same_retry && pending.load(), "actual collector refusal preserves cursor and immutable record bytes"); }
         reject.store(false);
         expect(until([&] { return first_accepted.load(); }), "real ReportEvent token observed and durably checkpointed");
         logs.stop();
         expect(logs.snapshot()["channels"][0]["state"] == "disabled" && logs.snapshot()["channels"][0]["worker_stopped"] == true,
             "stopped worker cannot claim an active subscription");
-        expect(journal.source_checkpoint(source)->revision > admitted_revision, "actual collector advances native bookmark after durable admission");
+        expect(journal.source_checkpoint(source)->revision > revision, "actual collector advances native bookmark after durable admission");
     }
     report(second);
     {
         collectors::WindowsEventLog restarted{callbacks,{"Application"}};
-        expect(until([&] { return second_accepted.load(); }), "strict native bookmark resume reads event written while collector stopped");
+        const bool resumed = until([&] { return second_accepted.load(); });
+        if (!resumed) std::cerr << "Restart health: " << restarted.snapshot().dump() << '\n';
+        expect(resumed, "strict native bookmark resume reads event written while collector stopped");
         restarted.stop();
     }
     std::size_t first_count = 0, second_count = 0; std::uint64_t cursor = 0;
