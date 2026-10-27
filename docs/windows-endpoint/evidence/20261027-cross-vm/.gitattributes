@@ -1,0 +1,2 @@
+# Canonical LF exports keep evidence hashes identical on every checkout platform.
+*.json text eol=lf

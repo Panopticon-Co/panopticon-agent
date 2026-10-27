@@ -637,7 +637,8 @@ response::CommandReceipt execute_command(ResponseRuntime& runtime, const respons
                 SecureZeroMemory(key.data(), key.size());
                 forensics::FileAcquisitionRequest request;
                 request.capture_id = received.file_capture_id;
-                request.relative_path = std::filesystem::u8path(received.file_target_path);
+                request.relative_path = std::filesystem::path(std::u8string(
+                    received.file_target_path.begin(), received.file_target_path.end()));
                 request.maximum_bytes = received.file_maximum_bytes;
                 request.command_id = received.command_id;
                 request.command_correlation_id = received.correlation_id;
@@ -991,40 +992,33 @@ int run_endpoint(int argc, char* argv[], HANDLE service_stop = nullptr,
             if (failure_record) ++failure_evidence_committed;
             (void)diagnostic_stdout.try_submit(line);
         };
+    // Records with no legacy 0.3 family (process stop, Sysmon EID 8/10/22) are
+    // built canonically; a build failure becomes durable normalization_failure.
+    const auto emit_direct = [&](const telemetry::RawEvent& raw_event, const auto& build) {
+        std::scoped_lock lock{output_mutex};
+        nlohmann::json record;
+        bool failed = false;
+        try { record = build(); }
+        catch (const std::exception& error) {
+            ++normalization_failures; failed = true;
+            record = record_factory.normalization_failure(raw_event, error.what());
+        }
+        if (!persist_record(record.dump())) {
+            ++observation_admission_failures; SetEvent(health_changed.get());
+            throw std::runtime_error("direct canonical record was not durably accepted");
+        }
+        if (failed) ++failure_evidence_committed;
+        (void)diagnostic_stdout.try_submit(record.dump());
+        return !failed;
+    };
     const collectors::RawEventSink process_raw_event = [&](telemetry::RawEvent raw_event) {
         if (const auto* stopped = std::get_if<telemetry::RawProcessEvent>(&raw_event); stopped && stopped->terminated) {
-            std::scoped_lock lock{output_mutex};
-            nlohmann::json record;
-            try { record = record_factory.process_stop(*stopped); }
-            catch (const std::exception& error) {
-                // emit_normalized owns the same output lock; release before
-                // re-entering it is not possible here, so retain explicit failure.
-                ++normalization_failures;
-                record = record_factory.normalization_failure(raw_event, error.what());
-            }
-            if (!persist_record(record.dump())) {
-                ++observation_admission_failures; SetEvent(health_changed.get());
-                throw std::runtime_error("process stop was not durably accepted");
-            }
-            if (record["category"] == "process_stop") record_factory.accepted_process_stop(*stopped);
-            else ++failure_evidence_committed;
-            (void)diagnostic_stdout.try_submit(record.dump());
+            if (emit_direct(raw_event, [&] { return record_factory.process_stop(*stopped); }))
+                record_factory.accepted_process_stop(*stopped);
             return;
         }
         if (const auto* extension = std::get_if<telemetry::RawSysmonExtendedEvent>(&raw_event)) {
-            nlohmann::json record;
-            try { record = record_factory.sysmon_extended(*extension); }
-            catch (const std::exception& error) {
-                ++normalization_failures;
-                record = record_factory.normalization_failure(raw_event, error.what());
-            }
-            const auto body = record.dump();
-            if (!persist_record(body)) {
-                ++observation_admission_failures; SetEvent(health_changed.get());
-                throw std::runtime_error("Sysmon extended observation was not durably accepted");
-            }
-            if (record["category"] == "normalization_failure") ++failure_evidence_committed;
-            (void)diagnostic_stdout.try_submit(body);
+            (void)emit_direct(raw_event, [&] { return record_factory.sysmon_extended(*extension); });
             return;
         }
         const auto source_record = raw_event;
@@ -1050,9 +1044,10 @@ int run_endpoint(int argc, char* argv[], HANDLE service_stop = nullptr,
                     return pipeline::normalize_registry_event(raw, *context, normalization_error);
                 } else if constexpr (std::is_same_v<Event, telemetry::RawImageLoadEvent>) {
                     return pipeline::normalize_image_load_event(raw, *context, normalization_error);
+                } else if constexpr (std::is_same_v<Event, telemetry::RawSysmonExtendedEvent>) {
+                    throw std::logic_error("Sysmon extension must use the direct canonical path");
                 } else {
-                    normalization_error = "Sysmon extension requires canonical normalization";
-                    return std::nullopt;
+                    static_assert(telemetry::unhandled_raw_event_v<Event>, "normalization: unhandled RawEvent alternative");
                 }
             },
             std::move(raw_event));
@@ -2242,7 +2237,9 @@ int run_endpoint(int argc, char* argv[], HANDLE service_stop = nullptr,
                 if (source && pending.empty() && source->status().value("state", std::string{}) == "running") {
                     auto rows = source->drain(1);
                     source_work = !rows.empty();
-                    for (auto& row : rows) {
+                    // drain(1): one immutable serialized record is retried before another source drain.
+                    if (!rows.empty()) {
+                        auto& row = rows.front();
                         const auto kind = row.value("kind", std::string{});
                         if (kind == "network_state_snapshot") {
                             row["capture_id"] = capture_id;
@@ -2251,12 +2248,11 @@ int run_endpoint(int argc, char* argv[], HANDLE service_stop = nullptr,
                             snapshot_states.push_back(record.at("data").value("state", std::string("unknown")));
                             { std::scoped_lock lock{inventory_mutex}; network_change_health["pending_kind"] = "snapshot"; }
                             retain(record);
-                            break; // One immutable serialized record is retried before another source drain.
+                        } else {
+                            const auto record = record_factory.state("network_state_change", std::move(row));
+                            { std::scoped_lock lock{inventory_mutex}; network_change_health["pending_kind"] = "notification"; }
+                            retain(record);
                         }
-                        const auto record = record_factory.state("network_state_change", std::move(row));
-                        { std::scoped_lock lock{inventory_mutex}; network_change_health["pending_kind"] = "notification"; }
-                        retain(record);
-                        break;
                     }
                     if (rows.empty()) {
                         const auto current = source->status();

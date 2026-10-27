@@ -1,5 +1,121 @@
 # Windows endpoint validation ledger
 
+## Cross-VM E2E Verified — 2026-10-27
+
+The remaining Wave 6 acceptance run passed against the regular Linux Manager,
+superseding the preparation checkpoint below. Run window: 21:57:39–22:00:04 IST
+(16:27:39–16:30:04 UTC), plus independent persisted-record readback after cleanup.
+
+- Endpoint: PANO-NEW-WIN-01, `10.77.10.31`, Ethernet1 MAC `00-0C-29-57-96-84`,
+  mapped to VMnet10. Manager: PANO-NEW-MGR, `10.77.10.10:443`, existing nginx HTTPS
+  listener and regular service; application revision `9e9df440a3ec3cdf0209721bbfa7533dcad0d57f`.
+- The native agent self-enrolled over verified TLS. The guest's independent TLS
+  check negotiated TLS 1.3 with `TLS_AES_256_GCM_SHA384`, peer `10.77.10.10` and
+  local `10.77.10.31`. No Windows-local Manager or TLS bypass was used.
+- The run checkpoint held 3,577 canonical 1.0 records. After clean agent shutdown,
+  independent readback found **4,059 persisted records and 4,059 capture-age rows**:
+  3,429 observations, 418 state, 91 health, 62 gap and 59 evidence records. These
+  include 10 process, 289 file and 4 network observations, plus live system state.
+- A Manager-held ETW `native_exact` record identified owned ping.exe PID 10220,
+  native creation ticks `134375921207039503` and its exact boot identity. Command
+  `cross-vm-kill-4ba6219b7f50` was authorized, dispatched, accepted and reached
+  SUCCEEDED. Its retained schema-2 result has `action_initiated=true`,
+  `completion_observed=true`, and null native error. It validates against the
+  published result contract; independent readback verifies its stored SHA-256.
+- The target exited before cleanup, agent shutdown returned 0, and bootstrap
+  token copies were removed. Its protected identity/spool and remote configuration
+  remain in `C:\PanoValidation\wave6-cross-vm`; the controlled test process is stopped.
+- nginx recorded 167 successful challenge/upload pairs, one successful native
+  enrollment and one successful result submission. **No HTTP 422 occurred.** One
+  initial challenge/upload pair returned 401 during enrollment; native retries
+  subsequently succeeded. This is not a claim that every startup request was 200.
+
+Evidence: [run summary](evidence/20261027-cross-vm/summary.json),
+[persisted file/system/result readback](evidence/20261027-cross-vm/persisted-samples.json),
+[network proof](evidence/20261027-cross-vm/network-link.json), and the exact-byte
+SHA-256 manifest in `evidence/20261027-cross-vm/SHA256SUMS.json`. Tested agent binary:
+`4d99ac53134a4ef58c8c35cc905f0b1f6dc0bce11c2613d9a3634e331e980b20`.
+
+Final local validation: 48/48 native CTest; 285 Manager tests with no skips;
+139 Response Engine tests; contract fixture/scanner tests; full Manager/Response
+Engine Ruff and changed Python-tool Ruff; `git diff --check`. Integration PRs
+carry the coordinated commits; merging and fleet deployment remain operator actions.
+
+Scope: this closes transport/Manager acceptance for the existing live sources.
+File proof uses live Sysmon FileCreate; the optional owned FIM marker was not
+observed in this run. It does not qualify FIM, minifilter, API-hook or kernel-network
+producers, source completeness, detection quality, fleet capacity or soak behavior.
+The reported gaps are retained evidence, not a claim of loss-free collection.
+
+## Historical preparation before Windows unlock — 2026-10-27
+
+The regular `PANO-NEW-MGR` service at `10.77.10.10` now runs Manager
+`9e9df440a3ec3cdf0209721bbfa7533dcad0d57f`, with schema 18 and all three
+preexisting enrollments preserved. Its full historical schema-13 database
+(37,873,029,120 bytes; 880,723 endpoint records) remains unchanged at
+`/var/lib/panopticon-manager/panopticon.db`. The active database is on a new
+8-GiB disk at `/srv/panopticon-data/manager/panopticon.db`. Historical telemetry
+was not copied into active counts. See [deployment/run instructions](CROSS_VM_E2E.md).
+
+[Deployment evidence](evidence/20261027-cross-vm/manager-deployment.json) records
+matching old/new enrollment fingerprints, the remote service/revision and disk
+state. At that capture the active database contained 39,880 records from an
+existing Officer deployment. This is not evidence from the requested Windows VM.
+
+Final local checks: native 48/48 CTest passed; Manager 285 tests passed with the
+native artifacts and no skips; full Manager and Response Engine Ruff checks
+passed. New cross-VM tools pass Ruff and syntax checks. Contracts fixtures and
+three execution-scanner regression tests pass. Integration PRs are drafts.
+
+**Cross-VM E2E is not yet verified.** After restoring its four commented VMware
+encryption entries, `PANO-NEW-WIN-01` reaches BitLocker recovery, which reports
+an unexpected Secure Boot policy change. It requires the operator's recovery-key
+entry before Windows and VMware Tools can start. No recovery key is stored in
+repository files or evidence. Windows VMnet10/TLS/enrollment, live process/file/
+system ingestion and the exact-identity kill/result scenario against the Linux
+Manager still require a successful run of `verify_cross_vm_manager_e2e.py`.
+No new-source driver or hook runtime qualification is claimed.
+
+## Wave 6 integration and live VM response — 2026-10-27
+
+Isolated integration branch `codex/wave6-integration`, based on the audited
+`windows-endpoint-completion` d5ce056. Existing dirty telemetry checkout preserved.
+Clean MSVC x64 Debug build with warnings-as-errors: 48/48 CTest passed, including
+the six source kinds across file operations and canonical fixture conformance.
+Contracts fixture validation passed; Response Engine 139 tests passed; Manager
+283 tests passed with OFFICER_BUILD_DIR pointing to this build, no skips.
+
+The source-kind transport adds etw_kernel and synthetic API-hook/kernel-network
+fixtures to the existing minifilter examples. All are produced by the production
+normalizers/factory and explicitly marked provisional, not live source evidence.
+Contracts publish result revision 2 at the conventional schema entry point,
+archive revision 1, and include versioned results. Response Engine's lifecycle
+now matches Manager's terminal INDETERMINATE outcome. ACQUIRE_FILE remains an
+internal agent extension and Manager refuses it.
+
+Live E2E ran on PANO-NEW-WIN-01 using VMware guest access, this Debug binary with
+app-local test runtimes, and this Manager checkout on isolated loopback HTTPS.
+The agent self-enrolled over verified TLS. Manager persisted 3,187 live records;
+an owned ping.exe had an exact boot/native-creation identity. A KILL_PROCESS
+constructed from the Manager-held record reached the agent, completed, and its
+schema-2 SUCCEEDED result with execution facts was accepted and retained. The
+target exited, the agent stopped with exit 0, and the run-owned VM test certificate
+was removed. Host trust and Linux VMs were untouched.
+
+Evidence: [live-manager-e2e.json](evidence/20261027-wave6-vm/live-manager-e2e.json).
+SHA-256: `41254ae1c7c750c16294da5b6e3efbfad442c1783a8ff61750822a3d3c9ab518`.
+Binary SHA-256:
+`4d99ac53134a4ef58c8c35cc905f0b1f6dc0bce11c2613d9a3634e331e980b20`.
+The retained native result independently validates against the current contracts
+schema. Reproduce using `tools/validation/verify_live_manager_e2e.py
+--transport-only --trusted-tls` inside the test VM with its documented trust-change
+opt-in. The transport-only option removes detection rules from the pass gate.
+
+Limits: this is same-VM agent/Manager integration, not VMnet10 connectivity to
+PANO-NEW-MGR. No live minifilter, hook or kernel-network collector, live
+COLLECT_PROCESS_INFO, detection quality, loss-free telemetry or soak qualification
+is established. Waves 2/3 remain required to produce the new sources.
+
 ## Build restoration and Sysmon process context — 2026-10-22
 
 Code candidate: `550113962b73f31426350358e3452c54b9defc98`, based on main
@@ -1821,3 +1937,116 @@ unqualified. Sysmon EID 8/10 interaction events are not wired end-to-end, and
 RDP/WinRM listener inventory is not implemented. All source-only additions
 must remain labeled unbuilt/unverified until the deferred consolidated
 validation phase. The approved A–AN Definition of Done is not met.
+
+## Wave 0 green baseline — 2026-10-26
+
+Branch `windows-endpoint-completion`. First configure/build/test of the
+source-only waves after `c2f14a2`.
+
+- Host: Windows 11 25H2 (10.0.26200), elevated, MSVC 14.51.36231, Ninja,
+  vcpkg `x64-windows`, Debug, `/W4 /permissive-`.
+- `cmake --build build-officer-x64 --clean-first`: success, **0 compiler
+  warnings**.
+- `ctest --test-dir build-officer-x64 -j 4`: **44/44 passed** on three
+  consecutive runs. `officer-windows-event-log-tests` and
+  `officer-usn-journal-tests` are `RUN_SERIAL`: under parallel system-volume
+  churn the USN restart replay exceeded its 15 s bound (passes in ~8 s alone).
+- Live paths exercised on this host (not a VM): Application Event Log pull,
+  refusal, bookmark and restart; USN journal read, refusal, offline replay
+  (`live=true`); USN volume rediscovery against the real volume set with an
+  in-memory checkpoint store (initial set, unchanged restart, removal, blind
+  recovery, malformed checkpoint, refused commit).
+
+Defects found by running, not by review: the Event Log collector treated
+`oldestRecordNumber + count - 1` as the newest record ID. This host reports
+oldest 1 / count 18728 while actual record IDs span 246–18973, so the
+`record_id_regressed_after_log_clear_or_recreate` check reset a valid cursor
+to the oldest record and replayed the channel; in the live loop it would recur
+every 5 s. The check was removed (generation and per-event record-ID checks
+remain). `final_path` initialized its buffer with `L'\0'` (backslash), not NUL.
+
+What this does not prove: no VM/guest run, no service lifecycle, no Manager
+round-trip, no real volume hotplug/removal, no minifilter or API hooks (not yet
+written). Many source-only collectors compile and have component tests but
+no runtime evidence in the agent service; the capability matrix is unchanged.
+
+## Wave 1 pipeline foundations — 2026-10-26
+
+Host-only component evidence, same environment as Wave 0, now with `/WX`.
+Clean incremental build, 0 warnings, 44/44 CTest.
+
+- `officer-core-tests`: every `TelemetrySourceKind` (5) × `FileOperation` (7)
+  file event normalizes, round-trips the legacy serializer exactly, and is
+  named in `schema/event.schema.json` enums.
+- `officer-source-facts-tests`: `process_interaction` record with exact actor
+  and target ticks (`native_exact` for both, distinct entities), exact uint64
+  address and uninterpreted NTSTATUS. A minifilter `write` observation joins
+  the hooked actor by native identity and keeps `attempted` phase. An invalid
+  target GUID is refused by the canonical builder, and its failure evidence
+  survives the durable journal byte-for-byte.
+- `officer-raw-handoff-tests`: interaction call trace and full target context
+  count toward the byte budget.
+- Guard check: a temporary unhandled variant failed the build with the
+  `static_assert` messages (reverted).
+
+Not proven: no producer emits the new kinds or variant yet (Waves 2–4). No
+Manager or contracts-repo validation of `process_interaction` records (Wave 6).
+
+## Merge of origin/main and contract conformance — 2026-10-26
+
+`d2674d3` merges origin/main (PR #5: canonical Sysmon EID 8/10/22, auth facts,
+independent build fixes) into this branch; main's Event Log/USN fixes supersede
+ours, the unproduced `process_interaction` scaffold is retired, and Sysmon
+extended records now commit under `output_mutex`. Clean x64 Debug, `/WX`, 0
+warnings, 46/46.
+
+Contract work (host, component level): `officer-contract-fixtures` drives the
+production decoders/factory over synthetic inputs and emits 21 records in 13
+families. All pass the contracts envelope schema, the new family schemas and
+identity-digest checks. `officer-contract-fixture-conformance` re-runs this
+in CTest against the sibling contracts checkout (exit 77 = skipped when
+unavailable; a deliberately broken schema made it fail). 47/47.
+
+Consumer finding fixed in the producer: `process_stop` carried no `data.event`,
+so the Detection Engine legacy adapter read it as `process_create`. It now
+carries `{category: process_stop, type: stop}`; DE ML branch maps it to
+`process_terminate`, DE main yields unmapped `process_stop_stop`.
+
+Not proven: no real capture for minifilter (not implemented), EID 8/10/22 live
+capture, Manager acceptance of the family records.
+
+## Wave 6: live Officer -> Manager on the development host — 2026-10-27
+
+Real `officer-agent.exe` (SHA-256 `75326ff2…7ce206`) against an owned Manager
+(branch `windows-endpoint-v2-ingest`, loopback TLS, temporary DB) using
+`tools/validation/verify_live_manager_e2e.py`. Host: Windows 11 25H2 (26200),
+elevated; two pre-existing lab agents and their fixed-name ETW session untouched.
+Summary: `evidence/20261027-live-manager-e2e/live-manager-e2e-summary.json`
+(SHA-256 `1c535b6c…f0e2c3`, paths redacted).
+
+Passed (L6 ingest/persist/detect on this host, not the VM):
+- Real enrollment (challenge + P-256 proof) by the harness; identity provisioned.
+- 4,770 live canonical records accepted and durably persisted across ~70
+  families; 4,731 already drained by the detection worker.
+- Owned `whoami /priv` captured live (Sysmon, `source_scoped`) and DET-PROC-008
+  fired on that live canonical record.
+- Owned `ping.exe` target attributed `native_exact` from ETW with real ticks/boot.
+- Clean `CTRL_BREAK` stop (exit 0) removed the agent's own ETW session.
+
+Blocked here by design: a schema-2 KILL_PROCESS built from the Manager-held
+target record was authorized but not delivered. The agent's enrollment/response
+channel always verifies TLS (WinHTTP 12175 against the self-signed Manager) and
+this host's trust store is not modified. Validate on PANO-NEW-WIN-01.
+
+Defects found by running live, both fixed with regressions:
+- `volume_encryption.cpp`: range-for over `json::value(...).items()` iterated a
+  destroyed temporary. The agent crashed (0xC0000005) ~30 s after start on real
+  WMI output, stopping telemetry and orphaning its ETW session. Stack captured
+  with cdb; only instance of the pattern in the tree.
+- `keypair.cpp`: the console default `--keypair-path` (bare file name) failed
+  because `create_directories("")` errors; enrollment was impossible without an
+  explicit path. New test fails before / passes after.
+
+ETW session ownership recovery is now runtime-verified: restarting with the same
+spool reclaimed three orphaned sessions left by the crash, without enumeration or
+touching other sessions.

@@ -174,7 +174,10 @@ void require_pattern(std::string_view value, const std::regex& pattern, std::str
 
 // -- family type vocabularies -------------------------------------------
 bool is_network_type(const std::string& t) { return t == "connect"; }
-bool is_file_type(const std::string& t) { return t == "create" || t == "delete" || t == "rename"; }
+bool is_file_type(const std::string& t) {
+    return t == "create" || t == "delete" || t == "rename" || t == "open" || t == "write" ||
+           t == "set_information" || t == "overwrite";
+}
 bool is_registry_type(const std::string& t) {
     return t == "add_key" || t == "delete_key" || t == "set_value" || t == "rename_key";
 }
@@ -358,7 +361,8 @@ std::optional<telemetry::PanopticonEvent> deserialize_event(
                                 "$.source.record_id must be an unsigned integer or null.")},
         };
         if (result.source.kind != "etw" && result.source.kind != "sysmon" &&
-            result.source.kind != "windows_event_log") {
+            result.source.kind != "windows_event_log" && result.source.kind != "minifilter" &&
+            result.source.kind != "api_hook" && result.source.kind != "etw_kernel") {
             throw std::runtime_error("$.source.kind is not a supported telemetry source.");
         }
 

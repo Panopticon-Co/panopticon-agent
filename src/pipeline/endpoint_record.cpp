@@ -84,7 +84,7 @@ Json EndpointRecordFactory::observation(const telemetry::RawEvent& raw, const te
             time = event.timestamp;
             if (event.process.process_guid && (event.process.process_guid->empty() || event.process.process_guid->size() > 256 || !valid_utf8(*event.process.process_guid)))
                 throw std::invalid_argument("source process GUID cannot be represented in canonical reference");
-            reference = processes_.observe(event.process.pid, std::nullopt, event.process.process_guid, source_namespace);
+            reference = processes_.observe(event.process.pid, event.process.start_time_ticks, event.process.process_guid, source_namespace);
             data["process"]["parent"]["entity_id"] = nullptr;
         }
         data["process"]["entity_id"] = nullable(reference.entity_id);
@@ -104,7 +104,12 @@ Json EndpointRecordFactory::process_stop(const telemetry::RawProcessEvent& event
         (event.process_guid && (event.process_guid->empty() || event.process_guid->size() > 256 || !valid_utf8(*event.process_guid))))
         throw std::invalid_argument("invalid process stop provenance");
     const auto reference = processes_.observe(event.pid, event.start_time_ticks, event.process_guid, scope);
-    Json data{{"process", {{"pid", event.pid}, {"entity_id", nullable(reference.entity_id)},
+    const auto stopped_at = format_utc_timestamp(*event.termination_time);
+    if (stopped_at.empty()) throw std::invalid_argument("process stop time cannot be rendered as UTC");
+    // data.event makes the stop self-describing like every other observation
+    // family; without it a legacy-shape consumer defaults to process/start.
+    Json data{{"event", {{"category", "process_stop"}, {"type", "stop"}, {"timestamp", stopped_at}}},
+        {"process", {{"pid", event.pid}, {"entity_id", nullable(reference.entity_id)},
         {"start_time_ticks", event.start_time_ticks ? Json(std::to_string(*event.start_time_ticks)) : Json(nullptr)},
         {"parent", {{"entity_id", nullptr}}}}}, {"source_facts", source_facts(telemetry::RawEvent{event})},
         {"enrichment", Json::object()}, {"lifecycle", {{"operation", "stop"}, {"identity", reference.json()},
@@ -171,7 +176,7 @@ Json EndpointRecordFactory::normalization_failure(const telemetry::RawEvent& raw
         const auto scope = valid_scope ? original_namespace : "Officer-Decoded-Facts:invalid-source-scope";
         if constexpr (std::is_same_v<Event, telemetry::RawProcessEvent>)
             reference = processes_.observe(event.pid, event.start_time_ticks, guid, scope);
-        else reference = processes_.observe(event.process.pid, std::nullopt, guid, scope);
+        else reference = processes_.observe(event.process.pid, event.process.start_time_ticks, guid, scope);
         // A failure is captured now; the original event clock/value is retained
         // in source_facts even when it cannot be rendered as a valid UTC date.
         return envelope("evidence", "normalization_failure", now(), {{"kind", "agent"},

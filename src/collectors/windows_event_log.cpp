@@ -80,7 +80,7 @@ std::uint64_t log_info_u64(EVT_HANDLE log, EVT_LOG_PROPERTY_ID property, EVT_VAR
     EVT_VARIANT value{}; DWORD required = 0;
     if (!EvtGetLogInfo(log, property, sizeof(value), &value, &required))
         throw NativeError("EvtGetLogInfo", GetLastError());
-    if (value.Type != expected) throw NativeError("EvtGetLogInfo unexpected property type", ERROR_INVALID_DATA);
+    if (value.Type != static_cast<DWORD>(expected)) throw NativeError("EvtGetLogInfo unexpected property type", ERROR_INVALID_DATA);
     return expected == EvtVarTypeFileTime ? value.FileTimeVal : value.UInt64Val;
 }
 

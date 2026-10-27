@@ -238,6 +238,51 @@ void test_schema_document_is_present_and_sane() {
     expect(categories.size() == 5, "schema declares all five telemetry categories");
 }
 
+// Every source kind and file operation the code can emit must normalize,
+// round-trip through the serializer, and be named in the schema's enums.
+void test_every_source_kind_and_file_operation_is_contract_valid() {
+    std::ifstream file(OFFICER_EVENT_SCHEMA_PATH);
+    const nlohmann::json schema = nlohmann::json::parse(
+        std::istreambuf_iterator<char>{file}, std::istreambuf_iterator<char>{});
+    const auto& kinds = schema.at("properties").at("source").at("properties").at("kind").at("enum");
+    const auto& operations = schema.at("properties").at("file").at("properties").at("operation").at("enum");
+    const auto contains = [](const nlohmann::json& values, const std::string& value) {
+        return std::find(values.begin(), values.end(), value) != values.end();
+    };
+    constexpr telemetry::TelemetrySourceKind all_kinds[]{
+        telemetry::TelemetrySourceKind::etw, telemetry::TelemetrySourceKind::sysmon,
+        telemetry::TelemetrySourceKind::windows_event_log, telemetry::TelemetrySourceKind::minifilter,
+        telemetry::TelemetrySourceKind::api_hook, telemetry::TelemetrySourceKind::etw_kernel};
+    constexpr telemetry::FileOperation all_operations[]{
+        telemetry::FileOperation::create, telemetry::FileOperation::remove, telemetry::FileOperation::rename,
+        telemetry::FileOperation::open, telemetry::FileOperation::write, telemetry::FileOperation::set_information,
+        telemetry::FileOperation::overwrite};
+    std::size_t valid = 0;
+    for (const auto kind : all_kinds) {
+        expect(telemetry::source_kind_name(kind) != "unknown", "every source kind has a name");
+        for (const auto operation : all_operations) {
+            telemetry::RawFileEvent raw;
+            raw.source = {kind, "Officer-Contract-Fixture", std::nullopt, 7};
+            raw.timestamp = telemetry::UtcTimestamp{123ms};
+            raw.process.pid = 42;
+            raw.process.start_time_ticks = 133012345670000000ULL;
+            raw.operation = operation;
+            raw.path = "C:\\owned\\fixture.txt";
+            raw.phase = telemetry::OperationPhase::completed;
+            raw.status = telemetry::NativeStatus{telemetry::NativeStatus::Kind::ntstatus, 0xC0000022u};
+            std::string error;
+            const auto normalized = pipeline::normalize_file_event(raw, make_context(), error);
+            if (!normalized) { expect(false, "every file operation normalizes"); continue; }
+            const auto round_trip = pipeline::deserialize_event(pipeline::serialize_event(*normalized), error);
+            if (round_trip && *round_trip == *normalized && contains(kinds, normalized->source.kind) &&
+                contains(operations, normalized->event.type)) ++valid;
+            else std::cerr << "contract mismatch: " << normalized->source.kind << '/' << normalized->event.type << ' ' << error << '\n';
+        }
+    }
+    expect(valid == std::size(all_kinds) * std::size(all_operations),
+        "every source kind x file operation round-trips and is named in the schema");
+}
+
 }  // namespace
 
 int main() {
@@ -246,6 +291,7 @@ int main() {
     test_start_time_ticks_flows_through_normalization_and_serialization();
     test_json_round_trip_and_validation();
     test_schema_document_is_present_and_sane();
+    test_every_source_kind_and_file_operation_is_contract_valid();
 
     if (failures == 0) {
         std::cout << "All Officer contract tests passed.\n";

@@ -271,8 +271,8 @@ Json call_method(IWbemServices* services, const BSTR object_path, IWbemClassObje
         result["outputs"]["self_encryption_drive_method"] = std::move(field);
     }
     bool outputs_healthy = true;
-    for (const auto& [_, output] : result["outputs"].items())
-        if (!output.is_object() || output.value("state", std::string("unavailable")) != "healthy") outputs_healthy = false;
+    for (const auto& [_, output_entry] : result["outputs"].items())
+        if (!output_entry.is_object() || output_entry.value("state", std::string("unavailable")) != "healthy") outputs_healthy = false;
     result["state"] = method_hr == S_OK && provider_success && outputs_healthy ? "healthy" : "degraded";
     result["method_return_success"] = provider_success;
     result["scope"] = "read-only WMI method output; no key protectors or escrow material queried";
@@ -383,7 +383,10 @@ Json collect_volume_encryption_state() {
                         row["methods"][ascii(method)] = method_json;
                         result["methods_invoked"].push_back(ascii(method));
                         if (method_json.value("method_return_success", false) == false) ++output_failures;
-                        for (const auto& [_, field] : method_json.value("outputs", Json::object()).items())
+                        // json::value() returns a copy; items() only references it, so the
+                        // copy must outlive the loop (a temporary here dangled and crashed).
+                        const Json outputs = method_json.value("outputs", Json::object());
+                        for (const auto& [_, field] : outputs.items())
                             if (field.value("state", "unavailable") != "healthy") ++output_degraded;
                     }
                     SysFreeString(native_path);

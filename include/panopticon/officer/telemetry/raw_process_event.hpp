@@ -107,7 +107,10 @@ struct RawNetworkEvent {
     bool operator==(const RawNetworkEvent&) const = default;
 };
 
-enum class FileOperation { create, remove, rename };
+// open/write/set_information/overwrite are minifilter IRP-level operations:
+// open is IRP_MJ_CREATE of an existing file, overwrite a create disposition that
+// replaces data, set_information a non-rename/non-delete metadata change.
+enum class FileOperation { create, remove, rename, open, write, set_information, overwrite };
 
 struct RawFileEvent {
     SourceProvenance source;
@@ -118,6 +121,9 @@ struct RawFileEvent {
     std::optional<std::string> target_path;
     std::optional<std::string> previous_path;
     std::optional<std::string> sha256;
+    // Sources without a pre/post split (Sysmon) leave phase=reported and no status.
+    OperationPhase phase{OperationPhase::reported};
+    std::optional<NativeStatus> status;
 
     bool operator==(const RawFileEvent&) const = default;
 };
@@ -174,7 +180,9 @@ struct RawSysmonExtendedEvent {
 };
 
 // New raw event types are added to this variant without changing collector
-// ownership or downstream sink interfaces.
+// ownership or downstream sink interfaces. Every `if constexpr` chain over it
+// ends in `static_assert(unhandled_raw_event_v<T>)` so a new alternative is a
+// compile error at each site rather than a silently dropped event.
 using RawEvent = std::variant<
     RawProcessEvent,
     RawNetworkEvent,
@@ -182,5 +190,7 @@ using RawEvent = std::variant<
     RawRegistryEvent,
     RawImageLoadEvent,
     RawSysmonExtendedEvent>;
+
+template <class> inline constexpr bool unhandled_raw_event_v = false;
 
 }  // namespace panopticon::officer::telemetry

@@ -1,0 +1,852 @@
+{
+  "live_file_record": {
+    "category": "file",
+    "data": {
+      "agent": {
+        "id": "officer-9f680749-6b7e-44ba-87f4-30baa4cdbca9",
+        "version": "0.3.0"
+      },
+      "enrichment": {},
+      "event": {
+        "category": "file",
+        "id": "evt_7c21a6f1f6e9b813ca5c66d858873d13b32ba4a641f0cb9eb81971815938edd1",
+        "timestamp": "2026-10-27T16:28:23.482Z",
+        "type": "create"
+      },
+      "file": {
+        "hash": {
+          "sha256": null
+        },
+        "operation": "create",
+        "path": "C:\\ProgramData\\Microsoft\\Windows Defender\\Scans\\RtSigs\\Data\\4395b9bd5457b1a31f484c588996b2722181e513",
+        "previous_path": null,
+        "target_path": null
+      },
+      "host": {
+        "hostname": "Rishi",
+        "id": "9f680749-6b7e-44ba-87f4-30baa4cdbca9",
+        "os": {
+          "build": "26200",
+          "name": "Windows 10 Pro"
+        }
+      },
+      "process": {
+        "command_line": null,
+        "entity_id": "proc_7d40159f4efd55bda0bbe42ab83ced27dab13b402d8950c171660faa262872d8",
+        "executable": "C:\\Program Files\\Windows Defender\\MsMpEng.exe",
+        "hash": {
+          "sha256": null
+        },
+        "name": "MsMpEng.exe",
+        "parent": {
+          "entity_id": null,
+          "name": null,
+          "pid": null
+        },
+        "pid": 3444,
+        "start_time_ticks": null
+      },
+      "source": {
+        "channel": "Microsoft-Windows-Sysmon/Operational",
+        "kind": "sysmon",
+        "provider": "Microsoft-Windows-Sysmon",
+        "record_id": 28439
+      },
+      "source_facts": {
+        "event_time_ns": "1793118503482991400",
+        "family": "file",
+        "file": {
+          "operation_value": 0,
+          "path": "C:\\ProgramData\\Microsoft\\Windows Defender\\Scans\\RtSigs\\Data\\4395b9bd5457b1a31f484c588996b2722181e513",
+          "phase": "reported",
+          "previous_path": null,
+          "sha256": null,
+          "status": null,
+          "target_path": null
+        },
+        "process": {
+          "executable": "C:\\Program Files\\Windows Defender\\MsMpEng.exe",
+          "pid": 3444,
+          "process_guid": "{9f680749-cf64-6ae0-4a00-000000000900}",
+          "process_name": null,
+          "start_time_ticks": null,
+          "user_name": "NT AUTHORITY\\SYSTEM",
+          "user_sid": null
+        },
+        "representation": "decoded_source_facts_v1",
+        "source": {
+          "channel": "Microsoft-Windows-Sysmon/Operational",
+          "kind": "sysmon",
+          "kind_value": 1,
+          "provider": "Microsoft-Windows-Sysmon",
+          "record_id": "28439"
+        }
+      },
+      "user": {
+        "domain": "NT AUTHORITY",
+        "name": "SYSTEM",
+        "sid": null
+      }
+    },
+    "endpoint": {
+      "agent_id": "officer-9f680749-6b7e-44ba-87f4-30baa4cdbca9",
+      "boot_id": "boot_c62443d9a567f6855d9aa6c0fb8b693c09165d59873f491721c61cdf4916f256",
+      "device_id": "9f680749-6b7e-44ba-87f4-30baa4cdbca9",
+      "host_id": "9f680749-6b7e-44ba-87f4-30baa4cdbca9",
+      "installation_id": "95a66c1802228cbb44100b8d0a1cc08b2711d1bd16f6c1c0c9bd5e5dc660df44"
+    },
+    "kind": "observation",
+    "observed_at": "2026-10-27T16:28:23.482Z",
+    "provenance": {
+      "capture_clock": "windows_uptime_ms",
+      "capture_uptime_ms": "484296",
+      "channel": "Microsoft-Windows-Sysmon/Operational",
+      "collector_epoch": "epoch_d69682671bd4694944763d640fce7c54a4101630f595d3e9d49b9b3e8eff5186",
+      "collector_generation": "1",
+      "continuity": "unverified",
+      "event_time_ns": "1793118503482991400",
+      "kind": "sysmon",
+      "native_observation_id": "evt_7c21a6f1f6e9b813ca5c66d858873d13b32ba4a641f0cb9eb81971815938edd1",
+      "native_record_id": "28439",
+      "provider": "Microsoft-Windows-Sysmon",
+      "received_at": "2026-10-27T16:28:42.119Z",
+      "sequence": "729"
+    },
+    "record_id": "rec_3447e2bd9e0e193e1b502320c2d81108644b794919b35219db0a9cd956266011",
+    "schema_version": "1.0",
+    "subject": {
+      "boot_id": "boot_c62443d9a567f6855d9aa6c0fb8b693c09165d59873f491721c61cdf4916f256",
+      "entity_id": "proc_7d40159f4efd55bda0bbe42ab83ced27dab13b402d8950c171660faa262872d8",
+      "native_creation_ticks": null,
+      "observed_pid": 3444,
+      "resolution": "source_scoped",
+      "source_guid": "{9f680749-cf64-6ae0-4a00-000000000900}",
+      "source_namespace": "sysmon:Microsoft-Windows-Sysmon:Microsoft-Windows-Sysmon/Operational"
+    }
+  },
+  "owned_marker_file_record_observed": false,
+  "system_state_record": {
+    "category": "network_state_snapshot",
+    "data": {
+      "capture_id": "rec_5580a3b410e7110be00366d2c9e6992695b643697bcac6a702b30741cb00f236",
+      "captured_row_count": "6",
+      "consistency": "non_atomic_table_snapshot",
+      "kind": "network_state_snapshot",
+      "native_error_code": "0",
+      "reconciliation": "subscriptions were active before enumeration; notifications observed during enumeration remain separately sequenced and may duplicate rows visible in this snapshot",
+      "reported_row_count": "6",
+      "rows": [
+        {
+          "address_family": "ipv4",
+          "interface_index": "1",
+          "interface_luid": "6755399441055744",
+          "record_scope": "native interface row; interface index and LUID are reported identifiers, not durable entity identity",
+          "reported_connection_type": null,
+          "reported_interface_type": null,
+          "reported_metric": "75",
+          "reported_mtu": "4294967295",
+          "unavailable": {
+            "reported_connection_type": "not_exposed_by_MIB_IPINTERFACE_ROW",
+            "reported_interface_type": "not_exposed_by_MIB_IPINTERFACE_ROW"
+          }
+        },
+        {
+          "address_family": "ipv4",
+          "interface_index": "12",
+          "interface_luid": "1689399632855040",
+          "record_scope": "native interface row; interface index and LUID are reported identifiers, not durable entity identity",
+          "reported_connection_type": null,
+          "reported_interface_type": null,
+          "reported_metric": "25",
+          "reported_mtu": "1500",
+          "unavailable": {
+            "reported_connection_type": "not_exposed_by_MIB_IPINTERFACE_ROW",
+            "reported_interface_type": "not_exposed_by_MIB_IPINTERFACE_ROW"
+          }
+        },
+        {
+          "address_family": "ipv4",
+          "interface_index": "6",
+          "interface_luid": "1689399649632256",
+          "record_scope": "native interface row; interface index and LUID are reported identifiers, not durable entity identity",
+          "reported_connection_type": null,
+          "reported_interface_type": null,
+          "reported_metric": "25",
+          "reported_mtu": "1500",
+          "unavailable": {
+            "reported_connection_type": "not_exposed_by_MIB_IPINTERFACE_ROW",
+            "reported_interface_type": "not_exposed_by_MIB_IPINTERFACE_ROW"
+          }
+        },
+        {
+          "address_family": "ipv6",
+          "interface_index": "1",
+          "interface_luid": "6755399441055744",
+          "record_scope": "native interface row; interface index and LUID are reported identifiers, not durable entity identity",
+          "reported_connection_type": null,
+          "reported_interface_type": null,
+          "reported_metric": "75",
+          "reported_mtu": "4294967295",
+          "unavailable": {
+            "reported_connection_type": "not_exposed_by_MIB_IPINTERFACE_ROW",
+            "reported_interface_type": "not_exposed_by_MIB_IPINTERFACE_ROW"
+          }
+        },
+        {
+          "address_family": "ipv6",
+          "interface_index": "12",
+          "interface_luid": "1689399632855040",
+          "record_scope": "native interface row; interface index and LUID are reported identifiers, not durable entity identity",
+          "reported_connection_type": null,
+          "reported_interface_type": null,
+          "reported_metric": "25",
+          "reported_mtu": "1500",
+          "unavailable": {
+            "reported_connection_type": "not_exposed_by_MIB_IPINTERFACE_ROW",
+            "reported_interface_type": "not_exposed_by_MIB_IPINTERFACE_ROW"
+          }
+        },
+        {
+          "address_family": "ipv6",
+          "interface_index": "6",
+          "interface_luid": "1689399649632256",
+          "record_scope": "native interface row; interface index and LUID are reported identifiers, not durable entity identity",
+          "reported_connection_type": null,
+          "reported_interface_type": null,
+          "reported_metric": "25",
+          "reported_mtu": "1500",
+          "unavailable": {
+            "reported_connection_type": "not_exposed_by_MIB_IPINTERFACE_ROW",
+            "reported_interface_type": "not_exposed_by_MIB_IPINTERFACE_ROW"
+          }
+        }
+      ],
+      "snapshot_capture_completed_utc": "2026-10-27T16:28:23.896Z",
+      "snapshot_capture_started_utc": "2026-10-27T16:28:23.895Z",
+      "state": "healthy",
+      "table": "ip_interface",
+      "truncated": false
+    },
+    "endpoint": {
+      "agent_id": "officer-9f680749-6b7e-44ba-87f4-30baa4cdbca9",
+      "boot_id": "boot_c62443d9a567f6855d9aa6c0fb8b693c09165d59873f491721c61cdf4916f256",
+      "device_id": "9f680749-6b7e-44ba-87f4-30baa4cdbca9",
+      "host_id": "9f680749-6b7e-44ba-87f4-30baa4cdbca9",
+      "installation_id": "95a66c1802228cbb44100b8d0a1cc08b2711d1bd16f6c1c0c9bd5e5dc660df44"
+    },
+    "kind": "state",
+    "observed_at": "2026-10-27T16:28:26.854Z",
+    "provenance": {
+      "capture_clock": "windows_uptime_ms",
+      "capture_uptime_ms": "469031",
+      "channel": null,
+      "collector_epoch": "epoch_d69682671bd4694944763d640fce7c54a4101630f595d3e9d49b9b3e8eff5186",
+      "collector_generation": "1",
+      "continuity": "snapshot",
+      "event_time_ns": "1793118506854761300",
+      "kind": "win32",
+      "native_observation_id": null,
+      "native_record_id": null,
+      "provider": "Officer-State",
+      "received_at": "2026-10-27T16:28:26.854Z",
+      "sequence": "172"
+    },
+    "record_id": "rec_47e60b9bcd015c385d85943294a7727063d77619320ae1402f49f1ca7066f7bf",
+    "schema_version": "1.0",
+    "subject": null
+  },
+  "retained_result": {
+    "command_id": "cross-vm-kill-4ba6219b7f50",
+    "correlation_id": "cross-vm-d29715d5903d4b539e4bd9d967293149",
+    "detail": "succeeded:0 kill_process stage=completion action_initiated=true completion_observed=true: termination initiated and held process exit observed",
+    "execution": {
+      "action_initiated": true,
+      "completion_observed": true,
+      "native_error": null,
+      "representation": "windows_process_termination_v1",
+      "stage": "completion"
+    },
+    "outcome": "succeeded",
+    "result_id": "result_837c861a74dde10bb0a9ac863cdcea9e7aa14e3874a35a7f406cd465d9f6ab5c",
+    "schema_version": "2"
+  },
+  "retained_result_digest": "1bc012d322f60e5ab406a0d20f3ccb0f7aac8cf25eb3217e11a9d2c780d71ee0",
+  "receipt_digest_verified": true,
+  "records": [
+    {
+      "kind": "evidence",
+      "category": "filesystem_usn_batch",
+      "n": 59
+    },
+    {
+      "kind": "gap",
+      "category": "filesystem_usn_gap",
+      "n": 2
+    },
+    {
+      "kind": "gap",
+      "category": "source_loss",
+      "n": 60
+    },
+    {
+      "kind": "health",
+      "category": "endpoint_health",
+      "n": 91
+    },
+    {
+      "kind": "observation",
+      "category": "file",
+      "n": 289
+    },
+    {
+      "kind": "observation",
+      "category": "network",
+      "n": 4
+    },
+    {
+      "kind": "observation",
+      "category": "process",
+      "n": 10
+    },
+    {
+      "kind": "observation",
+      "category": "process_access",
+      "n": 95
+    },
+    {
+      "kind": "observation",
+      "category": "process_stop",
+      "n": 10
+    },
+    {
+      "kind": "observation",
+      "category": "registry",
+      "n": 14
+    },
+    {
+      "kind": "observation",
+      "category": "remote_thread",
+      "n": 1
+    },
+    {
+      "kind": "observation",
+      "category": "windows_event_log",
+      "n": 3006
+    },
+    {
+      "kind": "state",
+      "category": "account_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "account_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "account_inventory_page",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "active_setup_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "active_setup_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "active_setup_inventory_page",
+      "n": 6
+    },
+    {
+      "kind": "state",
+      "category": "browser_extension_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "browser_extension_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "browser_extension_inventory_page",
+      "n": 2
+    },
+    {
+      "kind": "state",
+      "category": "browser_registration_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "browser_registration_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "browser_registration_inventory_page",
+      "n": 7
+    },
+    {
+      "kind": "state",
+      "category": "com_activation_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "com_activation_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "com_activation_inventory_page",
+      "n": 156
+    },
+    {
+      "kind": "state",
+      "category": "defender_preferences_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "defender_preferences_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "defender_status",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "device_guard_state",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "dns_state_inventory",
+      "n": 3
+    },
+    {
+      "kind": "state",
+      "category": "dns_state_inventory_begin",
+      "n": 3
+    },
+    {
+      "kind": "state",
+      "category": "dns_state_inventory_page",
+      "n": 3
+    },
+    {
+      "kind": "state",
+      "category": "firewall_profile_state",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "firewall_rule_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "firewall_rule_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "firewall_rule_inventory_page",
+      "n": 8
+    },
+    {
+      "kind": "state",
+      "category": "image_execution_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "image_execution_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "image_execution_inventory_page",
+      "n": 10
+    },
+    {
+      "kind": "state",
+      "category": "ip_interface_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "ip_interface_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "ip_interface_inventory_page",
+      "n": 2
+    },
+    {
+      "kind": "state",
+      "category": "loaded_driver_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "loaded_driver_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "loaded_driver_inventory_page",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "local_group_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "local_group_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "local_group_inventory_page",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "logon_session_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "logon_session_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "logon_session_inventory_page",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "memory_region_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "memory_region_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "memory_region_inventory_page",
+      "n": 7
+    },
+    {
+      "kind": "state",
+      "category": "module_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "module_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "module_inventory_page",
+      "n": 2
+    },
+    {
+      "kind": "state",
+      "category": "msi_product_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "msi_product_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "msi_product_inventory_page",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "network_state_change",
+      "n": 6
+    },
+    {
+      "kind": "state",
+      "category": "network_state_change_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "network_state_change_manifest",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "network_state_snapshot",
+      "n": 3
+    },
+    {
+      "kind": "state",
+      "category": "office_addin_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "office_addin_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "office_addin_inventory_page",
+      "n": 8
+    },
+    {
+      "kind": "state",
+      "category": "process_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "process_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "process_inventory_page",
+      "n": 2
+    },
+    {
+      "kind": "state",
+      "category": "registry_change_observation",
+      "n": 47
+    },
+    {
+      "kind": "state",
+      "category": "remote_access_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "remote_access_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "remote_access_inventory_page",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "route_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "route_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "route_inventory_page",
+      "n": 2
+    },
+    {
+      "kind": "state",
+      "category": "scheduled_task_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "scheduled_task_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "scheduled_task_inventory_page",
+      "n": 7
+    },
+    {
+      "kind": "state",
+      "category": "security_audit_policy_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "security_audit_policy_manifest",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "security_audit_policy_page",
+      "n": 8
+    },
+    {
+      "kind": "state",
+      "category": "security_center_state",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "security_product_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "service_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "service_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "service_inventory_page",
+      "n": 17
+    },
+    {
+      "kind": "state",
+      "category": "service_state_change_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "service_state_change_snapshot",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "socket_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "socket_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "socket_inventory_page",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "startup_approval_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "startup_approval_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "startup_approval_inventory_page",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "startup_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "startup_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "startup_inventory_page",
+      "n": 2
+    },
+    {
+      "kind": "state",
+      "category": "terminal_session_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "terminal_session_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "terminal_session_inventory_page",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "thread_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "thread_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "thread_inventory_page",
+      "n": 28
+    },
+    {
+      "kind": "state",
+      "category": "uninstall_registry_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "uninstall_registry_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "uninstall_registry_inventory_page",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "volume_encryption_state",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "wmi_subscription_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "wmi_subscription_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "wmi_subscription_inventory_page",
+      "n": 1
+    }
+  ],
+  "record_total": 4059,
+  "capture_age_records": 4059,
+  "manager_service": "active",
+  "captured_utc": "2026-10-27T16:35:32.038393+00:00",
+  "run_id": "85c7c1616ce04a1db56dd40a5cb12774"
+}

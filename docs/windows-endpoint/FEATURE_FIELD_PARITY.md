@@ -44,8 +44,8 @@ recovery. Earlier unelevated access was denied; channel permissions were not cha
 | `process.start_time_ticks` | Kernel process ETW | No equivalent native token established from OTRF | Not supplied by Sysmon | Existing native value; exact cross-source binding remains open |
 | Process stop/lifetime | ETW / EID5 | `UtcTime`, `ProcessGuid`, `ProcessId` | Stop missing / instance unresolved | Existing stop path; complete lifecycle parity remains open |
 | Flow duration / bytes | TCP/IP ETW | Not supplied by EID3 adapter | Source absence / missing implementation | Open; never substitute zero |
-| Typed DNS answers | EID22 / DNS Client | `QueryResults`, `QueryStatus`, `QueryName` | Missing implementation / source access | Open; supplied adapter retains a string |
-| Process interaction | EID8 / EID10 | Source/target fields, access/trace/thread/start fields | Missing canonical path | Open |
+| Typed DNS answers | EID22 / DNS Client | `QueryResults`, `QueryStatus`, `QueryName` | `dns.query_type` not reported by EID22 | Canonical `dns` family (IP/CNAME answers, bounded results); DNS Client source open |
+| Process interaction | EID8 / EID10 | Source/target fields, access/trace/thread/start fields | Target creation ticks not supplied by Sysmon | Canonical `remote_thread` / `process_access` families; live EID8/10 capture not yet recorded |
 | Own-image signer | Image/signature enrichment | EID7 signatures describe loaded modules | No verified own-image association | Open; not an existing schema-2 process feature |
 | Image writer/age | File events / graph history | `TargetFilename`, process context | Instance/history unavailable | Full attribution qualification open; USN/FIM cannot prove writer |
 | PowerShell instance | 4104 / durable process history | `ExecutionProcessID`, script fields | PID alone cannot prove instance | Exact durable resolution remains open |
@@ -70,3 +70,11 @@ Check installed-version availability against real output and
 [Microsoft's Sysmon documentation](https://learn.microsoft.com/en-us/sysinternals/downloads/sysmon).
 Live verification covers the owned benign EID1 scenario on this development host.
 Dedicated-VM, Manager acceptance, capture recall and train/serve qualification remain open.
+
+## Wire contract
+
+Family definitions, timestamp/identity/outcome semantics, fixtures and
+consumer-compatibility results live in panopticon-contracts
+`docs/ENDPOINT_TELEMETRY_CATALOG.md` and `schema/endpoint-record/1.0/families/`
+(branch `windows-endpoint-telemetry-contract`). This table stays the field-level
+ML parity view; the catalog is authoritative for wire semantics.

@@ -137,11 +137,31 @@ void test_loading_a_truncated_key_file_fails_closed_without_crashing() {
 
 }  // namespace
 
+// The console default --keypair-path is a bare file name (no parent directory).
+void test_bare_file_name_key_path_is_stored_in_the_working_directory() {
+    std::string error;
+    auto original = response::generate_ec_p256_keypair(error);
+    expect(original.has_value(), "key generation succeeds");
+    if (!original) return;
+    const auto directory = scratch_path("bare-name");
+    fs::create_directories(directory);
+    const auto previous = fs::current_path();
+    fs::current_path(directory);
+    const fs::path bare{"officer-identity.key"};
+    expect(response::store_ec_keypair(bare, *original, error), "storing under a bare file name succeeds");
+    auto loaded = response::load_ec_keypair(bare, error);
+    expect(loaded && loaded->public_point == original->public_point, "bare-name key round-trips");
+    fs::current_path(previous);
+    std::error_code ec;
+    fs::remove_all(directory, ec);
+}
+
 int main() {
     test_generate_produces_a_valid_uncompressed_point();
     test_sign_produces_a_verifiably_different_signature_for_different_data();
     test_two_keypairs_produce_different_public_points();
     test_store_then_load_round_trips_the_same_key();
+    test_bare_file_name_key_path_is_stored_in_the_working_directory();
     test_a_signature_from_the_loaded_key_matches_one_from_the_original();
     test_loading_a_missing_key_file_fails_closed();
     test_loading_a_truncated_key_file_fails_closed_without_crashing();

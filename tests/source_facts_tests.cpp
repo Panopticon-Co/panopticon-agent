@@ -27,6 +27,34 @@ telemetry::RawProcessEvent process() {
     raw.sha256 = "invalid-source-hash";
     return raw;
 }
+// A minifilter actor with native creation ticks joins an ETW process start of
+// the same PID/ticks as one native_exact entity; different ticks never join.
+void minifilter_identity_tests() {
+    pipeline::EndpointRecordFactory factory{context(), "device-1", std::string(64, 'b'), boot, 1};
+    auto start = process(); start.sha256.reset();
+    enrichment::EnrichedProcessEvent enriched; enriched.raw = start;
+    std::string error;
+    const auto normalized_start = pipeline::normalize_process_event(enriched, context(), error);
+    require(normalized_start.has_value(), "fixture process start normalizes");
+    const auto started = factory.observation(start, *normalized_start);
+    telemetry::RawFileEvent file;
+    file.source = {telemetry::TelemetrySourceKind::minifilter, "Panopticon-FsMon", std::nullopt, 77};
+    file.timestamp = start.process_start_time + std::chrono::seconds{1};
+    file.process.pid = start.pid;
+    file.process.start_time_ticks = start.start_time_ticks;
+    file.operation = telemetry::FileOperation::write;
+    file.path = "\\Device\\HarddiskVolume3\\owned.txt";
+    file.phase = telemetry::OperationPhase::attempted;
+    const auto normalized = pipeline::normalize_file_event(file, context(), error);
+    require(normalized && normalized->event.type == "write" && normalized->source.kind == "minifilter", "minifilter write normalizes");
+    const auto observed = factory.observation(file, *normalized);
+    require(observed["subject"]["resolution"] == "native_exact" && observed["subject"]["entity_id"] == started["subject"]["entity_id"] &&
+        observed["data"]["source_facts"]["file"]["phase"] == "attempted" && observed["data"]["source_facts"]["file"]["status"].is_null(),
+        "minifilter actor joins the ETW process start by native identity and keeps attempt phase");
+    file.process.start_time_ticks = *start.start_time_ticks + 1;
+    const auto reused = factory.observation(file, *pipeline::normalize_file_event(file, context(), error));
+    require(reused["subject"]["entity_id"] != started["subject"]["entity_id"], "same PID with different creation ticks is a different instance");
+}
 Json failure_fixtures() {
     pipeline::EndpointRecordFactory factory{context(), "device-1", std::string(64, 'b'), boot, 1};
     auto result = Json::array();
@@ -161,6 +189,7 @@ int main(int argc, char** argv) {
             std::cout << extended_context.dump() << '\n'; return 0;
         }
         native_field_scope_tests();
+        minifilter_identity_tests();
         const auto fixtures = failure_fixtures();
         if (argc == 2 && std::string{argv[1]} == "--emit-fixtures") { std::cout << fixtures.dump() << '\n'; return 0; }
         const auto& raw = fixtures[0]["data"]["source_facts"];

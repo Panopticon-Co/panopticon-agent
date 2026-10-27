@@ -4,12 +4,15 @@
 #define NOMINMAX
 #include <windows.h>
 #include <winioctl.h>
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <map>
+#include <optional>
 #include <mutex>
 #include <memory>
 #include <stdexcept>
@@ -270,6 +273,104 @@ Json live_tests(bool required) {
         {"stopped_source_replay_verified", true}, {"durable_journal_reopen_replay_verified", true},
         {"checkpoint_faults", cursor_faults}, {"held_file_index_verified", true}, {"records", records}, {"full_file_coverage_verified", false}};
 }
+// Automatic volume rediscovery against the real native volume set with an in-memory
+// checkpoint store; workers start on real volumes but only their discovery effects are asserted.
+struct DiscoveryStore {
+    std::mutex mutex;
+    std::map<std::string, delivery::SourceCheckpoint> checkpoints;
+    std::vector<Json> discovery_records;
+    std::atomic_uint64_t sequence{0};
+    bool refuse_discovery = false;
+    col::UsnCallbacks callbacks() {
+        col::UsnCallbacks result;
+        result.load = [this](const std::string& key) -> std::optional<delivery::SourceCheckpoint> {
+            std::scoped_lock lock{mutex}; const auto found = checkpoints.find(key);
+            if (found == checkpoints.end()) return std::nullopt; return found->second;
+        };
+        result.make_record = [this](const std::string& channel, Json body, bool gap) {
+            return Json{{"record_id", "discovery-test-" + std::to_string(++sequence)}, {"channel", channel}, {"gap", gap}, {"data", std::move(body)}}.dump();
+        };
+        result.commit = [this](const std::string& line, const std::string& key, const std::string& cursor, std::uint64_t expected) {
+            std::scoped_lock lock{mutex};
+            const bool discovery = key == "usn:volume-discovery:v1";
+            if (discovery && refuse_discovery) return false;
+            const auto found = checkpoints.find(key);
+            if ((found == checkpoints.end() ? 0 : found->second.revision) != expected) return false;
+            checkpoints[key] = {expected + 1, cursor};
+            if (discovery) discovery_records.push_back(Json::parse(line));
+            return true;
+        };
+        return result;
+    }
+    std::size_t discovery_count() { std::scoped_lock lock{mutex}; return discovery_records.size(); }
+    Json discovery_record(std::size_t index) { std::scoped_lock lock{mutex}; return discovery_records.at(index); }
+    void seed(const Json& checkpoint) { std::scoped_lock lock{mutex}; checkpoints["usn:volume-discovery:v1"] = {7, checkpoint.dump()}; }
+};
+Json discovery_checkpoint(std::uint64_t sequence, bool blind, const Json& volumes, const Json& blind_start = nullptr) {
+    return {{"format", "windows_usn_discovery_checkpoint_v1"}, {"sequence", std::to_string(sequence)}, {"initialized", true},
+        {"blind", blind}, {"volumes", volumes}, {"blind_start_record_id", blind_start}};
+}
+void discovery_tests() {
+    Json observed;
+    {
+        DiscoveryStore store;
+        col::UsnJournal sensor{store.callbacks()};
+        require(until([&] { return store.discovery_count() == 1; }), "initial volume discovery durably committed");
+        const auto record = store.discovery_record(0)["data"];
+        require(record["transition"] == "initial_volume_set_observed" && record["added_volume_guids"] == record["current_volume_set"]
+            && record["removed_volume_guids"].empty(), "initial discovery reports every observed volume as added");
+        observed = record["current_volume_set"];
+        require(!observed.empty() && observed.size() <= 16, "real host exposes a bounded non-empty volume set");
+        require(until([&] { const auto s = sensor.snapshot(); return s["discovery"]["state"] == "degraded" && s["volumes"].size() == observed.size(); }),
+            "durable discovery starts one worker per observed volume");
+        sensor.stop();
+    }
+    {
+        DiscoveryStore store; store.seed(discovery_checkpoint(3, false, observed));
+        col::UsnJournal sensor{store.callbacks()};
+        require(until([&] { return sensor.snapshot()["volumes"].size() == observed.size(); }), "unchanged restart admits workers");
+        require(store.discovery_count() == 0, "unchanged volume set emits no discovery transition");
+        sensor.stop();
+    }
+    const std::string phantom = "\\\\?\\Volume{00000000-0000-0000-0000-000000000000}\\";
+    Json with_phantom = observed; with_phantom.push_back(phantom);
+    std::sort(with_phantom.begin(), with_phantom.end());
+    {
+        DiscoveryStore store; store.seed(discovery_checkpoint(3, false, with_phantom));
+        col::UsnJournal sensor{store.callbacks()};
+        require(until([&] { return store.discovery_count() == 1; }), "volume removal durably committed");
+        const auto record = store.discovery_record(0)["data"];
+        require(record["transition"] == "volume_set_changed" && record["sequence"] == "4" && record["removed_volume_guids"] == Json::array({phantom})
+            && record["added_volume_guids"].empty() && record["previous_volume_set"] == with_phantom, "removed volume reported with prior set");
+        sensor.stop();
+    }
+    {
+        DiscoveryStore store; store.seed(discovery_checkpoint(5, true, with_phantom, "blind-start-record"));
+        col::UsnJournal sensor{store.callbacks()};
+        require(until([&] { return store.discovery_count() == 1; }), "blind recovery durably committed");
+        const auto record = store.discovery_record(0)["data"];
+        require(record["transition"] == "discovery_recovered_after_unknown_interval" && record["unknown_interval_start_record_id"] == "blind-start-record"
+            && record["removed_volume_guids"] == Json::array({phantom}), "recovery cites the unknown interval and its removals");
+        require(until([&] { return sensor.snapshot()["discovery"]["unknown_interval_start_record_id"].is_null(); }), "recovered discovery clears blind marker");
+        sensor.stop();
+    }
+    {
+        DiscoveryStore store; { std::scoped_lock lock{store.mutex}; store.checkpoints["usn:volume-discovery:v1"] = {1, "{\"format\":\"other\"}"}; }
+        col::UsnJournal sensor{store.callbacks()};
+        require(until([&] { return sensor.snapshot()["discovery"]["state"] == "blind"; }), "malformed discovery checkpoint reported blind");
+        require(sensor.snapshot()["volumes"].empty() && store.discovery_count() == 0, "malformed checkpoint applies no volume set change");
+        sensor.stop();
+    }
+    {
+        DiscoveryStore store; store.refuse_discovery = true;
+        col::UsnJournal sensor{store.callbacks()};
+        require(until([&] { const auto d = sensor.snapshot()["discovery"]; return d["state"] == "blind" && d.value("pending_durable_acceptance", false); }),
+            "refused discovery commit reported blind and pending");
+        require(sensor.snapshot()["volumes"].empty(), "no workers start before discovery is durable");
+        const auto started = GetTickCount64(); sensor.stop();
+        require(GetTickCount64() - started < 5000, "stop interrupts refused discovery retry");
+    }
+}
 int main(int argc, char** argv) {
     try {
         bool required = false; std::string report;
@@ -277,7 +378,7 @@ int main(int argc, char** argv) {
             const std::string arg = argv[i]; if (arg == "--require-live") required = true;
             else if (arg == "--report" && i + 1 < argc) report = argv[++i]; else throw std::invalid_argument("unknown USN test argument");
         }
-        decoder_tests(); discovery_lifecycle_tests(); auto result = live_tests(required);
+        decoder_tests(); discovery_tests(); discovery_lifecycle_tests(); auto result = live_tests(required);
         pipeline::NormalizationContext context{{"agent-usn-fixture", "dev"}, {"host-usn-fixture", "LAB", {"Windows", "fixture"}}};
         pipeline::EndpointRecordFactory factory{context, "device-usn-fixture", std::string(64, 'c'), "boot_" + std::string(64, 'd'), 1};
         result["synthetic_contract_fixtures"] = Json::array();

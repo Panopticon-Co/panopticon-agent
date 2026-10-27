@@ -22,16 +22,8 @@ void append_field(std::string& destination, std::string_view value) {
     destination.push_back('|');
 }
 
-std::string source_kind_name(telemetry::TelemetrySourceKind kind) {
-    switch (kind) {
-        case telemetry::TelemetrySourceKind::etw:
-            return "etw";
-        case telemetry::TelemetrySourceKind::sysmon:
-            return "sysmon";
-        case telemetry::TelemetrySourceKind::windows_event_log:
-            return "windows_event_log";
-    }
-    return "unknown";
+std::string kind_name(telemetry::TelemetrySourceKind kind) {
+    return std::string{telemetry::source_kind_name(kind)};
 }
 
 std::optional<std::string> sha256_hex_impl(std::string_view input, std::string& error_message) {
@@ -147,7 +139,7 @@ std::optional<std::string> derive_process_event_id(
     std::string canonical;
     append_field(canonical, "process-start-event-v1");
     append_field(canonical, host_id);
-    append_field(canonical, source_kind_name(event.source.kind));
+    append_field(canonical, kind_name(event.source.kind));
     append_field(canonical, event.source.provider);
     append_field(canonical, event.source.channel.value_or(""));
     append_field(
@@ -200,7 +192,7 @@ std::optional<std::string> derive_telemetry_event_id(
     std::string canonical;
     append_field(canonical, "telemetry-event-v1");
     append_field(canonical, host_id);
-    append_field(canonical, source_kind_name(source.kind));
+    append_field(canonical, kind_name(source.kind));
     append_field(canonical, source.provider);
     append_field(canonical, source.channel.value_or(""));
     append_field(

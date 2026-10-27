@@ -8,6 +8,7 @@
 #include <cctype>
 #include <cstdio>
 #include <ctime>
+#include <stdexcept>
 #include <string>
 
 namespace panopticon::officer::pipeline {
@@ -48,16 +49,8 @@ bool context_is_valid(const NormalizationContext& context, std::string& error_me
     return true;
 }
 
-std::string source_kind_name(telemetry::TelemetrySourceKind kind) {
-    switch (kind) {
-        case telemetry::TelemetrySourceKind::etw:
-            return "etw";
-        case telemetry::TelemetrySourceKind::sysmon:
-            return "sysmon";
-        case telemetry::TelemetrySourceKind::windows_event_log:
-            return "windows_event_log";
-    }
-    return "unknown";
+std::string kind_name(telemetry::TelemetrySourceKind kind) {
+    return std::string{telemetry::source_kind_name(kind)};
 }
 
 }  // namespace
@@ -147,7 +140,7 @@ std::optional<telemetry::PanopticonEvent> normalize_process_event(
     telemetry::PanopticonEvent result;
     result.event = {*event_id, "process", "start", timestamp};
     result.source = {
-        source_kind_name(enriched.raw.source.kind),
+        kind_name(enriched.raw.source.kind),
         enriched.raw.source.provider,
         enriched.raw.source.channel,
         enriched.raw.source.record_id,
@@ -264,7 +257,7 @@ std::optional<telemetry::PanopticonEvent> build_family_base(
     telemetry::PanopticonEvent result;
     result.event = {*event_id, std::string{category}, std::string{type}, formatted};
     result.source = {
-        source_kind_name(source.kind),
+        kind_name(source.kind),
         source.provider,
         source.channel,
         source.record_id,
@@ -305,8 +298,12 @@ std::string file_operation_name(telemetry::FileOperation op) {
         case telemetry::FileOperation::create: return "create";
         case telemetry::FileOperation::remove: return "delete";
         case telemetry::FileOperation::rename: return "rename";
+        case telemetry::FileOperation::open: return "open";
+        case telemetry::FileOperation::write: return "write";
+        case telemetry::FileOperation::set_information: return "set_information";
+        case telemetry::FileOperation::overwrite: return "overwrite";
     }
-    return "create";
+    throw std::invalid_argument("unknown file operation");
 }
 
 std::string registry_operation_name(telemetry::RegistryOperation op) {
