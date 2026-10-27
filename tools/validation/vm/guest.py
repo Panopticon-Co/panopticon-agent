@@ -30,8 +30,13 @@ def _credentials() -> list[str]:
 
 
 def vmrun(*arguments: str, timeout: int = 600) -> subprocess.CompletedProcess:
-    return subprocess.run([str(VMRUN), *_credentials(), *arguments], capture_output=True,
-                          text=True, timeout=timeout)
+    try:
+        return subprocess.run([str(VMRUN), *_credentials(), *arguments], capture_output=True,
+                              text=True, timeout=timeout, check=False)
+    except subprocess.TimeoutExpired:
+        # TimeoutExpired includes the complete argv, including guest credentials.
+        # Never put that exception (or its chained context) in evidence or logs.
+        raise TimeoutError(f"VMware operation {arguments[0]} timed out") from None
 
 
 def put(local: str, guest: str) -> None:
@@ -52,7 +57,7 @@ def ps(script: str, timeout: int = 900) -> tuple[int, str]:
     token = uuid.uuid4().hex[:10]
     guest_script, guest_out = rf"{GUEST_WORK}\run-{token}.ps1", rf"{GUEST_WORK}\run-{token}.out"
     # Redirect at the cmd level so parse errors and native stderr are captured too.
-    wrapped = "\n".join(["$ErrorActionPreference='Continue'", script, "exit $LASTEXITCODE", ""])
+    wrapped = f"$ErrorActionPreference='Continue'\n{script}\nexit $LASTEXITCODE\n"
     with tempfile.TemporaryDirectory() as scratch:
         local_script = Path(scratch) / "run.ps1"
         local_script.write_text(wrapped, encoding="utf-8-sig")
