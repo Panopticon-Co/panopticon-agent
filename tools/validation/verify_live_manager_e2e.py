@@ -101,7 +101,13 @@ def main() -> int:
     parser.add_argument("--manager", type=Path, default=ROOT)
     parser.add_argument("--evidence", type=Path)
     parser.add_argument("--keep", action="store_true", help="keep the scratch directory")
+    parser.add_argument("--trusted-tls", action="store_true",
+        help="test VM only: trust this run's own test CA in LocalMachine Root for the run, let the "
+             "agent enroll itself and require the full command round trip")
     options = parser.parse_args()
+    if options.trusted_tls and os.environ.get("PANO_ALLOW_TRUST_STORE_CHANGE") != "1":
+        raise SystemExit("--trusted-tls changes the machine trust store; set "
+                         "PANO_ALLOW_TRUST_STORE_CHANGE=1 only on a disposable test VM")
     manager_root = options.manager.resolve()
     if not options.agent.is_file():
         raise SystemExit(f"officer-agent.exe not found at {options.agent}")
@@ -122,7 +128,14 @@ def main() -> int:
     server_log = open(scratch / "manager.log", "wb")
     agent_out, agent_err = open(scratch / "agent.stdout", "wb"), open(scratch / "agent.stderr", "wb")
     server = agent = target = None
+    trusted_serial = None
     try:
+        if options.trusted_tls:
+            serial = format(x509.load_pem_x509_certificate(cert_path.read_bytes()).serial_number, "x")
+            subprocess.run(["certutil", "-addstore", "-f", "Root", str(cert_path)], check=True,
+                           capture_output=True, creationflags=NO_WINDOW)
+            trusted_serial = serial
+            summary["trust"] = "run-owned test CA added to LocalMachine Root for this run"
         server = subprocess.Popen([sys.executable, "-m", "uvicorn", "manager.app:app", "--host",
             "127.0.0.1", "--port", str(port), "--ssl-keyfile", str(key_path), "--ssl-certfile",
             str(cert_path)], cwd=manager_root, env=environment, stdout=server_log, stderr=server_log,
@@ -130,20 +143,26 @@ def main() -> int:
         base = f"https://127.0.0.1:{port}"
         with httpx.Client(base_url=base, verify=False, timeout=5) as client:
             wait_for(lambda: server.poll() is None and _healthy(client), 30, "Manager start")
-            # Real enrollment (challenge + P-256 proof of possession) on the agent's
-            # behalf: the agent's own enrollment/response channel always verifies TLS
-            # and this host's trust store is not modified for a self-signed Manager.
-            sys.path.insert(0, str(manager_root))
-            from tests.conftest import enroll_test_agent
-            agent_name, host_name = "live-agent-" + uuid4().hex[:8], "live-host-" + uuid4().hex[:8]
-            enrolled = enroll_test_agent(client, agent_name, host_name,
-                token=environment["PANOPTICON_ENROLLMENT_TOKEN"])
-            enrolled.raise_for_status()
-            identity_lines = [agent_name, host_name, enrolled.json()["access_token"]]
-            (scratch / "identity").write_text("\n".join(identity_lines) + "\n", encoding="ascii")
-            summary["enrollment"] = "harness_enrolled_via_real_api_identity_provisioned"
+            if options.trusted_tls:
+                # The agent enrolls itself (bootstrap token) over verified TLS.
+                transport = ["--bootstrap-token-path", str(token_file)]
+                summary["enrollment"] = "agent_self_enrolled_over_verified_tls"
+            else:
+                # Real enrollment (challenge + P-256 proof of possession) on the agent's
+                # behalf: the agent's own enrollment/response channel always verifies TLS
+                # and this host's trust store is not modified for a self-signed Manager.
+                sys.path.insert(0, str(manager_root))
+                from tests.conftest import enroll_test_agent
+                agent_name, host_name = "live-agent-" + uuid4().hex[:8], "live-host-" + uuid4().hex[:8]
+                enrolled = enroll_test_agent(client, agent_name, host_name,
+                    token=environment["PANOPTICON_ENROLLMENT_TOKEN"])
+                enrolled.raise_for_status()
+                identity_lines = [agent_name, host_name, enrolled.json()["access_token"]]
+                (scratch / "identity").write_text("\n".join(identity_lines) + "\n", encoding="ascii")
+                transport = ["--insecure-tls"]
+                summary["enrollment"] = "harness_enrolled_via_real_api_identity_provisioned"
             agent = subprocess.Popen([str(options.agent), "--source", "all", "--manager-url", base,
-                "--insecure-tls", "--enable-response", "--identity-path", str(scratch / "identity"),
+                *transport, "--enable-response", "--identity-path", str(scratch / "identity"),
                 "--spool-directory", str(scratch / "spool"),
                 "--keypair-path", str(scratch / "agent.key")],
                 stdout=agent_out, stderr=agent_err, cwd=scratch,  # relative defaults stay owned
@@ -211,7 +230,10 @@ def main() -> int:
             summary["command"] = {"command_id": command_id, "lifecycle_state": final,
                 "result": json.loads(receipt[0]["raw_json"]) if receipt else None,
                 "target_exited": target.poll() is not None}
-            if final in ("PENDING", "AUTHORIZED"):
+            if final == "SUCCEEDED":
+                summary["command"]["target_exited"] = bool(
+                    wait_for(lambda: target.poll() is not None, 20, "target exit"))
+            if final in ("PENDING", "AUTHORIZED") and not options.trusted_tls:
                 summary["command"]["blocked"] = ("agent response channel verifies TLS and the "
                     "self-signed test Manager is untrusted on this host; validate on the VM")
 
@@ -226,6 +248,10 @@ def main() -> int:
         # round trip is reported separately (it needs a trusted Manager certificate).
         summary["passed"] = (summary["marked_process"]["resolution"] in ("native_exact", "source_scoped")
             and bool(summary["detection"]) and summary["record_total"] > 0)
+        if options.trusted_tls:
+            summary["passed"] = summary["passed"] and (
+                summary["command"]["lifecycle_state"] == "SUCCEEDED"
+                and summary["command"]["target_exited"] is True)
         return 0 if summary["passed"] else 1
     except Exception as error:
         summary["passed"] = False
@@ -240,6 +266,10 @@ def main() -> int:
             except subprocess.TimeoutExpired:
                 agent.kill()
                 summary["agent_exit"] = "killed_after_60s"
+        if trusted_serial:
+            removed = subprocess.run(["certutil", "-delstore", "Root", trusted_serial],
+                                     capture_output=True, creationflags=NO_WINDOW)
+            summary["trust_removed"] = removed.returncode == 0
         if target is not None and target.poll() is None:
             target.kill()
         if server is not None:
