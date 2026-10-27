@@ -203,10 +203,14 @@ std::optional<RawSignature> sign_raw(const EcKeyPair& keypair, const std::vector
 
 bool store_ec_keypair(const std::filesystem::path& path, const EcKeyPair& keypair, std::string& error_message) {
     std::error_code filesystem_error;
-    std::filesystem::create_directories(path.parent_path(), filesystem_error);
-    if (filesystem_error) {
-        error_message = "cannot create key directory";
-        return false;
+    // A bare file name (the console default) has no parent to create;
+    // create_directories("") reports an error rather than succeeding.
+    if (!path.parent_path().empty()) {
+        std::filesystem::create_directories(path.parent_path(), filesystem_error);
+        if (filesystem_error) {
+            error_message = "cannot create key directory";
+            return false;
+        }
     }
     const auto temporary = path.string() + ".tmp";
     {

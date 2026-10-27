@@ -1898,3 +1898,39 @@ carries `{category: process_stop, type: stop}`; DE ML branch maps it to
 
 Not proven: no real capture for minifilter (not implemented), EID 8/10/22 live
 capture, Manager acceptance of the family records.
+
+## Wave 6: live Officer -> Manager on the development host — 2026-10-27
+
+Real `officer-agent.exe` (SHA-256 `75326ff2…7ce206`) against an owned Manager
+(branch `windows-endpoint-v2-ingest`, loopback TLS, temporary DB) using
+`tools/validation/verify_live_manager_e2e.py`. Host: Windows 11 25H2 (26200),
+elevated; two pre-existing lab agents and their fixed-name ETW session untouched.
+Summary: `evidence/20261027-live-manager-e2e/live-manager-e2e-summary.json`
+(SHA-256 `1c535b6c…f0e2c3`, paths redacted).
+
+Passed (L6 ingest/persist/detect on this host, not the VM):
+- Real enrollment (challenge + P-256 proof) by the harness; identity provisioned.
+- 4,770 live canonical records accepted and durably persisted across ~70
+  families; 4,731 already drained by the detection worker.
+- Owned `whoami /priv` captured live (Sysmon, `source_scoped`) and DET-PROC-008
+  fired on that live canonical record.
+- Owned `ping.exe` target attributed `native_exact` from ETW with real ticks/boot.
+- Clean `CTRL_BREAK` stop (exit 0) removed the agent's own ETW session.
+
+Blocked here by design: a schema-2 KILL_PROCESS built from the Manager-held
+target record was authorized but not delivered. The agent's enrollment/response
+channel always verifies TLS (WinHTTP 12175 against the self-signed Manager) and
+this host's trust store is not modified. Validate on PANO-NEW-WIN-01.
+
+Defects found by running live, both fixed with regressions:
+- `volume_encryption.cpp`: range-for over `json::value(...).items()` iterated a
+  destroyed temporary. The agent crashed (0xC0000005) ~30 s after start on real
+  WMI output, stopping telemetry and orphaning its ETW session. Stack captured
+  with cdb; only instance of the pattern in the tree.
+- `keypair.cpp`: the console default `--keypair-path` (bare file name) failed
+  because `create_directories("")` errors; enrollment was impossible without an
+  explicit path. New test fails before / passes after.
+
+ETW session ownership recovery is now runtime-verified: restarting with the same
+spool reclaimed three orphaned sessions left by the crash, without enumeration or
+touching other sessions.

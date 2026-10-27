@@ -383,7 +383,10 @@ Json collect_volume_encryption_state() {
                         row["methods"][ascii(method)] = method_json;
                         result["methods_invoked"].push_back(ascii(method));
                         if (method_json.value("method_return_success", false) == false) ++output_failures;
-                        for (const auto& [_, field] : method_json.value("outputs", Json::object()).items())
+                        // json::value() returns a copy; items() only references it, so the
+                        // copy must outlive the loop (a temporary here dangled and crashed).
+                        const Json outputs = method_json.value("outputs", Json::object());
+                        for (const auto& [_, field] : outputs.items())
                             if (field.value("state", "unavailable") != "healthy") ++output_degraded;
                     }
                     SysFreeString(native_path);
