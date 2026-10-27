@@ -84,6 +84,8 @@ add_library(officer-collectors STATIC
     src/collectors/file_integrity.cpp
     src/collectors/fsmon_protocol.cpp
     src/collectors/minifilter_collector.cpp
+    src/collectors/apihook_protocol.cpp
+    src/collectors/apihook_collector.cpp
 )
 
 target_include_directories(officer-collectors PUBLIC include)
@@ -251,6 +253,16 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME officer-fsmon-protocol-tests COMMAND officer-fsmon-protocol-tests)
     set_tests_properties(officer-fsmon-protocol-tests PROPERTIES TIMEOUT 60)
+    # Host-side API-hook wire-protocol decoder + actor-verification tests compile
+    # the user-mode decoder source directly (no injected DLL).
+    add_executable(officer-apihook-protocol-tests tests/apihook_protocol_tests.cpp src/collectors/apihook_protocol.cpp)
+    target_include_directories(officer-apihook-protocol-tests PRIVATE include)
+    target_compile_features(officer-apihook-protocol-tests PRIVATE cxx_std_20)
+    if(MSVC)
+        target_compile_options(officer-apihook-protocol-tests PRIVATE /W4 ${OFFICER_WX} /permissive- /EHsc /utf-8)
+    endif()
+    add_test(NAME officer-apihook-protocol-tests COMMAND officer-apihook-protocol-tests)
+    set_tests_properties(officer-apihook-protocol-tests PROPERTIES TIMEOUT 60)
     add_executable(officer-raw-handoff-tests tests/raw_handoff_tests.cpp)
     target_link_libraries(officer-raw-handoff-tests PRIVATE officer-core officer-delivery)
     add_test(NAME officer-raw-handoff-tests COMMAND officer-raw-handoff-tests)
