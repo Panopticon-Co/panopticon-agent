@@ -1,5 +1,6 @@
 #include "panopticon/officer/collectors/etw_process_collector.hpp"
 #include "panopticon/officer/collectors/sysmon_event_collector.hpp"
+#include "panopticon/officer/collectors/minifilter_collector.hpp"
 #include "panopticon/officer/collectors/windows_event_log.hpp"
 #include "panopticon/officer/collectors/powershell_script_telemetry.hpp"
 #include "panopticon/officer/collectors/security_audit_semantics.hpp"
@@ -95,7 +96,7 @@ namespace response = panopticon::officer::response;
 namespace forensics = panopticon::officer::forensics;
 namespace telemetry = panopticon::officer::telemetry;
 
-enum class SourceSelection { all, etw, sysmon };
+enum class SourceSelection { all, etw, sysmon, minifilter };
 
 // Durable journal acceptance precedes best-effort diagnostic display.
 // --manager-url adds delivery; stdout is not an acceptance receipt.
@@ -289,7 +290,7 @@ std::optional<CliOptions> parse_arguments(int argc, char* argv[]) {
         const std::string_view argument = argv[index];
         if (argument == "--help" || argument == "-h") {
             std::cout << "Usage: " << argv[0]
-                      << " [--service] [--source all|etw|sysmon] [--manager-url <https-url>] [--insecure-tls]\n"
+                      << " [--service] [--source all|etw|sysmon|minifilter] [--manager-url <https-url>] [--insecure-tls]\n"
                          "       [--enable-response] [--identity-path <path>] [--bootstrap-token-path <path>]\n"
                          "       [--file-collection-root <dir>] [--quarantine-root <dir>] [--forensic-store-root <dir>]\n"
                          "       [--manager-exception-host <numeric-ip>] [--manager-exception-port <tcp-port>]\n"
@@ -382,6 +383,8 @@ std::optional<CliOptions> parse_arguments(int argc, char* argv[]) {
             options.source = SourceSelection::etw;
         } else if (value == "sysmon") {
             options.source = SourceSelection::sysmon;
+        } else if (value == "minifilter") {
+            options.source = SourceSelection::minifilter;
         } else {
             std::cerr << "Invalid --source value: " << value << '\n';
             return std::nullopt;
@@ -1094,9 +1097,13 @@ int run_endpoint(int argc, char* argv[], HANDLE service_stop = nullptr,
     if (options->source == SourceSelection::all || options->source == SourceSelection::sysmon) {
         all_collectors.push_back(std::make_unique<collectors::SysmonEventCollector>());
     }
+    if (options->source == SourceSelection::all || options->source == SourceSelection::minifilter) {
+        all_collectors.push_back(std::make_unique<collectors::MinifilterCollector>());
+    }
 
     coverage.set("sensor.etw", CapabilityState::disabled, "source not selected", "kernel process-start adapter");
     coverage.set("sensor.sysmon", CapabilityState::disabled, "source not selected", "configured Sysmon event subset");
+    coverage.set("sensor.minifilter", CapabilityState::disabled, "source not selected", "FltMgr filesystem minifilter (panopticon-fsmon.sys)");
     std::size_t started = 0;
     struct SupervisedSource {
         collectors::TelemetryCollector* collector;
@@ -1118,6 +1125,11 @@ int run_endpoint(int argc, char* argv[], HANDLE service_stop = nullptr,
             if (collector->name() == "sysmon") {
                 for (const auto* id : {"H.filesystem", "I.registry", "N.network"})
                     coverage.set(id, CapabilityState::degraded, "Sysmon subset active; native coverage and host state pending", "selected Sysmon records; provider configuration dependent");
+            }
+            if (collector->name() == "minifilter") {
+                coverage.set("H.filesystem", CapabilityState::degraded,
+                    "FltMgr minifilter port connected; pre/post create, write, set-information, rename and delete with native actor identity; driver load and live interception VM-gated",
+                    "IRP-level file operations via panopticon-fsmon.sys");
             }
             { std::ostringstream diagnostic; diagnostic << "Started " << collector->name() << " collector.\n"; (void)diagnostic_stderr.try_submit(diagnostic.str()); }
         } else {
@@ -3414,13 +3426,17 @@ int run_endpoint(int argc, char* argv[], HANDLE service_stop = nullptr,
         // collector remains active. Keep all partial domains degraded otherwise.
         bool process_visible = false;
         bool sysmon_visible = false;
+        bool minifilter_visible = false;
         for (const auto& source : supervised_sources) {
             const auto name = std::string{source.collector->name()};
             const auto& status = source_health[name];
             const bool visible = status["running"].get<bool>() &&
                 !(name == "sysmon" && status["continuity_fault"].get<bool>());
-            process_visible |= visible;
+            // The minifilter is a filesystem source, not a process-start source;
+            // it must not count toward process-stop/B.process visibility.
+            if (name != "minifilter") process_visible |= visible;
             if (name == "sysmon") sysmon_visible = visible;
+            if (name == "minifilter") minifilter_visible = visible;
         }
         coverage.set("state.process_stop", process_visible ? CapabilityState::degraded : CapabilityState::blind,
             process_visible ? "ETW ID 2/Sysmon ID 5 decode path enabled; source configuration and live lifecycle unqualified" : "no eligible process source; stop visibility blind",
@@ -3428,8 +3444,18 @@ int run_endpoint(int argc, char* argv[], HANDLE service_stop = nullptr,
         if (!process_visible)
             coverage.set("B.process", CapabilityState::blind, "no subscribed process source has verified consumer availability", "process-start adapters");
         if (!sysmon_visible && options->source != SourceSelection::etw) {
-            for (const auto* id : {"H.filesystem", "I.registry", "N.network"})
+            // Registry and network have no native fallback; filesystem does when
+            // the minifilter is connected, so keep it out of the blind set then.
+            const bool filesystem_covered = minifilter_visible;
+            for (const auto* id : {"H.filesystem", "I.registry", "N.network"}) {
+                if (filesystem_covered && std::string_view{id} == "H.filesystem") continue;
                 coverage.set(id, CapabilityState::blind, "Sysmon consumer unavailable or subscription history missing", "no native fallback implemented for this subset");
+            }
+        }
+        if (minifilter_visible) {
+            coverage.set("H.filesystem", CapabilityState::degraded,
+                "FltMgr minifilter connected; IRP-level file operations with native actor identity; driver load and live interception VM-gated",
+                "pre/post create, open, write, set-information, overwrite, rename, delete via panopticon-fsmon.sys");
         }
         return changed;
     };

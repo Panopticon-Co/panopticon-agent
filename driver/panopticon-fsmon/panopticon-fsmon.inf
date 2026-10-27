@@ -1,0 +1,100 @@
+;;;
+;;; panopticon-fsmon -- Panopticon Officer filesystem minifilter
+;;;
+;;; Installs panopticon-fsmon.sys as a FltMgr minifilter. The altitude is a
+;;; development-range value and must be replaced with an allocation obtained
+;;; from Microsoft before any non-test deployment. Test-signed load only.
+;;;
+
+[Version]
+Signature   = "$Windows NT$"
+Class       = "ActivityMonitor"
+ClassGuid   = {b86dff51-a31d-4f59-2c47-3449f9da5d6a}
+Provider    = %ProviderName%
+DriverVer   =
+CatalogFile = panopticon-fsmon.cat
+PnpLockdown = 1
+
+[DestinationDirs]
+DefaultDestDir          = 12
+MiniFilter.DriverFiles  = 12            ;%windir%\system32\drivers
+
+;;
+;; Default install sections
+;;
+
+[DefaultInstall.NTamd64]
+OptionDesc  = %ServiceDescription%
+CopyFiles   = MiniFilter.DriverFiles
+
+[DefaultInstall.NTamd64.Services]
+AddService  = %ServiceName%,,MiniFilter.Service
+
+;;
+;; Default uninstall sections
+;;
+
+[DefaultUninstall.NTamd64]
+LegacyUninstall = 1
+DelFiles        = MiniFilter.DriverFiles
+
+[DefaultUninstall.NTamd64.Services]
+DelService = %ServiceName%,0x200      ;SPSVCINST_STOPSERVICE
+
+;;
+;; Services Section
+;;
+
+[MiniFilter.Service]
+DisplayName    = %ServiceName%
+Description    = %ServiceDescription%
+ServiceBinary  = %12%\%DriverName%.sys    ;%windir%\system32\drivers
+Dependencies   = "FltMgr"
+ServiceType    = 2                        ;SERVICE_FILE_SYSTEM_DRIVER
+StartType      = 3                        ;SERVICE_DEMAND_START
+ErrorControl   = 1                        ;SERVICE_ERROR_NORMAL
+LoadOrderGroup = "FSFilter Activity Monitor"
+AddReg         = MiniFilter.AddRegistry
+
+;;
+;; Registry Modifications
+;;
+
+[MiniFilter.AddRegistry]
+HKR,,"DebugFlags",0x00010001 ,0x0
+HKR,,"SupportedFeatures",0x00010001,0x3
+HKR,"Instances","DefaultInstance",0x00000000,%DefaultInstance%
+HKR,"Instances\"%Instance1.Name%,"Altitude",0x00000000,%Instance1.Altitude%
+HKR,"Instances\"%Instance1.Name%,"Flags",0x00010001,%Instance1.Flags%
+
+;;
+;; Copy Files
+;;
+
+[MiniFilter.DriverFiles]
+%DriverName%.sys
+
+[SourceDisksFiles]
+panopticon-fsmon.sys = 1,,
+
+[SourceDisksNames]
+1 = %DiskId1%,,,
+
+;;
+;; String Section
+;;
+
+[Strings]
+ProviderName         = "Panopticon & Co"
+ServiceDescription   = "Panopticon Officer filesystem minifilter"
+ServiceName          = "panopticon-fsmon"
+DriverName           = "panopticon-fsmon"
+DiskId1              = "Panopticon Officer Installation Disk"
+
+;Instances specific information.
+DefaultInstance      = "panopticon-fsmon Instance"
+Instance1.Name       = "panopticon-fsmon Instance"
+;  Development altitude (385200 band, Activity Monitor). Replace with a real
+;  Microsoft-allocated altitude before any non-test use.
+Instance1.Altitude   = "385201"
+Instance1.Flags      = 0x0              ; Allow all attachments

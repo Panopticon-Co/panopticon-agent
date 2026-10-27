@@ -82,13 +82,15 @@ add_library(officer-collectors STATIC
     src/collectors/service_state_change.cpp
     src/collectors/registry_change_watch.cpp
     src/collectors/file_integrity.cpp
+    src/collectors/fsmon_protocol.cpp
+    src/collectors/minifilter_collector.cpp
 )
 
 target_include_directories(officer-collectors PUBLIC include)
 target_compile_features(officer-collectors PUBLIC cxx_std_20)
 target_link_libraries(officer-collectors
     PUBLIC officer-core
-    PRIVATE advapi32 tdh wevtapi bcrypt ole32 iphlpapi ws2_32 tinyxml2::tinyxml2
+    PRIVATE advapi32 tdh wevtapi bcrypt ole32 iphlpapi ws2_32 fltlib tinyxml2::tinyxml2
 )
 
 add_library(officer-delivery STATIC
@@ -136,6 +138,13 @@ option(OFFICER_WARNINGS_AS_ERRORS "Treat MSVC warnings as errors on Officer targ
 set(OFFICER_WX "")
 if(MSVC AND OFFICER_WARNINGS_AS_ERRORS)
     set(OFFICER_WX "/WX")
+endif()
+
+# Incremental linking writes a per-target .ilk file that grows across builds;
+# on a near-full disk that fails with LNK1116. Disable it so links stay robust
+# (and reproducible) regardless of free space.
+if(MSVC)
+    add_link_options($<$<CONFIG:Debug>:/INCREMENTAL:NO>)
 endif()
 
 add_custom_command(
@@ -232,6 +241,16 @@ if(BUILD_TESTING)
     add_test(NAME officer-usn-journal-tests COMMAND officer-usn-journal-tests)
     set_tests_properties(officer-usn-journal-tests PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE)
     set_tests_properties(officer-thread-inventory-tests PROPERTIES TIMEOUT 90)
+    # Host-side minifilter wire-protocol decoder tests compile the user-mode
+    # decoder source directly (no driver, no fltlib).
+    add_executable(officer-fsmon-protocol-tests tests/fsmon_protocol_tests.cpp src/collectors/fsmon_protocol.cpp)
+    target_include_directories(officer-fsmon-protocol-tests PRIVATE include)
+    target_compile_features(officer-fsmon-protocol-tests PRIVATE cxx_std_20)
+    if(MSVC)
+        target_compile_options(officer-fsmon-protocol-tests PRIVATE /W4 ${OFFICER_WX} /permissive- /EHsc /utf-8)
+    endif()
+    add_test(NAME officer-fsmon-protocol-tests COMMAND officer-fsmon-protocol-tests)
+    set_tests_properties(officer-fsmon-protocol-tests PROPERTIES TIMEOUT 60)
     add_executable(officer-raw-handoff-tests tests/raw_handoff_tests.cpp)
     target_link_libraries(officer-raw-handoff-tests PRIVATE officer-core officer-delivery)
     add_test(NAME officer-raw-handoff-tests COMMAND officer-raw-handoff-tests)
