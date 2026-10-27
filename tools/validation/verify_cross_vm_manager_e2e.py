@@ -110,7 +110,10 @@ def main() -> int:
         guest_bootstrap = args.guest_work + r"\bootstrap.token"
         guest_probe = args.guest_work + r"\cross_vm_probe.py"
         code, output = guest.ps(
-            f"New-Item -ItemType Directory -Path '{args.guest_work}' -Force | Out-Null"
+            f"New-Item -ItemType Directory -Path '{args.guest_work}' -Force | Out-Null\n"
+            f"icacls '{args.guest_work}' /inheritance:r /grant:r "
+            "'*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' | Out-Null\n"
+            "if ($LASTEXITCODE -ne 0) { throw 'Cannot restrict guest credential directory' }"
         )
         if code:
             raise RuntimeError(output)
@@ -245,8 +248,15 @@ def main() -> int:
         # Keep the endpoint identity/spool and lab CA for reproducible remote use,
         # but retire this run's copies of the bootstrap credential.
         try:
-            guest.ps(f"Remove-Item -LiteralPath '{args.guest_work}\\bootstrap.token' "
-                     "-ErrorAction SilentlyContinue")
+            code, output = guest.ps(
+                f"$tokenFile = '{args.guest_work}\\bootstrap.token'\n"
+                "if (Test-Path -LiteralPath $tokenFile) { "
+                "Remove-Item -LiteralPath $tokenFile -ErrorAction Stop }\n"
+                "@{bootstrap_present=(Test-Path -LiteralPath $tokenFile)} | ConvertTo-Json -Compress"
+            )
+            if code or json.loads(output)["bootstrap_present"]:
+                raise RuntimeError("guest bootstrap credential cleanup did not complete")
+            summary["bootstrap_removed"] = True
         except (OSError, RuntimeError, subprocess.SubprocessError) as error:
             summary["credential_cleanup_error"] = str(error)
             summary["passed"] = False

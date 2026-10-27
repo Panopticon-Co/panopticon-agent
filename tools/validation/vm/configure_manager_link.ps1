@@ -23,7 +23,7 @@ if (-not $probe.TcpTestSucceeded -or $probe.SourceAddress.IPAddress -ne $Endpoin
     InterfaceAlias = $adapter.Name
     MacAddress = $adapter.MacAddress
     SourceAddress = $probe.SourceAddress.IPAddress
-    RemoteAddress = $probe.RemoteAddress.IPAddress
+    RemoteAddress = $probe.RemoteAddress.ToString()
     Port = $probe.RemotePort
     TcpTestSucceeded = $probe.TcpTestSucceeded
 } | ConvertTo-Json -Compress
