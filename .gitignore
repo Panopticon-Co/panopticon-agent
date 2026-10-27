@@ -6,3 +6,5 @@ out/
 !tools/query/docs/sample-output.ndjson
 *.evtx
 demo-run/
+__pycache__/
+*.pyc
