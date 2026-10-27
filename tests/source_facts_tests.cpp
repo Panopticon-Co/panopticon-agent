@@ -55,6 +55,41 @@ void minifilter_identity_tests() {
     const auto reused = factory.observation(file, *pipeline::normalize_file_event(file, context(), error));
     require(reused["subject"]["entity_id"] != started["subject"]["entity_id"], "same PID with different creation ticks is a different instance");
 }
+// An api_hook file interception, already identity-verified by the collector,
+// joins an ETW process start by native identity, preserves the concrete API as
+// the provenance channel, and carries a post-call Win32 status distinctly.
+void api_hook_identity_tests() {
+    pipeline::EndpointRecordFactory factory{context(), "device-1", std::string(64, 'b'), boot, 1};
+    auto start = process(); start.sha256.reset();
+    enrichment::EnrichedProcessEvent enriched; enriched.raw = start;
+    std::string error;
+    const auto normalized_start = pipeline::normalize_process_event(enriched, context(), error);
+    require(normalized_start.has_value(), "fixture process start normalizes");
+    const auto started = factory.observation(start, *normalized_start);
+
+    telemetry::RawFileEvent file;
+    file.source = {telemetry::TelemetrySourceKind::api_hook, "Officer-Hook", "CreateFileW", 1};
+    file.timestamp = start.process_start_time + std::chrono::seconds{1};
+    file.process.pid = start.pid;
+    file.process.start_time_ticks = start.start_time_ticks;
+    file.operation = telemetry::FileOperation::create;
+    file.path = "C:\\Users\\analyst\\secret.txt";
+    file.phase = telemetry::OperationPhase::completed;
+    file.status = telemetry::NativeStatus{telemetry::NativeStatus::Kind::win32_error, 0};
+    const auto normalized = pipeline::normalize_file_event(file, context(), error);
+    require(normalized && normalized->event.type == "create" && normalized->source.kind == "api_hook",
+        "api_hook create normalizes with the api_hook source kind");
+    const auto observed = factory.observation(file, *normalized);
+    require(observed["subject"]["resolution"] == "native_exact" &&
+        observed["subject"]["entity_id"] == started["subject"]["entity_id"],
+        "api_hook actor joins the ETW process start by verified native identity");
+    require(observed["data"]["source_facts"]["source"]["kind"] == "api_hook" &&
+        observed["data"]["source_facts"]["source"]["channel"] == "CreateFileW",
+        "the concrete hooked API is preserved as the provenance channel");
+    require(observed["data"]["source_facts"]["file"]["phase"] == "completed" &&
+        observed["data"]["source_facts"]["file"]["status"]["kind"] == "win32_error",
+        "post-call phase and Win32 status kind are explicit and distinct from an NTSTATUS source");
+}
 Json failure_fixtures() {
     pipeline::EndpointRecordFactory factory{context(), "device-1", std::string(64, 'b'), boot, 1};
     auto result = Json::array();
@@ -190,6 +225,7 @@ int main(int argc, char** argv) {
         }
         native_field_scope_tests();
         minifilter_identity_tests();
+        api_hook_identity_tests();
         const auto fixtures = failure_fixtures();
         if (argc == 2 && std::string{argv[1]} == "--emit-fixtures") { std::cout << fixtures.dump() << '\n'; return 0; }
         const auto& raw = fixtures[0]["data"]["source_facts"];
