@@ -50,8 +50,9 @@ def main() -> int:
     spec.loader.exec_module(guest)
     private = args.keys / ("cross-vm-" + uuid4().hex[:12])
     private.mkdir()
+    run_id = uuid4().hex
     summary = {"started_utc": datetime.now(timezone.utc).isoformat(),
-               "manager_url": f"https://{args.manager}", "passed": False,
+               "manager_url": f"https://{args.manager}", "run_id": run_id, "passed": False,
                "scenario": "cross_vm_live_transport", "guest_work": args.guest_work}
     ssh = ["ssh", "-i", str(args.ssh_key), "-o", "BatchMode=yes", "-o", "ConnectTimeout=15",
            f"{args.ssh_user}@{args.manager}"]
@@ -73,6 +74,8 @@ def main() -> int:
         except RuntimeError:
             return None
         value = json.loads(status.read_text(encoding="utf-8"))
+        if value.get("run_id") != run_id:
+            return None
         if value.get("error"):
             raise RuntimeError(value["error"])
         return value if value.get("ready") else None
@@ -137,7 +140,8 @@ def main() -> int:
                 "Start-Process -FilePath 'C:\\Program Files\\Python312\\python.exe' "
                 f"-ArgumentList @('{guest_probe}','--agent','{args.agent}',"
                 f"'--manager-url','{summary['manager_url']}','--ca','{guest_ca}',"
-                f"'--bootstrap-token','{guest_bootstrap}','--work','{args.guest_work}') "
+                f"'--bootstrap-token','{guest_bootstrap}','--work','{args.guest_work}',"
+                f"'--run-id','{run_id}') "
                 "-WindowStyle Hidden\n"
             )
             code, output = guest.ps(script)
@@ -228,6 +232,9 @@ def main() -> int:
             )
             if any(row["status"] == 422 for row in summary["http_statuses"]):
                 raise RuntimeError("Manager returned HTTP 422 to the live endpoint")
+            if not any(row["path"] == "/api/v2/endpoint/freshness-challenge"
+                       and row["status"] == 200 for row in summary["http_statuses"]):
+                raise RuntimeError("production freshness challenge success was not observed")
             summary["passed"] = summary["lifecycle_state"] == "SUCCEEDED"
     except (OSError, RuntimeError, ValueError, httpx.HTTPError,
             subprocess.SubprocessError, jsonschema.ValidationError) as error:
@@ -257,7 +264,7 @@ def main() -> int:
             if code or json.loads(output)["bootstrap_present"]:
                 raise RuntimeError("guest bootstrap credential cleanup did not complete")
             summary["bootstrap_removed"] = True
-        except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+        except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
             summary["credential_cleanup_error"] = str(error)
             summary["passed"] = False
         (private / "bootstrap.token").unlink(missing_ok=True)

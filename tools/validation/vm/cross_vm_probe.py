@@ -34,6 +34,7 @@ def main() -> int:
     parser.add_argument("--ca", required=True, type=Path)
     parser.add_argument("--bootstrap-token", required=True, type=Path)
     parser.add_argument("--work", required=True, type=Path)
+    parser.add_argument("--run-id", required=True)
     args = parser.parse_args()
     parsed = urlparse(args.manager_url)
     if parsed.scheme != "https" or parsed.hostname in {"localhost", "127.0.0.1", "::1"}:
@@ -46,7 +47,7 @@ def main() -> int:
     stop = work / "stop"
     # Only the owned stop marker from a previous invocation is reset.
     stop.unlink(missing_ok=True)
-    result = {"manager_url": args.manager_url, "passed": False,
+    result = {"manager_url": args.manager_url, "run_id": args.run_id, "passed": False,
               "agent_sha256": hashlib.sha256(args.agent.read_bytes()).hexdigest()}
     agent = target = None
     stdout = (work / "agent.stdout").open("wb")
@@ -90,11 +91,8 @@ def main() -> int:
                 raise TimeoutError("native verified-TLS enrollment did not complete")
             lines = identity.read_text().splitlines()
             result["agent_id"], result["host_id"] = lines[:2]
-            auth = {"Authorization": "Bearer " + lines[2],
-                    "X-Panopticon-Agent-Id": lines[0]}
-            challenge = client.post("/api/v2/endpoint/freshness-challenge", headers=auth)
-            result["freshness_challenge_status"] = challenge.status_code
-            challenge.raise_for_status()
+            # Do not issue a competing challenge: the production uploader owns
+            # its one-use nonce. The host verifies its 200s and retained age proofs.
             # Give the production collectors time to subscribe after enrollment.
             time.sleep(15)
             target = subprocess.Popen(["ping.exe", "-n", "600", "127.0.0.1"],
