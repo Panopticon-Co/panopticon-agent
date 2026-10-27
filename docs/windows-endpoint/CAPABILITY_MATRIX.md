@@ -1,10 +1,14 @@
 # Windows endpoint capability matrix
 
-Separate-VM deployment checkpoint, 2026-10-27: PANO-NEW-MGR is deployed with
-schema 18 and preserved enrollment state; existing Officer uploads are accepted.
-The requested Windows-VM acceptance run remains **pending BitLocker recovery**.
-Do not label it Cross-VM E2E Verified until the named live run succeeds; see
-[the deployment evidence and gate](VALIDATION.md).
+**Cross-VM E2E Verified, 2026-10-27:** PANO-NEW-WIN-01 (`10.77.10.31`) reached
+the regular PANO-NEW-MGR service (`10.77.10.10`) over VMnet10 and verified TLS.
+Independent final readback found 4,059 live canonical records, including process,
+Sysmon file and system-state telemetry, plus retained freshness proofs. The owned
+ping.exe exact-identity KILL_PROCESS completed and its schema-2 SUCCEEDED result
+was accepted without HTTP 422. Native CTest passed 48/48; Manager 285 tests passed.
+AH transport and AM integration have this bounded runtime evidence. It does not
+qualify the optional FIM marker, minifilter/API-hook/kernel-network producers or
+complete collection domains. See [the final validation entry](VALIDATION.md).
 
 2026-10-27 scoped Wave 6 evidence: current Debug build passes 48/48 CTest;
 Manager passes 283 tests and Response Engine 139. On PANO-NEW-WIN-01, real agent

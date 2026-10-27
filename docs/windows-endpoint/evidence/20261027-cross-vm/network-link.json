@@ -1,0 +1,9 @@
+{
+  "InterfaceAlias": "Ethernet1",
+  "MacAddress": "00-0C-29-57-96-84",
+  "SourceAddress": "10.77.10.31",
+  "RemoteAddress": "10.77.10.10",
+  "Port": 443,
+  "TcpTestSucceeded": true,
+  "captured_utc": "2026-10-27T16:27:32.592444+00:00"
+}

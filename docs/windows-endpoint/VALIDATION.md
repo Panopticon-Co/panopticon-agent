@@ -1,6 +1,53 @@
 # Windows endpoint validation ledger
 
-## Separate-VM deployment preparation — 2026-10-27 (acceptance pending)
+## Cross-VM E2E Verified — 2026-10-27
+
+The remaining Wave 6 acceptance run passed against the regular Linux Manager,
+superseding the preparation checkpoint below. Run window: 21:57:39–22:00:04 IST
+(16:27:39–16:30:04 UTC), plus independent persisted-record readback after cleanup.
+
+- Endpoint: PANO-NEW-WIN-01, `10.77.10.31`, Ethernet1 MAC `00-0C-29-57-96-84`,
+  mapped to VMnet10. Manager: PANO-NEW-MGR, `10.77.10.10:443`, existing nginx HTTPS
+  listener and regular service; application revision `9e9df440a3ec3cdf0209721bbfa7533dcad0d57f`.
+- The native agent self-enrolled over verified TLS. The guest's independent TLS
+  check negotiated TLS 1.3 with `TLS_AES_256_GCM_SHA384`, peer `10.77.10.10` and
+  local `10.77.10.31`. No Windows-local Manager or TLS bypass was used.
+- The run checkpoint held 3,577 canonical 1.0 records. After clean agent shutdown,
+  independent readback found **4,059 persisted records and 4,059 capture-age rows**:
+  3,429 observations, 418 state, 91 health, 62 gap and 59 evidence records. These
+  include 10 process, 289 file and 4 network observations, plus live system state.
+- A Manager-held ETW `native_exact` record identified owned ping.exe PID 10220,
+  native creation ticks `134375921207039503` and its exact boot identity. Command
+  `cross-vm-kill-4ba6219b7f50` was authorized, dispatched, accepted and reached
+  SUCCEEDED. Its retained schema-2 result has `action_initiated=true`,
+  `completion_observed=true`, and null native error. It validates against the
+  published result contract; independent readback verifies its stored SHA-256.
+- The target exited before cleanup, agent shutdown returned 0, and bootstrap
+  token copies were removed. Its protected identity/spool and remote configuration
+  remain in `C:\PanoValidation\wave6-cross-vm`; the controlled test process is stopped.
+- nginx recorded 167 successful challenge/upload pairs, one successful native
+  enrollment and one successful result submission. **No HTTP 422 occurred.** One
+  initial challenge/upload pair returned 401 during enrollment; native retries
+  subsequently succeeded. This is not a claim that every startup request was 200.
+
+Evidence: [run summary](evidence/20261027-cross-vm/summary.json),
+[persisted file/system/result readback](evidence/20261027-cross-vm/persisted-samples.json),
+[network proof](evidence/20261027-cross-vm/network-link.json), and the exact-byte
+SHA-256 manifest in `evidence/20261027-cross-vm/SHA256SUMS.json`. Tested agent binary:
+`4d99ac53134a4ef58c8c35cc905f0b1f6dc0bce11c2613d9a3634e331e980b20`.
+
+Final local validation: 48/48 native CTest; 285 Manager tests with no skips;
+139 Response Engine tests; contract fixture/scanner tests; full Manager/Response
+Engine Ruff and changed Python-tool Ruff; `git diff --check`. Integration PRs
+carry the coordinated commits; merging and fleet deployment remain operator actions.
+
+Scope: this closes transport/Manager acceptance for the existing live sources.
+File proof uses live Sysmon FileCreate; the optional owned FIM marker was not
+observed in this run. It does not qualify FIM, minifilter, API-hook or kernel-network
+producers, source completeness, detection quality, fleet capacity or soak behavior.
+The reported gaps are retained evidence, not a claim of loss-free collection.
+
+## Historical preparation before Windows unlock — 2026-10-27
 
 The regular `PANO-NEW-MGR` service at `10.77.10.10` now runs Manager
 `9e9df440a3ec3cdf0209721bbfa7533dcad0d57f`, with schema 18 and all three

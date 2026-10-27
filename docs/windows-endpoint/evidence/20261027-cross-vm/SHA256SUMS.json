@@ -1,0 +1,13 @@
+{
+  "algorithm": "SHA-256",
+  "files": {
+    "manager-deployment.json": "2ab69ca61fe5ca7f399dd7bc758e4364bfd61da40782f822ce3ec3ca5b082b06",
+    "network-link.json": "55a8aae2cf8612fc992f4161f089d0ddf004e1e0409b6ce9c0cd7eef210c8118",
+    "persisted-samples.json": "0d0921bcf390fe5bc36b295e7a5bd7c7b25057ddfd9f5b65b3fe0dc3187559e8",
+    "summary.json": "311e999f7dc29809028aa11ca39f699e124af918eb6750f029b853c3193c4ee8"
+  },
+  "tested_agent_binary": {
+    "name": "officer-agent.exe",
+    "sha256": "4d99ac53134a4ef58c8c35cc905f0b1f6dc0bce11c2613d9a3634e331e980b20"
+  }
+}

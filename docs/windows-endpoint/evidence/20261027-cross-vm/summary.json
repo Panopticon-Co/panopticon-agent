@@ -1,0 +1,1019 @@
+{
+  "started_utc": "2026-10-27T16:27:39.054736+00:00",
+  "manager_url": "https://10.77.10.10",
+  "run_id": "85c7c1616ce04a1db56dd40a5cb12774",
+  "passed": true,
+  "scenario": "cross_vm_live_transport",
+  "guest_work": "C:\\PanoValidation\\wave6-cross-vm",
+  "manager_identity": {
+    "hostname": "pano-new-mgr",
+    "database": "/srv/panopticon-data/manager/panopticon.db",
+    "deployment": "9e9df440a3ec3cdf0209721bbfa7533dcad0d57f"
+  },
+  "guest_ca_import": "{\"Thumbprint\":\"290D47CF23AC38E056EB4E80A18F627DF50C7D0F\"}",
+  "endpoint": {
+    "manager_url": "https://10.77.10.10",
+    "run_id": "85c7c1616ce04a1db56dd40a5cb12774",
+    "passed": false,
+    "agent_sha256": "4d99ac53134a4ef58c8c35cc905f0b1f6dc0bce11c2613d9a3634e331e980b20",
+    "tls": {
+      "version": "TLSv1.3",
+      "cipher": "TLS_AES_256_GCM_SHA384",
+      "peer": "10.77.10.10",
+      "local": "10.77.10.31",
+      "server_certificate_sha256": "5ae861c1f26597aa3afa394d110f60c8e935f2fda1212c5742b8f7a2dc271fa6"
+    },
+    "readyz": {
+      "status": "ready",
+      "schema_version": 18
+    },
+    "agent_id": "officer-9f680749-6b7e-44ba-87f4-30baa4cdbca9",
+    "host_id": "9f680749-6b7e-44ba-87f4-30baa4cdbca9",
+    "target_pid": 10220,
+    "marker": "panopticon-cross-vm-1494d21bc911",
+    "probe_file": "C:\\PanoValidation\\wave6-cross-vm\\owned-files\\panopticon-cross-vm-1494d21bc911.txt",
+    "ready": true
+  },
+  "target_record": {
+    "category": "process",
+    "data": {
+      "agent": {
+        "id": "officer-9f680749-6b7e-44ba-87f4-30baa4cdbca9",
+        "version": "0.3.0"
+      },
+      "enrichment": {},
+      "event": {
+        "category": "process",
+        "id": "evt_1f0f684dd623ef42dbf350fa17847d925d996bb945449ea1473a6d3724f41495",
+        "timestamp": "2026-10-27T16:28:40.703Z",
+        "type": "start"
+      },
+      "host": {
+        "hostname": "Rishi",
+        "id": "9f680749-6b7e-44ba-87f4-30baa4cdbca9",
+        "os": {
+          "build": "26200",
+          "name": "Windows 10 Pro"
+        }
+      },
+      "process": {
+        "command_line": null,
+        "entity_id": "proc_0bab3ec8746027a738af05605c12e319e48d2822af1d9773011c0ed54d103ff5",
+        "executable": "\\Device\\HarddiskVolume3\\Windows\\System32\\PING.EXE",
+        "hash": {
+          "sha256": null
+        },
+        "name": "PING.EXE",
+        "parent": {
+          "entity_id": null,
+          "identity": {
+            "boot_id": "boot_c62443d9a567f6855d9aa6c0fb8b693c09165d59873f491721c61cdf4916f256",
+            "entity_id": null,
+            "native_creation_ticks": null,
+            "observed_pid": 10588,
+            "resolution": "unresolved",
+            "source_guid": null,
+            "source_namespace": "etw:Microsoft-Windows-Kernel-Process:"
+          },
+          "name": null,
+          "pid": 10588
+        },
+        "pid": 10220,
+        "start_time_ticks": "134375921207039503"
+      },
+      "source": {
+        "channel": null,
+        "kind": "etw",
+        "provider": "Microsoft-Windows-Kernel-Process",
+        "record_id": null
+      },
+      "source_facts": {
+        "event_time_ns": "1793118520703950300",
+        "family": "process",
+        "operation": "start",
+        "process": {
+          "command_line": null,
+          "executable": "\\Device\\HarddiskVolume3\\Windows\\System32\\PING.EXE",
+          "native_fields": {
+            "event_id": 1,
+            "event_version": 4,
+            "fields": {
+              "CPUCycleCount": {
+                "native_in_type": null,
+                "native_status": null,
+                "reason": "property_absent_in_source_template",
+                "reported_bytes": null,
+                "state": "unsupported",
+                "value": null,
+                "value_interpreted": false
+              },
+              "CommitCharge": {
+                "native_in_type": null,
+                "native_status": null,
+                "reason": "property_absent_in_source_template",
+                "reported_bytes": null,
+                "state": "unsupported",
+                "value": null,
+                "value_interpreted": false
+              },
+              "CommitPeak": {
+                "native_in_type": null,
+                "native_status": null,
+                "reason": "property_absent_in_source_template",
+                "reported_bytes": null,
+                "state": "unsupported",
+                "value": null,
+                "value_interpreted": false
+              },
+              "Flags": {
+                "native_in_type": 8,
+                "native_status": "0",
+                "reason": "selected_scalar_copied",
+                "reported_bytes": 4,
+                "state": "healthy",
+                "value": "0",
+                "value_interpreted": false
+              },
+              "HandleCount": {
+                "native_in_type": null,
+                "native_status": null,
+                "reason": "property_absent_in_source_template",
+                "reported_bytes": null,
+                "state": "unsupported",
+                "value": null,
+                "value_interpreted": false
+              },
+              "HardFaultCount": {
+                "native_in_type": null,
+                "native_status": null,
+                "reason": "property_absent_in_source_template",
+                "reported_bytes": null,
+                "state": "unsupported",
+                "value": null,
+                "value_interpreted": false
+              },
+              "ImageChecksum": {
+                "native_in_type": 8,
+                "native_status": "0",
+                "reason": "selected_scalar_copied",
+                "reported_bytes": 4,
+                "state": "healthy",
+                "value": "45452",
+                "value_interpreted": false
+              },
+              "ParentProcessSequenceNumber": {
+                "native_in_type": 10,
+                "native_status": "0",
+                "reason": "selected_scalar_copied",
+                "reported_bytes": 8,
+                "state": "healthy",
+                "value": "366",
+                "value_interpreted": false
+              },
+              "ProcessSequenceNumber": {
+                "native_in_type": 10,
+                "native_status": "0",
+                "reason": "selected_scalar_copied",
+                "reported_bytes": 8,
+                "state": "healthy",
+                "value": "374",
+                "value_interpreted": false
+              },
+              "ProcessTokenElevationType": {
+                "native_in_type": 8,
+                "native_status": "0",
+                "reason": "selected_scalar_copied",
+                "reported_bytes": 4,
+                "state": "healthy",
+                "value": "1",
+                "value_interpreted": false
+              },
+              "ProcessTokenIsElevated": {
+                "native_in_type": 8,
+                "native_status": "0",
+                "reason": "selected_scalar_copied",
+                "reported_bytes": 4,
+                "state": "healthy",
+                "value": "1",
+                "value_interpreted": false
+              },
+              "ReadOperationCount": {
+                "native_in_type": null,
+                "native_status": null,
+                "reason": "property_absent_in_source_template",
+                "reported_bytes": null,
+                "state": "unsupported",
+                "value": null,
+                "value_interpreted": false
+              },
+              "ReadTransferKiloBytes": {
+                "native_in_type": null,
+                "native_status": null,
+                "reason": "property_absent_in_source_template",
+                "reported_bytes": null,
+                "state": "unsupported",
+                "value": null,
+                "value_interpreted": false
+              },
+              "SecurityMitigations": {
+                "native_in_type": 8,
+                "native_status": "0",
+                "reason": "selected_scalar_copied",
+                "reported_bytes": 4,
+                "state": "healthy",
+                "value": "0",
+                "value_interpreted": false
+              },
+              "SessionID": {
+                "native_in_type": 8,
+                "native_status": "0",
+                "reason": "selected_scalar_copied",
+                "reported_bytes": 4,
+                "state": "healthy",
+                "value": "0",
+                "value_interpreted": false
+              },
+              "TimeDateStamp": {
+                "native_in_type": 8,
+                "native_status": "0",
+                "reason": "selected_scalar_copied",
+                "reported_bytes": 4,
+                "state": "healthy",
+                "value": "1535820619",
+                "value_interpreted": false
+              },
+              "TokenElevationType": {
+                "native_in_type": null,
+                "native_status": null,
+                "reason": "property_absent_in_source_template",
+                "reported_bytes": null,
+                "state": "unsupported",
+                "value": null,
+                "value_interpreted": false
+              },
+              "WriteOperationCount": {
+                "native_in_type": null,
+                "native_status": null,
+                "reason": "property_absent_in_source_template",
+                "reported_bytes": null,
+                "state": "unsupported",
+                "value": null,
+                "value_interpreted": false
+              },
+              "WriteTransferKiloBytes": {
+                "native_in_type": null,
+                "native_status": null,
+                "reason": "property_absent_in_source_template",
+                "reported_bytes": null,
+                "state": "unsupported",
+                "value": null,
+                "value_interpreted": false
+              }
+            },
+            "format": "windows_etw_process_fields_v1",
+            "full_native_payload_retained": false,
+            "parent_instance_verified": false,
+            "provider_guid": "{22fb2cd6-0e7b-422b-a0c7-2fad1fd0e716}",
+            "sequence_alias_promotion_performed": false
+          },
+          "parent_executable": null,
+          "parent_pid": 10588,
+          "parent_process_guid": null,
+          "pid": 10220,
+          "process_guid": null,
+          "sha256": null,
+          "start_time_ticks": "134375921207039503",
+          "user_name": null,
+          "user_sid": null
+        },
+        "representation": "decoded_source_facts_v1",
+        "source": {
+          "channel": null,
+          "kind": "etw",
+          "kind_value": 0,
+          "provider": "Microsoft-Windows-Kernel-Process",
+          "record_id": null
+        }
+      },
+      "user": {
+        "domain": null,
+        "name": null,
+        "sid": null
+      }
+    },
+    "endpoint": {
+      "agent_id": "officer-9f680749-6b7e-44ba-87f4-30baa4cdbca9",
+      "boot_id": "boot_c62443d9a567f6855d9aa6c0fb8b693c09165d59873f491721c61cdf4916f256",
+      "device_id": "9f680749-6b7e-44ba-87f4-30baa4cdbca9",
+      "host_id": "9f680749-6b7e-44ba-87f4-30baa4cdbca9",
+      "installation_id": "95a66c1802228cbb44100b8d0a1cc08b2711d1bd16f6c1c0c9bd5e5dc660df44"
+    },
+    "kind": "observation",
+    "observed_at": "2026-10-27T16:28:40.703Z",
+    "provenance": {
+      "capture_clock": "windows_uptime_ms",
+      "capture_uptime_ms": "524609",
+      "channel": null,
+      "collector_epoch": "epoch_d69682671bd4694944763d640fce7c54a4101630f595d3e9d49b9b3e8eff5186",
+      "collector_generation": "1",
+      "continuity": "unverified",
+      "event_time_ns": "1793118520703950300",
+      "kind": "etw",
+      "native_observation_id": "evt_1f0f684dd623ef42dbf350fa17847d925d996bb945449ea1473a6d3724f41495",
+      "native_record_id": null,
+      "provider": "Microsoft-Windows-Kernel-Process",
+      "received_at": "2026-10-27T16:29:22.440Z",
+      "sequence": "2565"
+    },
+    "record_id": "rec_a9937dcf842d6f82a568047da60b9948825737aa90b8c81b18851c46b94be689",
+    "schema_version": "1.0",
+    "subject": {
+      "boot_id": "boot_c62443d9a567f6855d9aa6c0fb8b693c09165d59873f491721c61cdf4916f256",
+      "entity_id": "proc_0bab3ec8746027a738af05605c12e319e48d2822af1d9773011c0ed54d103ff5",
+      "native_creation_ticks": "134375921207039503",
+      "observed_pid": 10220,
+      "resolution": "native_exact",
+      "source_guid": null,
+      "source_namespace": "etw:Microsoft-Windows-Kernel-Process:"
+    }
+  },
+  "command": {
+    "schema_version": "2",
+    "command_id": "cross-vm-kill-4ba6219b7f50",
+    "agent_id": "officer-9f680749-6b7e-44ba-87f4-30baa4cdbca9",
+    "correlation_id": "cross-vm-d29715d5903d4b539e4bd9d967293149",
+    "action": "KILL_PROCESS",
+    "expires_at": "2026-10-27T16:34:25.308861+00:00",
+    "target": {
+      "pid": 10220,
+      "boot_id": "boot_c62443d9a567f6855d9aa6c0fb8b693c09165d59873f491721c61cdf4916f256",
+      "start_time_ticks": "134375921207039503"
+    }
+  },
+  "result": {
+    "command_id": "cross-vm-kill-4ba6219b7f50",
+    "correlation_id": "cross-vm-d29715d5903d4b539e4bd9d967293149",
+    "detail": "succeeded:0 kill_process stage=completion action_initiated=true completion_observed=true: termination initiated and held process exit observed",
+    "execution": {
+      "action_initiated": true,
+      "completion_observed": true,
+      "native_error": null,
+      "representation": "windows_process_termination_v1",
+      "stage": "completion"
+    },
+    "outcome": "succeeded",
+    "result_id": "result_837c861a74dde10bb0a9ac863cdcea9e7aa14e3874a35a7f406cd465d9f6ab5c",
+    "schema_version": "2"
+  },
+  "records": [
+    {
+      "kind": "evidence",
+      "category": "filesystem_usn_batch",
+      "n": 54
+    },
+    {
+      "kind": "gap",
+      "category": "filesystem_usn_gap",
+      "n": 2
+    },
+    {
+      "kind": "gap",
+      "category": "source_loss",
+      "n": 58
+    },
+    {
+      "kind": "health",
+      "category": "endpoint_health",
+      "n": 77
+    },
+    {
+      "kind": "observation",
+      "category": "file",
+      "n": 156
+    },
+    {
+      "kind": "observation",
+      "category": "network",
+      "n": 4
+    },
+    {
+      "kind": "observation",
+      "category": "process",
+      "n": 10
+    },
+    {
+      "kind": "observation",
+      "category": "process_access",
+      "n": 67
+    },
+    {
+      "kind": "observation",
+      "category": "process_stop",
+      "n": 6
+    },
+    {
+      "kind": "observation",
+      "category": "registry",
+      "n": 10
+    },
+    {
+      "kind": "observation",
+      "category": "windows_event_log",
+      "n": 2723
+    },
+    {
+      "kind": "state",
+      "category": "account_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "account_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "account_inventory_page",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "active_setup_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "active_setup_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "active_setup_inventory_page",
+      "n": 6
+    },
+    {
+      "kind": "state",
+      "category": "browser_extension_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "browser_extension_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "browser_extension_inventory_page",
+      "n": 2
+    },
+    {
+      "kind": "state",
+      "category": "browser_registration_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "browser_registration_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "browser_registration_inventory_page",
+      "n": 7
+    },
+    {
+      "kind": "state",
+      "category": "com_activation_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "com_activation_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "com_activation_inventory_page",
+      "n": 156
+    },
+    {
+      "kind": "state",
+      "category": "defender_preferences_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "defender_preferences_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "defender_status",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "device_guard_state",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "dns_state_inventory",
+      "n": 3
+    },
+    {
+      "kind": "state",
+      "category": "dns_state_inventory_begin",
+      "n": 3
+    },
+    {
+      "kind": "state",
+      "category": "dns_state_inventory_page",
+      "n": 3
+    },
+    {
+      "kind": "state",
+      "category": "firewall_profile_state",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "firewall_rule_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "firewall_rule_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "firewall_rule_inventory_page",
+      "n": 8
+    },
+    {
+      "kind": "state",
+      "category": "image_execution_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "image_execution_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "image_execution_inventory_page",
+      "n": 10
+    },
+    {
+      "kind": "state",
+      "category": "ip_interface_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "ip_interface_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "ip_interface_inventory_page",
+      "n": 2
+    },
+    {
+      "kind": "state",
+      "category": "loaded_driver_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "loaded_driver_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "loaded_driver_inventory_page",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "local_group_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "local_group_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "local_group_inventory_page",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "logon_session_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "logon_session_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "logon_session_inventory_page",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "memory_region_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "memory_region_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "memory_region_inventory_page",
+      "n": 7
+    },
+    {
+      "kind": "state",
+      "category": "module_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "module_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "module_inventory_page",
+      "n": 2
+    },
+    {
+      "kind": "state",
+      "category": "msi_product_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "msi_product_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "msi_product_inventory_page",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "network_state_change",
+      "n": 6
+    },
+    {
+      "kind": "state",
+      "category": "network_state_change_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "network_state_change_manifest",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "network_state_snapshot",
+      "n": 3
+    },
+    {
+      "kind": "state",
+      "category": "office_addin_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "office_addin_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "office_addin_inventory_page",
+      "n": 8
+    },
+    {
+      "kind": "state",
+      "category": "process_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "process_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "process_inventory_page",
+      "n": 2
+    },
+    {
+      "kind": "state",
+      "category": "registry_change_observation",
+      "n": 39
+    },
+    {
+      "kind": "state",
+      "category": "remote_access_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "remote_access_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "remote_access_inventory_page",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "route_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "route_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "route_inventory_page",
+      "n": 2
+    },
+    {
+      "kind": "state",
+      "category": "scheduled_task_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "scheduled_task_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "scheduled_task_inventory_page",
+      "n": 7
+    },
+    {
+      "kind": "state",
+      "category": "security_audit_policy_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "security_audit_policy_manifest",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "security_audit_policy_page",
+      "n": 8
+    },
+    {
+      "kind": "state",
+      "category": "security_center_state",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "security_product_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "service_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "service_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "service_inventory_page",
+      "n": 17
+    },
+    {
+      "kind": "state",
+      "category": "service_state_change_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "service_state_change_snapshot",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "socket_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "socket_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "socket_inventory_page",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "startup_approval_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "startup_approval_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "startup_approval_inventory_page",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "startup_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "startup_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "startup_inventory_page",
+      "n": 2
+    },
+    {
+      "kind": "state",
+      "category": "terminal_session_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "terminal_session_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "terminal_session_inventory_page",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "thread_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "thread_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "thread_inventory_page",
+      "n": 28
+    },
+    {
+      "kind": "state",
+      "category": "uninstall_registry_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "uninstall_registry_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "uninstall_registry_inventory_page",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "volume_encryption_state",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "wmi_subscription_inventory",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "wmi_subscription_inventory_begin",
+      "n": 1
+    },
+    {
+      "kind": "state",
+      "category": "wmi_subscription_inventory_page",
+      "n": 1
+    }
+  ],
+  "record_total": 3577,
+  "capture_age_records": 3585,
+  "lifecycle_state": "SUCCEEDED",
+  "http_statuses": [
+    {
+      "path": "/api/v1/agents/enroll",
+      "status": 200,
+      "count": 1
+    },
+    {
+      "path": "/api/v1/agents/enrollment-challenge",
+      "status": 200,
+      "count": 1
+    },
+    {
+      "path": "/api/v1/agents/officer-9f680749-6b7e-44ba-87f4-30baa4cdbca9/command-results",
+      "status": 200,
+      "count": 1
+    },
+    {
+      "path": "/api/v1/agents/officer-9f680749-6b7e-44ba-87f4-30baa4cdbca9/commands/cross-vm-kill-4ba6219b7f50/accept",
+      "status": 200,
+      "count": 1
+    },
+    {
+      "path": "/api/v1/agents/officer-9f680749-6b7e-44ba-87f4-30baa4cdbca9/commands?delivery_mode=durable",
+      "status": 200,
+      "count": 6
+    },
+    {
+      "path": "/api/v2/endpoint/freshness-challenge",
+      "status": 200,
+      "count": 167
+    },
+    {
+      "path": "/api/v2/endpoint/freshness-challenge",
+      "status": 401,
+      "count": 1
+    },
+    {
+      "path": "/api/v2/endpoint/records",
+      "status": 200,
+      "count": 167
+    },
+    {
+      "path": "/api/v2/endpoint/records",
+      "status": 401,
+      "count": 1
+    },
+    {
+      "path": "/readyz",
+      "status": 200,
+      "count": 1
+    }
+  ],
+  "endpoint_final": {
+    "manager_url": "https://10.77.10.10",
+    "run_id": "85c7c1616ce04a1db56dd40a5cb12774",
+    "passed": true,
+    "agent_sha256": "4d99ac53134a4ef58c8c35cc905f0b1f6dc0bce11c2613d9a3634e331e980b20",
+    "tls": {
+      "version": "TLSv1.3",
+      "cipher": "TLS_AES_256_GCM_SHA384",
+      "peer": "10.77.10.10",
+      "local": "10.77.10.31",
+      "server_certificate_sha256": "5ae861c1f26597aa3afa394d110f60c8e935f2fda1212c5742b8f7a2dc271fa6"
+    },
+    "readyz": {
+      "status": "ready",
+      "schema_version": 18
+    },
+    "agent_id": "officer-9f680749-6b7e-44ba-87f4-30baa4cdbca9",
+    "host_id": "9f680749-6b7e-44ba-87f4-30baa4cdbca9",
+    "target_pid": 10220,
+    "marker": "panopticon-cross-vm-1494d21bc911",
+    "probe_file": "C:\\PanoValidation\\wave6-cross-vm\\owned-files\\panopticon-cross-vm-1494d21bc911.txt",
+    "ready": true,
+    "target_exited_before_cleanup": true,
+    "target_exit_code": 1,
+    "agent_exit": 0,
+    "finished": true
+  },
+  "bootstrap_removed": true,
+  "finished_utc": "2026-10-27T16:30:04.353582+00:00"
+}

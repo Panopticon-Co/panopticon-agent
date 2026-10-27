@@ -4,6 +4,13 @@ This scenario uses `PANO-NEW-WIN-01` and the regular Manager service on Linux
 `PANO-NEW-MGR`, at `https://10.77.10.10`. It never starts a Windows-local Manager.
 No detection rule or synthetic telemetry is used as the pass gate.
 
+**2026-10-27 result: Cross-VM E2E Verified.** The native agent enrolled over
+verified TLS from `10.77.10.31`, uploaded real records, and completed the owned
+process kill/result round trip through `10.77.10.10`. Final independent readback
+found 4,059 records and matching capture-age entries. The target exited, the agent
+stopped cleanly, and bootstrap copies were removed. See [VALIDATION.md](VALIDATION.md)
+and `evidence/20261027-cross-vm/` for scope, counts and hashes.
+
 ## Prerequisites
 
 Windows must reach the desktop, with VMware Tools, Sysmon, Python dependencies,

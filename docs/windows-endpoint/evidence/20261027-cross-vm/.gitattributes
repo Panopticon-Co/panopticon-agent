@@ -1,0 +1,2 @@
+# Exported evidence hashes refer to exact bytes on every checkout platform.
+*.json -text
