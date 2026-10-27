@@ -1,5 +1,13 @@
 # Windows endpoint capability matrix
 
+2026-10-27 scoped Wave 6 evidence: current Debug build passes 48/48 CTest;
+Manager passes 283 tests and Response Engine 139. On PANO-NEW-WIN-01, real agent
+enrollment over verified TLS, 3,187 persisted records and an owned-process
+KILL_PROCESS/result-v2 round trip passed against an isolated same-VM Manager.
+See [validation and evidence](VALIDATION.md). AH transport and AM integration have
+this bounded runtime evidence; this does not qualify complete domains or live
+minifilter/API-hook/kernel-network production. Their fixtures remain synthetic.
+
 Living execution ledger for the approved Full Surface Engineering Plan, updated 2026-10-22. **The endpoint is incomplete. No domain is qualified as complete.** The approved plan's mechanism, fallback, cost, reliability, compatibility and testing assessment remains the target. This ledger preserves its full scope.
 
 Runtime states are `healthy`, `degraded`, `unavailable`, `disabled`, `unsupported` and `blind`, each with scope, reason, observation time and failure count. Healthy applies only to a precisely named verified capability. Blind means expected visibility has lost continuity. Unsupported requires an explicit platform/technical justification; missing implementation is unavailable. A running collector never establishes complete domain coverage.

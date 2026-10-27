@@ -180,6 +180,24 @@ int main(int argc, char** argv) {
             {"provisional", true}, {"provisional_reason", "panopticon-fsmon.sys and MinifilterCollector are not implemented; shape fixed by the pipeline, semantics subject to Wave 2"}},
             std::move(minifilter));
 
+        // Transport fixtures only: no hook or kernel-network producer is claimed.
+        auto hooked_file = minifilter_file(Op::open, Phase::attempted, std::nullopt, 1);
+        hooked_file.source = {telemetry::TelemetrySourceKind::api_hook, "Officer-Hook", "hook-v1", 1};
+        write_family(out, "file_api_hook", {{"input", "synthetic_raw_event (api_hook)"},
+            {"producer_chain", "RawFileEvent{source=api_hook} -> normalize_file_event -> EndpointRecordFactory::observation"},
+            {"provisional", true}, {"provisional_reason", "Transport-only fixture; hook producer and API-call payload are not implemented"}},
+            Json::array({observe(factory, hooked_file)}));
+
+        auto kernel_network = network;
+        kernel_network.source = {telemetry::TelemetrySourceKind::etw_kernel, "Microsoft-Windows-Kernel-Network", std::nullopt, 1};
+        kernel_network.process.process_guid.reset();
+        kernel_network.process.pid = etw.pid;
+        kernel_network.process.start_time_ticks = etw.start_time_ticks;
+        write_family(out, "network_etw_kernel", {{"input", "synthetic_raw_event (etw_kernel)"},
+            {"producer_chain", "RawNetworkEvent{source=etw_kernel} -> normalize_network_event -> EndpointRecordFactory::observation"},
+            {"provisional", true}, {"provisional_reason", "Transport-only fixture; kernel network collector is not implemented"}},
+            Json::array({observe(factory, kernel_network)}));
+
         write_family(out, "registry", from_sample("sysmon_registry_set_value.xml",
             "SysmonTelemetryDecoder -> normalize_registry_event -> EndpointRecordFactory::observation"),
             Json::array({observe(factory, decode_sysmon("sysmon_registry_set_value.xml"))}));

@@ -1,5 +1,45 @@
 # Windows endpoint validation ledger
 
+## Wave 6 integration and live VM response — 2026-10-27
+
+Isolated integration branch `codex/wave6-integration`, based on the audited
+`windows-endpoint-completion` d5ce056. Existing dirty telemetry checkout preserved.
+Clean MSVC x64 Debug build with warnings-as-errors: 48/48 CTest passed, including
+the six source kinds across file operations and canonical fixture conformance.
+Contracts fixture validation passed; Response Engine 139 tests passed; Manager
+283 tests passed with OFFICER_BUILD_DIR pointing to this build, no skips.
+
+The source-kind transport adds etw_kernel and synthetic API-hook/kernel-network
+fixtures to the existing minifilter examples. All are produced by the production
+normalizers/factory and explicitly marked provisional, not live source evidence.
+Contracts publish result revision 2 at the conventional schema entry point,
+archive revision 1, and include versioned results. Response Engine's lifecycle
+now matches Manager's terminal INDETERMINATE outcome. ACQUIRE_FILE remains an
+internal agent extension and Manager refuses it.
+
+Live E2E ran on PANO-NEW-WIN-01 using VMware guest access, this Debug binary with
+app-local test runtimes, and this Manager checkout on isolated loopback HTTPS.
+The agent self-enrolled over verified TLS. Manager persisted 3,187 live records;
+an owned ping.exe had an exact boot/native-creation identity. A KILL_PROCESS
+constructed from the Manager-held record reached the agent, completed, and its
+schema-2 SUCCEEDED result with execution facts was accepted and retained. The
+target exited, the agent stopped with exit 0, and the run-owned VM test certificate
+was removed. Host trust and Linux VMs were untouched.
+
+Evidence: [live-manager-e2e.json](evidence/20261027-wave6-vm/live-manager-e2e.json).
+SHA-256: `41254ae1c7c750c16294da5b6e3efbfad442c1783a8ff61750822a3d3c9ab518`.
+Binary SHA-256:
+`4d99ac53134a4ef58c8c35cc905f0b1f6dc0bce11c2613d9a3634e331e980b20`.
+The retained native result independently validates against the current contracts
+schema. Reproduce using `tools/validation/verify_live_manager_e2e.py
+--transport-only --trusted-tls` inside the test VM with its documented trust-change
+opt-in. The transport-only option removes detection rules from the pass gate.
+
+Limits: this is same-VM agent/Manager integration, not VMnet10 connectivity to
+PANO-NEW-MGR. No live minifilter, hook or kernel-network collector, live
+COLLECT_PROCESS_INFO, detection quality, loss-free telemetry or soak qualification
+is established. Waves 2/3 remain required to produce the new sources.
+
 ## Build restoration and Sysmon process context — 2026-10-22
 
 Code candidate: `550113962b73f31426350358e3452c54b9defc98`, based on main

@@ -362,7 +362,7 @@ std::optional<telemetry::PanopticonEvent> deserialize_event(
         };
         if (result.source.kind != "etw" && result.source.kind != "sysmon" &&
             result.source.kind != "windows_event_log" && result.source.kind != "minifilter" &&
-            result.source.kind != "api_hook") {
+            result.source.kind != "api_hook" && result.source.kind != "etw_kernel") {
             throw std::runtime_error("$.source.kind is not a supported telemetry source.");
         }
 

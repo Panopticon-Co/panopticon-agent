@@ -18,6 +18,8 @@ enum class TelemetrySourceKind {
     minifilter,
     // Officer's in-process API instrumentation (officer-hook.dll) via its named pipe.
     api_hook,
+    // Reserved native kernel telemetry transport; collector validation is separate.
+    etw_kernel,
 };
 
 // The single kind-to-name mapping. Every serializer, identity and provenance
@@ -29,6 +31,7 @@ constexpr std::string_view source_kind_name(TelemetrySourceKind kind) noexcept {
         case TelemetrySourceKind::windows_event_log: return "windows_event_log";
         case TelemetrySourceKind::minifilter: return "minifilter";
         case TelemetrySourceKind::api_hook: return "api_hook";
+        case TelemetrySourceKind::etw_kernel: return "etw_kernel";
     }
     return "unknown";
 }

@@ -31,7 +31,7 @@
       "properties": {
         "kind": {
           "type": "string",
-          "enum": ["etw", "sysmon", "windows_event_log", "linux_procfs", "minifilter", "api_hook"]
+          "enum": ["etw", "sysmon", "windows_event_log", "linux_procfs", "minifilter", "api_hook", "etw_kernel"]
         },
         "provider": { "type": "string", "minLength": 1 },
         "channel": { "$ref": "#/$defs/nullableString" },

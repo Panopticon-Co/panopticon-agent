@@ -252,7 +252,7 @@ void test_every_source_kind_and_file_operation_is_contract_valid() {
     constexpr telemetry::TelemetrySourceKind all_kinds[]{
         telemetry::TelemetrySourceKind::etw, telemetry::TelemetrySourceKind::sysmon,
         telemetry::TelemetrySourceKind::windows_event_log, telemetry::TelemetrySourceKind::minifilter,
-        telemetry::TelemetrySourceKind::api_hook};
+        telemetry::TelemetrySourceKind::api_hook, telemetry::TelemetrySourceKind::etw_kernel};
     constexpr telemetry::FileOperation all_operations[]{
         telemetry::FileOperation::create, telemetry::FileOperation::remove, telemetry::FileOperation::rename,
         telemetry::FileOperation::open, telemetry::FileOperation::write, telemetry::FileOperation::set_information,

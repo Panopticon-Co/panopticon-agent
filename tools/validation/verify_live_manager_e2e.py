@@ -101,6 +101,8 @@ def main() -> int:
     parser.add_argument("--manager", type=Path, default=ROOT)
     parser.add_argument("--evidence", type=Path)
     parser.add_argument("--keep", action="store_true", help="keep the scratch directory")
+    parser.add_argument("--transport-only", action="store_true",
+        help="validate enrollment, persistence and command receipts without a detection-rule gate")
     parser.add_argument("--trusted-tls", action="store_true",
         help="test VM only: trust this run's own test CA in LocalMachine Root for the run, let the "
              "agent enroll itself and require the full command round trip")
@@ -204,10 +206,13 @@ def main() -> int:
                 "native_creation_ticks": held["subject"]["native_creation_ticks"],
                 "boot_id": held["endpoint"]["boot_id"]}
 
-            detected = wait_for(lambda: query(db, "SELECT alert_id, rule_id FROM alerts WHERE "
-                "agent_id=? AND rule_id='DET-PROC-008'", (agent_id,)), 120, "DET-PROC-008 alert",
-                interval=2)
-            summary["detection"] = [dict(row) for row in detected][:3]
+            if options.transport_only:
+                summary["detection"] = "not asserted (transport-only run)"
+            else:
+                detected = wait_for(lambda: query(db, "SELECT alert_id, rule_id FROM alerts WHERE "
+                    "agent_id=? AND rule_id='DET-PROC-008'", (agent_id,)), 120, "DET-PROC-008 alert",
+                    interval=2)
+                summary["detection"] = [dict(row) for row in detected][:3]
 
             command_id = "live-kill-" + uuid4().hex[:12]
             command = {"command_id": command_id, "schema_version": "2", "agent_id": agent_id,
@@ -247,7 +252,8 @@ def main() -> int:
         # Ingest/persistence/attribution/detection are this host's gate; the command
         # round trip is reported separately (it needs a trusted Manager certificate).
         summary["passed"] = (summary["marked_process"]["resolution"] in ("native_exact", "source_scoped")
-            and bool(summary["detection"]) and summary["record_total"] > 0)
+            and (options.transport_only or bool(summary["detection"]))
+            and summary["record_total"] > 0)
         if options.trusted_tls:
             summary["passed"] = summary["passed"] and (
                 summary["command"]["lifecycle_state"] == "SUCCEEDED"
