@@ -270,7 +270,8 @@ def main() -> int:
         (private / "bootstrap.token").unlink(missing_ok=True)
         summary["finished_utc"] = datetime.now(timezone.utc).isoformat()
         args.evidence.parent.mkdir(parents=True, exist_ok=True)
-        args.evidence.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+        args.evidence.write_text(json.dumps(summary, indent=2) + "\n",
+                                 encoding="utf-8", newline="\n")
         print(json.dumps({k: summary[k] for k in ("passed", "record_total", "error")
                           if k in summary}))
     return 0 if summary["passed"] else 1
