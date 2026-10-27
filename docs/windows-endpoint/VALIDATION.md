@@ -1,5 +1,34 @@
 # Windows endpoint validation ledger
 
+## Separate-VM deployment preparation — 2026-10-27 (acceptance pending)
+
+The regular `PANO-NEW-MGR` service at `10.77.10.10` now runs Manager
+`9e9df440a3ec3cdf0209721bbfa7533dcad0d57f`, with schema 18 and all three
+preexisting enrollments preserved. Its full historical schema-13 database
+(37,873,029,120 bytes; 880,723 endpoint records) remains unchanged at
+`/var/lib/panopticon-manager/panopticon.db`. The active database is on a new
+8-GiB disk at `/srv/panopticon-data/manager/panopticon.db`. Historical telemetry
+was not copied into active counts. See [deployment/run instructions](CROSS_VM_E2E.md).
+
+[Deployment evidence](evidence/20261027-cross-vm/manager-deployment.json) records
+matching old/new enrollment fingerprints, the remote service/revision and disk
+state. At that capture the active database contained 39,880 records from an
+existing Officer deployment. This is not evidence from the requested Windows VM.
+
+Final local checks: native 48/48 CTest passed; Manager 285 tests passed with the
+native artifacts and no skips; full Manager and Response Engine Ruff checks
+passed. New cross-VM tools pass Ruff and syntax checks. Contracts fixtures and
+three execution-scanner regression tests pass. Integration PRs are drafts.
+
+**Cross-VM E2E is not yet verified.** After restoring its four commented VMware
+encryption entries, `PANO-NEW-WIN-01` reaches BitLocker recovery, which reports
+an unexpected Secure Boot policy change. It requires the operator's recovery-key
+entry before Windows and VMware Tools can start. No recovery key is stored in
+repository files or evidence. Windows VMnet10/TLS/enrollment, live process/file/
+system ingestion and the exact-identity kill/result scenario against the Linux
+Manager still require a successful run of `verify_cross_vm_manager_e2e.py`.
+No new-source driver or hook runtime qualification is claimed.
+
 ## Wave 6 integration and live VM response — 2026-10-27
 
 Isolated integration branch `codex/wave6-integration`, based on the audited

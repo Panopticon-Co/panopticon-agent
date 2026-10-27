@@ -1,5 +1,11 @@
 # Windows endpoint capability matrix
 
+Separate-VM deployment checkpoint, 2026-10-27: PANO-NEW-MGR is deployed with
+schema 18 and preserved enrollment state; existing Officer uploads are accepted.
+The requested Windows-VM acceptance run remains **pending BitLocker recovery**.
+Do not label it Cross-VM E2E Verified until the named live run succeeds; see
+[the deployment evidence and gate](VALIDATION.md).
+
 2026-10-27 scoped Wave 6 evidence: current Debug build passes 48/48 CTest;
 Manager passes 283 tests and Response Engine 139. On PANO-NEW-WIN-01, real agent
 enrollment over verified TLS, 3,187 persisted records and an owned-process

@@ -1,0 +1,36 @@
+{
+  "manager_hostname": "pano-new-mgr",
+  "manager_address": "10.77.10.10",
+  "deployment_revision": "9e9df440a3ec3cdf0209721bbfa7533dcad0d57f",
+  "manager_service": "active",
+  "active_database": "/srv/panopticon-data/manager/panopticon.db",
+  "historical_database": "/var/lib/panopticon-manager/panopticon.db",
+  "active": {
+    "schema_version": 18,
+    "enrolled_agents": 3,
+    "enrollment_fingerprint": "0bae73660baac2b9cb8804f0cb5c7d86f6c5130e819259ccb730c65a8df7efac",
+    "database_bytes": 1229668352,
+    "endpoint_records": 39880,
+    "records_by_agent": [
+      [
+        "officer-45422ea7-2c7a-4509-9b94-986256d23535",
+        39880
+      ]
+    ]
+  },
+  "historical": {
+    "schema_version": 13,
+    "enrolled_agents": 3,
+    "enrollment_fingerprint": "0bae73660baac2b9cb8804f0cb5c7d86f6c5130e819259ccb730c65a8df7efac",
+    "database_bytes": 37873029120,
+    "endpoint_records": 880723
+  },
+  "root_free_bytes": 187875328,
+  "data_free_bytes": 6958260224,
+  "enrollments_preserved": true,
+  "captured_utc": "2026-10-27T16:04:22.517931+00:00",
+  "cross_vm_e2e_verified": false,
+  "blocking_condition": "PANO-NEW-WIN-01 requires operator BitLocker recovery unlock",
+  "existing_uploads_scope": "Existing Officer deployment; not PANO-NEW-WIN-01 cross-VM acceptance",
+  "local_agent_binary_sha256": "4d99ac53134a4ef58c8c35cc905f0b1f6dc0bce11c2613d9a3634e331e980b20"
+}
