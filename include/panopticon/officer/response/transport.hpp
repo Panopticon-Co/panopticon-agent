@@ -47,7 +47,8 @@ public:
                                                           std::string& error_message) const;
     [[nodiscard]] std::optional<std::string> poll_commands(const std::string& manager_url,
                                                              const EnrolledIdentity& identity,
-                                                             std::string& error_message) const;
+                                                             std::string& error_message,
+                                                             const std::string& response_profile = "") const;
     // Best-effort DISPATCHED -> ACCEPTED acknowledgement; the outcome is
     // intentionally not distinguished beyond acknowledged/not, mirroring
     // the Linux agent's "ignore and proceed to execute regardless" contract.

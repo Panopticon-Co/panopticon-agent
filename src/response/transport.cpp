@@ -158,14 +158,20 @@ std::optional<EnrolledIdentity> ResponseTransportClient::enroll(const std::strin
 
 std::optional<std::string> ResponseTransportClient::poll_commands(const std::string& manager_url,
                                                                     const EnrolledIdentity& identity,
-                                                                    std::string& error_message) const {
+                                                                    std::string& error_message,
+                                                                    const std::string& response_profile) const {
     if (!looks_like_https(manager_url) || !is_valid_identifier(identity.agent_id) || identity.bearer_token.empty() ||
         identity.bearer_token.size() > 512U) {
         error_message = "command polling input is invalid";
         return std::nullopt;
     }
     const delivery::HttpClient client{/*verify_tls=*/true, timeout_ms_};
-    const std::vector<delivery::HttpHeader> headers = {{"Authorization", "Bearer " + identity.bearer_token}};
+    std::vector<delivery::HttpHeader> headers = {{"Authorization", "Bearer " + identity.bearer_token}};
+    if (!response_profile.empty()) {
+        const auto encoded = base64_encode(reinterpret_cast<const std::uint8_t*>(response_profile.data()), response_profile.size());
+        if (encoded.size() > 4096U) { error_message = "response profile exceeds header bound"; return std::nullopt; }
+        headers.push_back({"X-Panopticon-Response-Profile", encoded});
+    }
     const auto endpoint =
         without_trailing_slash(manager_url) + "/api/v1/agents/" + identity.agent_id + "/commands?delivery_mode=durable";
     std::string transport_error;

@@ -150,3 +150,19 @@ below actually ran and passed) but:
 No CI changes were needed: `.github/workflows/ci.yml` already runs a full `cmake --build` +
 `ctest --test-dir build-officer-x64` on Windows for every push/PR, and both automatically pick up
 the new `officer-response` target and `officer-response-tests` executable without modification.
+
+
+## Current runtime policy reporting
+
+Officer sends a bounded Base64 JSON `X-Panopticon-Response-Profile` on each
+successful command-poll attempt. The profile is generated from loaded response
+configuration and a current native boot query. It reports implemented actions
+separately from configuration-enabled actions, explicit unknown boot identity,
+and current mode. File collection/quarantine and host isolation require their
+configured roots or Manager exception before being advertised as allowed.
+
+The report does not claim Windows command-signature verification or mandatory
+boot binding for legacy commands. Native target verification and existing
+execution gates continue to run on every command. Manager binds reports to the
+authenticated host, expires freshness and may withhold disallowed queued work.
+Telemetry-only mode does not start a new response connection.

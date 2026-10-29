@@ -1,3 +1,4 @@
+#include "panopticon/officer/response/profile.hpp"
 #include "panopticon/officer/collectors/etw_process_collector.hpp"
 #include "panopticon/officer/collectors/sysmon_event_collector.hpp"
 #include "panopticon/officer/collectors/windows_event_log.hpp"
@@ -756,7 +757,10 @@ void run_response_cycle(ResponseRuntime& runtime) {
         return;
     }
     std::string poll_error;
-    const auto poll = runtime.client.poll_commands(runtime.manager_url, runtime.identity, poll_error);
+    std::string boot_error;
+    const auto profile_boot = panopticon::officer::core::query_native_boot_id(boot_error);
+    const auto profile = response::response_profile_json(runtime.config, runtime.identity.host_id, profile_boot);
+    const auto poll = runtime.client.poll_commands(runtime.manager_url, runtime.identity, poll_error, profile);
     if (!poll) {
         ++runtime.poll_failures;
         runtime.last_poll_failure_uptime.store(GetTickCount64());
