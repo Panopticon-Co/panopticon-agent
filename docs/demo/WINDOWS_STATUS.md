@@ -68,9 +68,25 @@ Base: `origin/main` @ `7de7a97` (agent). Fallback agent binary: v0.3.0 @ `333905
 - `tools/demo/demo-triggers.ps1` — drafted. The §6 trigger harness (benign control + 5 rule-mapped steps), ISO-8601 UTC timestamps for time-to-alert.
 - `tools/demo/demo-up.ps1` — scaffold. One-command bring-up (ssh `demo_up.sh` → token to guest → fresh-enroll agent → `demo_check.sh` green → open console). Output parsing (step 2) and exact agent flags (step 4) are marked `TODO(mac-contract)` pending `demo_up.sh` on `demo/live-integration`.
 
+## W4 — deploy manager + console  ✅ done
+
+- Deployed `demo/live-integration`: manager @ `398442d` (submodules pinned: eyedetect `9697e6b` = engine, response_engine `83b8a46`), console @ `86b01c9`. VM-local manager patches stashed (`git stash` on the VM, recoverable).
+- Stopped `panopticon-manager.service` + `panopticon-console.service` (freed 8000/8787).
+- `tools/demo_up.sh --fresh --bind 127.0.0.1:8000 --state-dir /home/pano/demo-state --python /home/pano/manager-venv/bin/python` → **green, exit 0** in ~seconds: Manager schema 31, **74 rules, detection worker alive**, fresh 1 MB DB on root fs (37.7 GB free), console up, 0 agents/records/alerts.
+- nginx still fronts `:443` → `127.0.0.1:8000`; `https://10.77.10.10/readyz` returns the fresh manager (`schema_version 31`).
+
+### Notes for Mac
+- `demo_up.sh` prints the agent `--manager-url` as `https://127.0.0.1:8000` (loopback). The real guest agent must use `https://10.77.10.10` (nginx→8000). Minor; just flagging.
+- Console bound **loopback-only** (`127.0.0.1:8787`), not `0.0.0.0` — browser on the Windows host can't reach it directly over VMnet10. Will use an SSH `-L` forward (or a `--console-bind` flag if supported) for the on-stage view.
+
+## W5 — fresh enrollment  🔄 in progress (build fix)
+
+- Staged agent + `tinyxml2.dll` + 43-byte bootstrap token into guest `C:\pano\`; fresh spool, no identity.
+- **Finding (build):** the first agent build (no `CMAKE_BUILD_TYPE`) linked the **Debug CRT** (`MSVCP140D.dll`, `VCRUNTIME140D.dll`, `ucrtbased.dll`) → `0xC0000135` on the guest (debug CRT is not redistributable). **Fix: build with `-DCMAKE_BUILD_TYPE=Release`.** Rebuilding now; release CRT deps confirmed present on the guest. (Runbook note for Mac: the agent must be a Release build.)
+
 ## Waiting on Mac
 
-- No `demo/live-integration` branch or `MAC_STATUS.md` on origin yet. W4+ (deploy "ready `<sha>`") is correctly blocked until the Mac session publishes it.
+- Nothing blocking right now — `demo/live-integration` is deployed and green. Next: finish the Release agent build, enroll, run triggers, report timings + captures (W7). Will confirm the ETW/Sysmon duplicate-alert question in rehearsal.
 
 ---
 
