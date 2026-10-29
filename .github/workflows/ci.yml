@@ -22,7 +22,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Panopticon-Co/panopticon-contracts
-          ref: 5bcfb59f2c3ae3357c3165d4c4c4bc35cec3fba2
+          ref: "dda543765dd4bee3bb32ed0a2bae04508a54ba76"
           path: panopticon-contracts-checkout
 
       - name: Move panopticon-contracts to sibling path
@@ -35,7 +35,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install canonical fixture validator dependency
-        run: python -m pip install jsonschema
+        run: python -m pip install jsonschema cryptography
         shell: pwsh
 
       - name: Check out vcpkg
@@ -67,5 +67,15 @@ jobs:
         shell: pwsh
 
       - name: Test
+        run: |
+          ./build-officer-x64/officer-response-tests.exe --emit-artifact-fixture > artifact-fixture.json
+          python ../panopticon-contracts/scripts/validate_artifact_producer.py artifact-fixture.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./build-officer-x64/officer-response-tests.exe --emit-signed-artifact-fixture > signed-artifact-fixture.json
+          python ../panopticon-contracts/scripts/validate_signed_artifact_producer.py signed-artifact-fixture.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        shell: pwsh
+
+      - name: Test native suites
         run: ctest --test-dir build-officer-x64 --output-on-failure --timeout 120
         shell: pwsh

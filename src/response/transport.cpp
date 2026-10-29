@@ -1,3 +1,5 @@
+#include "panopticon/officer/response/artifact_outbox.hpp"
+#include "panopticon/officer/core/entity_id.hpp"
 #include "panopticon/officer/response/transport.hpp"
 #include "panopticon/officer/delivery/http_client.hpp"
 
@@ -8,6 +10,7 @@
 
 #include <nlohmann/json.hpp>
 #include <set>
+#include <algorithm>
 
 #pragma comment(lib, "crypt32.lib")
 
@@ -230,6 +233,188 @@ TransportOutcome ResponseTransportClient::submit_command_result(const std::strin
     if (response->status_code == 401 || response->status_code == 403) return TransportOutcome::authentication_failed;
     if (response->status_code != 200) return TransportOutcome::rejected;
     return valid_result_ack(payload, response->body) ? TransportOutcome::acknowledged : TransportOutcome::retryable;
+}
+
+std::string make_artifact_payload(const std::string& command_id, const std::string& correlation_id,
+                                 const std::string& host_id, const std::string& kind,
+                                 const std::string& content) {
+    if (content.empty() || content.size() > 1024U * 1024U)
+        throw std::invalid_argument("structured artifact exceeds content bound");
+    const auto document = json::parse(content);
+    if (!document.is_object() && !document.is_array())
+        throw std::invalid_argument("structured artifact requires JSON object/array");
+    std::string error;
+    const auto digest = core::sha256_hex(content, error);
+    if (!digest) throw std::runtime_error("artifact SHA-256 failed: " + error);
+    std::string material = "response-artifact-v1\n";
+    for (const auto& field : {command_id, correlation_id, kind, *digest})
+        material += std::to_string(field.size()) + ":" + field;
+    const auto identity = core::sha256_hex(material, error);
+    if (!identity) throw std::runtime_error("artifact identity hash failed: " + error);
+    return json{{"schema_version", "1"}, {"artifact_id", "art_" + *identity},
+        {"command_id", command_id}, {"correlation_id", correlation_id}, {"host_id", host_id},
+        {"kind", kind}, {"media_type", "application/json"}, {"content_bytes", content.size()},
+        {"sha256", *digest}, {"content_base64", base64_encode(
+            reinterpret_cast<const std::uint8_t*>(content.data()), content.size())}}.dump();
+}
+
+std::string artifact_manifest_signing_input(const std::string& manifest_json) {
+    const auto manifest = json::parse(manifest_json);
+    if (manifest.size() != 12 || manifest.at("schema_version") != "2" ||
+        manifest.at("authorization").size() != 3 || manifest.at("authorization").at("algorithm") != "ES256")
+        throw std::invalid_argument("invalid closed signed artifact manifest");
+    std::string input = "panopticon-response-artifact-auth/2\n";
+    for (const auto* name : {"schema_version", "artifact_id", "agent_id", "host_id", "command_id",
+            "correlation_id", "kind", "media_type", "content_bytes", "sha256", "produced_at_unix",
+            "algorithm", "key_id"}) {
+        const auto& field = (std::string_view{name} == "algorithm" || std::string_view{name} == "key_id")
+            ? manifest.at("authorization").at(name) : manifest.at(name);
+        const bool numeric = std::string_view{name} == "content_bytes" || std::string_view{name} == "produced_at_unix";
+        if (numeric && !field.is_number_unsigned()) throw std::invalid_argument("invalid artifact integer");
+        const auto value = numeric ? std::to_string(field.get<std::uint64_t>()) : field.get<std::string>();
+        input += std::string{name} + ":" + std::to_string(value.size()) + ":" + value + "\n";
+    }
+    return input;
+}
+
+std::string sign_artifact_payload(const std::string& payload, const std::string& agent_id,
+    const EcKeyPair& keypair, const std::uint64_t produced_at_unix) {
+    auto manifest = json::parse(payload);
+    const auto content = manifest.at("content_base64");
+    manifest.erase("content_base64");
+    manifest["schema_version"] = "2";
+    manifest["agent_id"] = agent_id;
+    manifest["produced_at_unix"] = produced_at_unix;
+    std::string error;
+    const auto key_digest = core::sha256_hex(std::string{
+        reinterpret_cast<const char*>(keypair.public_point.data()), keypair.public_point.size()}, error);
+    if (!key_digest) throw std::runtime_error("artifact key identity failed: " + error);
+    manifest["authorization"] = json{{"algorithm", "ES256"}, {"key_id", key_digest->substr(0,16)},
+        {"signature", base64_encode(std::vector<std::uint8_t>(64).data(), 64)}};
+    const auto input = artifact_manifest_signing_input(manifest.dump());
+    const auto signed_bytes = sign_raw(keypair, std::vector<std::uint8_t>(input.begin(), input.end()), error);
+    if (!signed_bytes) throw std::runtime_error("artifact signature failed: " + error);
+    manifest["authorization"]["signature"] = base64_encode(signed_bytes->data(), signed_bytes->size());
+    return json{{"manifest", manifest}, {"content_base64", content}}.dump();
+}
+
+bool valid_artifact_ack(const std::string& payload, const std::string& receipt) {
+    if (receipt.size() > 4096U) return false;
+    try {
+        const auto sent = json::parse(payload);
+        const auto& manifest = sent.contains("manifest") ? sent.at("manifest") : sent;
+        std::set<std::string> keys;
+        bool ambiguous = false;
+        const auto ack = json::parse(receipt, [&](int depth, json::parse_event_t event, json& value) {
+            if (depth > 1) ambiguous = true;
+            if (event == json::parse_event_t::key && !keys.insert(value.get<std::string>()).second) ambiguous = true;
+            return true;
+        });
+        return !ambiguous && ack.is_object() && ack.size() == 3 && ack.contains("retained") &&
+            ack["retained"].is_boolean() && ack["retained"] == true &&
+            ack.contains("artifact_id") && ack["artifact_id"].is_string() &&
+            ack["artifact_id"] == manifest.at("artifact_id") && ack.contains("sha256") &&
+            ack["sha256"].is_string() && ack["sha256"] == manifest.at("sha256");
+    } catch (const json::exception&) { return false; }
+}
+
+std::optional<std::string> resume_artifact_upload(const std::string& payload,
+    const ArtifactExchange& exchange, bool* made_progress) {
+    if (made_progress) *made_progress = false;
+    if (payload.size() > 1500U * 1024U) return std::nullopt;
+    try {
+        const auto envelope = json::parse(payload);
+        if (!envelope.is_object() || envelope.size() != 2) return std::nullopt;
+        const auto manifest = envelope.at("manifest");
+        (void)artifact_manifest_signing_input(manifest.dump());
+        const auto id = manifest.at("artifact_id").get<std::string>();
+        const auto sha = manifest.at("sha256").get<std::string>();
+        const auto hexadecimal = [](const std::string& value) {
+            return value.size() == 64 && std::all_of(value.begin(), value.end(), [](char c) {
+                return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'); });
+        };
+        if (!id.starts_with("art_") || !hexadecimal(id.substr(4)) || !hexadecimal(sha)) return std::nullopt;
+        const auto encoded = envelope.at("content_base64").get<std::string>();
+        const auto decoded = base64_decode(encoded);
+        if (!decoded || decoded->empty() || decoded->size() > 1024U * 1024U ||
+            decoded->size() != manifest.at("content_bytes").get<std::uint64_t>() ||
+            base64_encode(decoded->data(), decoded->size()) != encoded) return std::nullopt;
+        const std::string content(reinterpret_cast<const char*>(decoded->data()), decoded->size());
+        std::string error;
+        const auto actual_sha = core::sha256_hex(content, error);
+        if (!actual_sha || *actual_sha != sha) return std::nullopt;
+        std::string manifest_sha;
+        const auto read_progress = [&](const std::string& body) -> std::optional<std::size_t> {
+            if (body.size() > 4096U) return std::nullopt;
+            std::set<std::string> keys; bool ambiguous = false;
+            const auto value = json::parse(body, [&](int depth, json::parse_event_t event, json& item) {
+                if (depth > 1) ambiguous = true;
+                if (event == json::parse_event_t::key && !keys.insert(item.get<std::string>()).second)
+                    ambiguous = true;
+                return true;
+            });
+            if (ambiguous || !value.is_object() || value.size() != 8 || value.at("schema_version") != "1" ||
+                value.at("artifact_id") != id || value.at("sha256") != sha ||
+                !value.at("manifest_sha256").is_string() || !value.at("received_bytes").is_number_unsigned() ||
+                !value.at("chunk_bytes").is_number_unsigned() || value.at("chunk_bytes") != 65536U ||
+                !value.at("complete").is_boolean()) return std::nullopt;
+            const auto digest = value.at("manifest_sha256").get<std::string>();
+            if (!hexadecimal(digest) || (!manifest_sha.empty() && digest != manifest_sha)) return std::nullopt;
+            const auto received = value.at("received_bytes").get<std::uint64_t>();
+            const bool complete = value.at("complete").get<bool>();
+            if (received > content.size() || (received != content.size() && received % 65536U != 0) ||
+                (complete && (received != content.size() || !value.at("expires_at").is_null())) ||
+                (!complete && (!value.at("expires_at").is_string() || value.at("expires_at").get<std::string>().empty())))
+                return std::nullopt;
+            manifest_sha = digest;
+            return static_cast<std::size_t>(received);
+        };
+        const auto admitted = exchange("POST", "", "application/json",
+            json{{"schema_version", "1"}, {"manifest", manifest}}.dump(), "");
+        if (!admitted) return std::nullopt;
+        auto received = read_progress(*admitted);
+        if (!received) return std::nullopt;
+        for (unsigned step = 0; step < 4 && *received < content.size(); ++step) {
+            const auto part = content.substr(*received, 65536U);
+            const auto digest = core::sha256_hex(part, error);
+            if (!digest) return std::nullopt;
+            const auto reply = exchange("PUT", "/" + id + "/chunks/" + std::to_string(*received),
+                "application/octet-stream", part, *digest);
+            if (!reply) return std::nullopt;
+            const auto next = read_progress(*reply);
+            if (!next || *next != *received + part.size()) return std::nullopt;
+            received = next;
+            if (made_progress) *made_progress = true;
+        }
+        if (*received != content.size()) return std::nullopt;
+        const auto receipt = exchange("POST", "/" + id + "/complete", "application/json",
+            json{{"schema_version", "1"}, {"manifest_sha256", manifest_sha}}.dump(), "");
+        return receipt && valid_artifact_ack(payload, *receipt) ? receipt : std::nullopt;
+    } catch (const std::exception&) { return std::nullopt; }
+}
+
+std::optional<std::string> ResponseTransportClient::submit_artifact(const std::string& manager_url,
+    const EnrolledIdentity& identity, const std::string& payload, bool* made_progress) const {
+    if (!looks_like_https(manager_url) || !is_valid_identifier(identity.agent_id) ||
+        identity.bearer_token.empty() || payload.size() > 1500U * 1024U) return std::nullopt;
+    try {
+        const auto value = json::parse(payload);
+        const auto command_id = value.at("manifest").at("command_id").get<std::string>();
+        if (!is_valid_identifier(command_id)) return std::nullopt;
+        const delivery::HttpClient client{/*verify_tls=*/true, std::min(timeout_ms_, 5000u)};
+        const auto base = without_trailing_slash(manager_url) + "/api/v1/agents/" +
+            identity.agent_id + "/commands/" + command_id + "/artifact-transfers";
+        return resume_artifact_upload(payload, [&](const std::string& method, const std::string& suffix,
+                const std::string& type, const std::string& body, const std::string& digest) -> std::optional<std::string> {
+            std::vector<delivery::HttpHeader> headers = {{"Content-Type", type},
+                {"Authorization", "Bearer " + identity.bearer_token}};
+            if (!digest.empty()) headers.push_back({"X-Panopticon-Chunk-SHA256", digest});
+            std::string error;
+            const auto reply = client.request(method, base + suffix, headers, body, error);
+            if (!reply || reply->status_code != 200 || reply->body.size() > 4096U) return std::nullopt;
+            return reply->body;
+        }, made_progress);
+    } catch (const json::exception&) { return std::nullopt; }
 }
 
 bool valid_result_ack(const std::string& payload, const std::string& receipt) {
