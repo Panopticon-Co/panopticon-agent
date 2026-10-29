@@ -47,6 +47,10 @@ std::string valid_command_json(const std::string& command_id, const std::string&
 void test_current_response_profile() {
     response::ResponseConfig config;
     auto profile = nlohmann::json::parse(response::response_profile_json(config, "host-1", std::nullopt));
+    expect(profile["schema_version"] == "2", "artifact capability uses versioned profile");
+    expect(profile["artifact_protocol"] == "signed-json-v2-resume-v1", "signed durable artifact delivery is explicit");
+    expect(response::response_profile_json(config, "host-1", std::nullopt) ==
+        response::response_profile_json(config, "host-1", std::nullopt), "unchanged reports are repeatable");
     expect(profile["mode"] == "off" && profile["allowed_actions"].empty(), "disabled policy reports no allowed actions");
     expect(profile["boot_id"].is_null(), "unavailable boot is explicit");
     config.enabled = true;
@@ -62,6 +66,7 @@ void test_current_response_profile() {
     config.manager_exception_port = 443;
     profile = nlohmann::json::parse(response::response_profile_json(config, "host-1", std::nullopt));
     expect(profile["allowed_actions"].size() == 7U, "configured native policy reports all seven actions");
+    expect(profile["artifact_protocol"] == "signed-json-v2-resume-v1", "capability reporting is stable across policy modes");
 }
 
 void test_artifact_outbox_and_exact_receipts() {
@@ -590,6 +595,13 @@ void test_file_evidence_collects_hash_for_allowed_file() {
 }  // namespace
 
 int main(int argc, char** argv) {
+    if (argc == 2 && std::string_view{argv[1]} == "--emit-response-profile-fixture") {
+        response::ResponseConfig config;
+        config.enabled = true;
+        config.file_collection_root = "C:/PanopticonLab";
+        std::cout << response::response_profile_json(config, "host-1", "boot_" + std::string(64, 'a')) << '\n';
+        return 0;
+    }
     if (argc == 2 && std::string_view{argv[1]} == "--emit-signed-artifact-fixture") {
         std::string error;
         const auto key = response::generate_ec_p256_keypair(error);
