@@ -53,6 +53,7 @@ void test_current_response_profile() {
     expect(profile["implemented_actions"].size() == 7U, "closed native implementation vocabulary");
     expect(profile["allowed_actions"].size() == 4U, "unconfigured file and isolation actions are excluded");
     expect(profile["require_signature"] == false, "Windows does not claim signature verification");
+    expect(profile["require_boot_binding"] == true, "Windows process actions require native boot binding");
     config.file_collection_root = "C:/lab";
     config.quarantine_root = "C:/quarantine";
     config.manager_exception_host = "127.0.0.1";

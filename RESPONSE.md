@@ -161,8 +161,9 @@ separately from configuration-enabled actions, explicit unknown boot identity,
 and current mode. File collection/quarantine and host isolation require their
 configured roots or Manager exception before being advertised as allowed.
 
-The report does not claim Windows command-signature verification or mandatory
-boot binding for legacy commands. Native target verification and existing
+The report requires boot binding for process actions, matching the native
+re-observation and termination checks. It does not claim Windows command-signature
+verification. Native target verification and existing
 execution gates continue to run on every command. Manager binds reports to the
 authenticated host, expires freshness and may withhold disallowed queued work.
 Telemetry-only mode does not start a new response connection.

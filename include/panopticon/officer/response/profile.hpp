@@ -27,7 +27,7 @@ inline std::string response_profile_json(const ResponseConfig& config, const std
                 {"boot_id", boot_id ? json(*boot_id) : json(nullptr)},
                 {"mode", config.enabled ? "enforce" : "off"},
                 {"implemented_actions", implemented}, {"allowed_actions", allowed},
-                {"require_boot_binding", false}, {"require_signature", false}}.dump();
+                {"require_boot_binding", true}, {"require_signature", false}}.dump();
 }
 
 }  // namespace panopticon::officer::response
