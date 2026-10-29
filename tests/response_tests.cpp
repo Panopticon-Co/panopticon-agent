@@ -1,3 +1,5 @@
+#include "panopticon/officer/response/artifact_outbox.hpp"
+#include <chrono>
 #include "panopticon/officer/response/profile.hpp"
 #include "panopticon/officer/response/command.hpp"
 #include "panopticon/officer/response/file_evidence.hpp"
@@ -60,6 +62,83 @@ void test_current_response_profile() {
     config.manager_exception_port = 443;
     profile = nlohmann::json::parse(response::response_profile_json(config, "host-1", std::nullopt));
     expect(profile["allowed_actions"].size() == 7U, "configured native policy reports all seven actions");
+}
+
+void test_artifact_outbox_and_exact_receipts() {
+    const std::string data = "{ \"pid\": 42 }\n";
+    const auto payload = response::make_artifact_payload("command-1", "correlation-1", "host-1", "process_snapshot", data);
+    const auto value = nlohmann::json::parse(payload);
+    expect(value["content_bytes"] == data.size() && value["media_type"] == "application/json", "artifact preserves exact content byte count");
+    expect(response::make_artifact_payload("command-1", "correlation-1", "host-1", "process_snapshot", data) == payload,
+        "artifact identity and bytes stay stable on retry");
+    const auto ack = nlohmann::json{{"artifact_id", value["artifact_id"]}, {"sha256", value["sha256"]}, {"retained", true}}.dump();
+    expect(response::valid_artifact_ack(payload, ack), "exact identity/digest receipt accepted");
+    expect(!response::valid_artifact_ack(payload, "{}"), "HTTP200 alone does not retire artifacts");
+    auto wrong = nlohmann::json::parse(ack); wrong["sha256"] = std::string(64, '0');
+    expect(!response::valid_artifact_ack(payload, wrong.dump()), "wrong digest rejected");
+    wrong = nlohmann::json::parse(ack); wrong["artifact_id"] = "another";
+    expect(!response::valid_artifact_ack(payload, wrong.dump()), "wrong artifact rejected");
+    wrong = nlohmann::json::parse(ack); wrong["retained"] = 1;
+    expect(!response::valid_artifact_ack(payload, wrong.dump()), "boolean receipt stays strict");
+    expect(!response::valid_artifact_ack(payload, ack.substr(0, ack.size() - 1) + ",\"retained\":true}"), "duplicate receipt keys rejected");
+    const auto temp = std::filesystem::temp_directory_path();
+    const auto path = temp / ("officer-artifacts-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    expect(std::filesystem::create_directory(path), "unique owned artifact fixture");
+    {
+        response::ArtifactOutbox outbox{path, "agent-1", "host-1"};
+        outbox.save(payload);
+        const auto retired = outbox.flush([](const std::string&) -> std::optional<std::string> { return "{}"; });
+        expect(!retired && outbox.pending() == 1, "wrong acknowledgement retains encrypted evidence");
+    }
+    {
+        response::ArtifactOutbox wrong_scope{path, "other-agent", "host-1"};
+        bool refused = false;
+        try { (void)wrong_scope.flush([&](const std::string&) -> std::optional<std::string> { return ack; }); }
+        catch (const std::exception&) { refused = true; }
+        expect(refused && wrong_scope.pending() == 1, "identity change cannot deliver original evidence");
+    }
+    {
+        response::ArtifactOutbox reopened{path, "agent-1", "host-1"};
+        expect(reopened.pending() == 1, "artifact survives restart");
+        const auto retired = reopened.flush([&](const std::string& replay) -> std::optional<std::string> {
+            expect(replay == payload, "restart uploads identical artifact envelope"); return ack;
+        });
+        expect(retired == 1 && reopened.pending() == 0, "exact retained receipt retires one artifact");
+    }
+    const bool owned = std::filesystem::equivalent(path.parent_path(), temp) && path.filename().string().starts_with("officer-artifacts-");
+    expect(owned, "artifact cleanup stays in owned temporary directory");
+    if (owned) std::filesystem::remove_all(path);
+}
+
+void test_signed_artifact_manifest() {
+    std::string error;
+    const auto key = response::generate_ec_p256_keypair(error);
+    expect(key.has_value(), "artifact signing uses endpoint P-256 key");
+    if (!key) return;
+    const auto unsigned_payload = response::make_artifact_payload("command-1", "correlation-1", "host-1",
+        "process_snapshot", "{\"pid\":42}");
+    const auto payload = response::sign_artifact_payload(unsigned_payload, "agent-1", *key, 1793232000U);
+    const auto value = nlohmann::json::parse(payload);
+    const auto manifest = value.at("manifest");
+    expect(manifest.at("schema_version") == "2" && manifest.at("agent_id") == "agent-1", "signed identity version");
+    expect(manifest.at("authorization").at("signature").get<std::string>().size() == 88, "raw P-256 signature encoding");
+    const auto input = response::artifact_manifest_signing_input(manifest.dump());
+    expect(input.starts_with("panopticon-response-artifact-auth/2\n"), "artifact domain separated from commands");
+    auto changed = manifest;
+    changed["host_id"] = "another-host";
+    expect(response::artifact_manifest_signing_input(changed.dump()) != input, "endpoint binding is signed");
+    const auto ack = nlohmann::json{{"artifact_id", manifest.at("artifact_id")},
+        {"sha256", manifest.at("sha256")}, {"retained", true}}.dump();
+    expect(response::valid_artifact_ack(payload, ack), "signed envelope exact receipt");
+    const auto temp = std::filesystem::temp_directory_path();
+    const auto path = temp / ("officer-signed-artifacts-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    { response::ArtifactOutbox box{path, "agent-1", "host-1"}; box.save(payload); }
+    { response::ArtifactOutbox box{path, "agent-1", "host-1"};
+      expect(box.flush([&](const std::string& retry) -> std::optional<std::string> {
+          expect(retry == payload, "restart retains exact signature/time/content without re-signing"); return ack;
+      }) == 1, "signed evidence retired only after exact receipt"); }
+    if (std::filesystem::equivalent(path.parent_path(), temp) && path.filename().string().starts_with("officer-signed-artifacts-"))
+        std::filesystem::remove_all(path);
 }
 
 void test_parse_kill_process_command_round_trip() {
@@ -440,6 +519,25 @@ void test_file_evidence_collects_hash_for_allowed_file() {
 }  // namespace
 
 int main(int argc, char** argv) {
+    if (argc == 2 && std::string_view{argv[1]} == "--emit-signed-artifact-fixture") {
+        std::string error;
+        const auto key = response::generate_ec_p256_keypair(error);
+        if (!key) return 2;
+        const auto payload = response::make_artifact_payload("fixture-command", "fixture-correlation", "host-1", "process_snapshot",
+            "{\"pid\":42,\"start_time_ticks\":\"18446744073709551615\"}\n");
+        auto value = nlohmann::json::parse(response::sign_artifact_payload(payload, "agent-1", *key, 1793232000U));
+        static constexpr char digits[] = "0123456789abcdef";
+        std::string point;
+        for (const auto byte : key->public_point) { point += digits[byte >> 4]; point += digits[byte & 15]; }
+        value["test_public_point_hex"] = point;
+        std::cout << value.dump() << '\n';
+        return 0;
+    }
+    if (argc == 2 && std::string_view{argv[1]} == "--emit-artifact-fixture") {
+        std::cout << response::make_artifact_payload("fixture-command", "fixture-correlation", "host-1", "process_snapshot",
+            "{\"pid\":42,\"start_time_ticks\":\"18446744073709551615\"}\n") << '\n';
+        return 0;
+    }
     if (argc == 2 && std::string_view{argv[1]} == "--decode-command-stdin") {
         std::array<char, 8193> buffer{};
         std::cin.read(buffer.data(), buffer.size());
@@ -451,6 +549,8 @@ int main(int argc, char** argv) {
             {"boot_id", command->process_target.boot_id.value_or("")}}.dump() << '\n';
         return 0;
     }
+    test_artifact_outbox_and_exact_receipts();
+    test_signed_artifact_manifest();
     test_current_response_profile();
     test_parse_kill_process_command_round_trip();
     test_parse_collect_file_command_round_trip();

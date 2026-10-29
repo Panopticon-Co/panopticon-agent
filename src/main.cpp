@@ -1,3 +1,4 @@
+#include "panopticon/officer/response/artifact_outbox.hpp"
 #include "panopticon/officer/response/profile.hpp"
 #include "panopticon/officer/collectors/etw_process_collector.hpp"
 #include "panopticon/officer/collectors/sysmon_event_collector.hpp"
@@ -441,6 +442,9 @@ struct ResponseRuntime {
     pipeline::NormalizationContext context;
     std::function<void(const std::string&)> emit_line;
     response::ResultOutbox outcomes;
+    std::unique_ptr<response::ArtifactOutbox> artifacts;
+    std::optional<response::EcKeyPair> artifact_key;
+    std::atomic_uint64_t artifact_failures{0}, pending_artifacts{0};
     delivery::DurableJournal inbox;
     std::string inbox_scope;
     UniqueHandle inbox_owner;
@@ -451,6 +455,8 @@ struct ResponseRuntime {
     std::atomic_uint64_t poll_failures{0}, parse_failures{0};
     std::atomic_uint64_t last_poll_success_uptime{0}, last_poll_failure_uptime{0};
     std::atomic_uint8_t poll_state{0};
+    // Declared last: stop/join before the state and outbox it references are destroyed.
+    std::jthread artifact_thread;
 
     // CommandGate holds a std::mutex, so it (and therefore ResponseRuntime)
     // is neither copyable nor movable -- this constructor builds `gate` in
@@ -461,7 +467,7 @@ struct ResponseRuntime {
     ResponseRuntime(response::EnrolledIdentity identity_in, response::ReplayLedger ledger_in,
                      response::ResponseConfig config_in, std::string manager_url_in,
                      pipeline::NormalizationContext context_in, std::function<void(const std::string&)> emit_line_in,
-                     std::filesystem::path outbox_directory)
+                     std::filesystem::path outbox_directory, std::filesystem::path signing_key_path)
         : identity(std::move(identity_in)),
           ledger(std::move(ledger_in)),
           gate(identity.agent_id, identity.host_id,
@@ -483,8 +489,67 @@ struct ResponseRuntime {
         if (!inbox_owner.get() || inbox_owner.get() == INVALID_HANDLE_VALUE)
             throw std::runtime_error("response identity scope already owned or ownership lock unavailable");
         pending_results.store(outcomes.pending());
+        std::string artifact_key_error;
+        artifact_key = response::load_ec_keypair(signing_key_path, artifact_key_error);
+        if (!artifact_key) {
+            ++artifact_failures;
+            diagnostic("[response] artifact signing key unavailable; collections will refuse evidence commit: " + artifact_key_error);
+        }
+        try {
+            artifacts = std::make_unique<response::ArtifactOutbox>(outbox_directory / "artifacts-v2",
+                identity.agent_id, identity.host_id);
+            pending_artifacts.store(artifacts->pending());
+            artifact_thread = std::jthread([this](std::stop_token stop) {
+                unsigned delay = 1000;
+                while (!stop.stop_requested()) {
+                    try {
+                        const auto retired = artifacts->flush([&](const std::string& payload) {
+                            return client.submit_artifact(manager_url, identity, payload);
+                        });
+                        const auto pending = artifacts->pending();
+                        pending_artifacts.store(pending);
+                        if (pending && !retired) { ++artifact_failures; delay = std::min(60000u, delay * 2); }
+                        else delay = 1000;
+                    } catch (const std::exception&) {
+                        ++artifact_failures;
+                        delay = std::min(60000u, delay * 2);
+                    }
+                    for (unsigned waited = 0; waited < delay && !stop.stop_requested(); waited += 100) Sleep(100);
+                }
+            });
+        } catch (const std::exception& error) {
+            ++artifact_failures;
+            diagnostic("[response] artifact store unavailable; collection cannot commit evidence: " + std::string{error.what()});
+        }
     }
 };
+
+bool retain_collection_artifact(ResponseRuntime& runtime, const response::Command& command,
+                                const std::string& kind, const std::string& data,
+                                response::CommandReceipt& receipt) {
+    try {
+        if (!runtime.artifacts) throw std::runtime_error("artifact store unavailable");
+        if (!runtime.artifact_key) throw std::runtime_error("enrolled artifact signing key unavailable");
+        const auto unsigned_payload = response::make_artifact_payload(command.command_id, command.correlation_id,
+            runtime.identity.host_id, kind, data);
+        const auto now = std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        if (now < 0) throw std::runtime_error("artifact signing time is invalid");
+        const auto payload = response::sign_artifact_payload(unsigned_payload, runtime.identity.agent_id,
+            *runtime.artifact_key, static_cast<std::uint64_t>(now));
+        runtime.artifacts->save(payload);
+        receipt.summary += "; structured evidence committed locally: " +
+            nlohmann::json::parse(payload).at("manifest").at("artifact_id").get<std::string>();
+        runtime.pending_artifacts.store(runtime.artifacts->pending());
+        return true;
+    } catch (const std::exception& error) {
+        ++runtime.artifact_failures;
+        receipt.code = response::ReceiptCode::indeterminate;
+        receipt.summary = "Collection ran but evidence could not be durably committed: " + std::string{error.what()};
+        return false;
+    }
+}
+
 
 std::string action_name(response::ActionType action) {
     switch (action) {
@@ -544,7 +609,13 @@ response::CommandReceipt execute_command(ResponseRuntime& runtime, const respons
                 receipt.summary = "process observation could not be normalized: " + normalization_error;
                 break;
             }
-            runtime.emit_line(pipeline::serialize_event(*normalized));
+            const auto data = pipeline::serialize_event(*normalized);
+            const auto artifact = nlohmann::json{{"scope", "held_process_identity_and_image_path"},
+                {"observation", nlohmann::json::parse(data)},
+                {"unavailable", {"thread_inventory_not_collected_by_this_command", "instruction_trace",
+                                  "memory_contents", "binary_contents"}}}.dump();
+            if (!retain_collection_artifact(runtime, received, "process_snapshot", artifact, receipt)) break;
+            // Snapshot evidence is not a process-creation telemetry event.
             break;
         }
         case ActionType::collect_network_connections: {
@@ -556,7 +627,7 @@ response::CommandReceipt execute_command(ResponseRuntime& runtime, const respons
                 receipt.summary = "network evidence collection failed: " + error;
                 break;
             }
-            runtime.emit_line(*evidence);
+            if (!retain_collection_artifact(runtime, received, "network_snapshot", *evidence, receipt)) break;
             break;
         }
         case ActionType::collect_file: {
@@ -569,7 +640,7 @@ response::CommandReceipt execute_command(ResponseRuntime& runtime, const respons
                 receipt.summary = "requested file could not be safely collected: " + error;
                 break;
             }
-            runtime.emit_line(*evidence);
+            if (!retain_collection_artifact(runtime, received, "file_metadata", *evidence, receipt)) break;
             break;
         }
         case ActionType::quarantine_file: {
@@ -747,7 +818,7 @@ void run_response_cycle(ResponseRuntime& runtime) {
             runtime.pending_result.reset();
         }
         process_durable_commands(runtime);
-        runtime.outcomes.flush([&](const std::string& result) {
+            runtime.outcomes.flush([&](const std::string& result) {
             return runtime.client.submit_command_result(runtime.manager_url, runtime.identity, result);
         });
         runtime.pending_results.store(runtime.outcomes.pending());
@@ -3250,7 +3321,8 @@ int run_endpoint(int argc, char* argv[], HANDLE service_stop = nullptr,
                             std::scoped_lock lock{output_mutex};
                             if (persist_record(line)) (void)diagnostic_stdout.try_submit(line);
                             else (void)diagnostic_stderr.try_submit("[response] evidence was not durably accepted");
-                        }, std::filesystem::path{options->spool_directory} / "response-results" / *scope);
+                        }, std::filesystem::path{options->spool_directory} / "response-results" / *scope,
+                        options->keypair_path);
                     { std::ostringstream diagnostic; diagnostic << "[response] enabled; polling " << *options->manager_url << " every "
                               << options->response_poll_interval_ms << "ms.\n"; (void)diagnostic_stderr.try_submit(diagnostic.str()); }
                     response_runtime->diagnostic_sink = [&](const std::string& message) { (void)diagnostic_stderr.try_submit(message); };
@@ -3515,6 +3587,8 @@ int run_endpoint(int argc, char* argv[], HANDLE service_stop = nullptr,
         if (response_runtime) health["response_results"] = {
             {"state", "degraded"}, {"pending_durable_results", std::to_string(response_runtime->pending_results.load())},
             {"durability_or_receipt_failures", std::to_string(response_runtime->result_commit_failures.load())},
+            {"pending_artifacts", std::to_string(response_runtime->pending_artifacts.load())},
+            {"artifact_failures", std::to_string(response_runtime->artifact_failures.load())},
             {"limitations", "lease fencing, interrupted-action reconciliation and full qualification pending"}};
         if (response_runtime) {
             const auto success = response_runtime->last_poll_success_uptime.load();

@@ -57,6 +57,8 @@ public:
     [[nodiscard]] TransportOutcome submit_command_result(const std::string& manager_url,
                                                           const EnrolledIdentity& identity,
                                                           const std::string& payload) const;
+    [[nodiscard]] std::optional<std::string> submit_artifact(const std::string& manager_url,
+        const EnrolledIdentity& identity, const std::string& payload) const;
 
 private:
     unsigned timeout_ms_;
