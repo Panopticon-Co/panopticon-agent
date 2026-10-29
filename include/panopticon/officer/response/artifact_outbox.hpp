@@ -3,6 +3,7 @@
 #include "panopticon/officer/delivery/journal.hpp"
 #include "panopticon/officer/response/transport.hpp"
 #include <nlohmann/json.hpp>
+#include <functional>
 #include <stdexcept>
 #include <utility>
 
@@ -15,6 +16,12 @@ namespace panopticon::officer::response {
 [[nodiscard]] std::string artifact_manifest_signing_input(const std::string& manifest);
 [[nodiscard]] std::string sign_artifact_payload(const std::string& payload, const std::string& agent_id,
     const EcKeyPair& keypair, std::uint64_t produced_at_unix);
+using ArtifactExchange = std::function<std::optional<std::string>(const std::string& method,
+    const std::string& suffix, const std::string& content_type, const std::string& body,
+    const std::string& chunk_sha256)>;
+// At most four chunks per step; a progress reply never retires the durable original.
+[[nodiscard]] std::optional<std::string> resume_artifact_upload(const std::string& payload,
+    const ArtifactExchange& exchange, bool* made_progress = nullptr);
 
 // Separate encrypted identity-scoped journal. Collection commits before success;
 // upload retirement requires an exact artifact/digest receipt, never HTTP200 alone.

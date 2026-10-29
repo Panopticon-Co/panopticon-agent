@@ -503,12 +503,16 @@ struct ResponseRuntime {
                 unsigned delay = 1000;
                 while (!stop.stop_requested()) {
                     try {
+                        bool made_progress = false;
                         const auto retired = artifacts->flush([&](const std::string& payload) {
-                            return client.submit_artifact(manager_url, identity, payload);
+                            bool step_progress = false;
+                            auto reply = client.submit_artifact(manager_url, identity, payload, &step_progress);
+                            made_progress = made_progress || step_progress;
+                            return reply;
                         });
                         const auto pending = artifacts->pending();
                         pending_artifacts.store(pending);
-                        if (pending && !retired) { ++artifact_failures; delay = std::min(60000u, delay * 2); }
+                        if (pending && !retired && !made_progress) { ++artifact_failures; delay = std::min(60000u, delay * 2); }
                         else delay = 1000;
                     } catch (const std::exception&) {
                         ++artifact_failures;

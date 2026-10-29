@@ -38,7 +38,7 @@ public:
 
     // General verb entry point backing post() above and the response
     // module's GET (poll) / POST-with-empty-body (accept) calls. A verb
-    // other than "GET" or "POST" is rejected -- there is no arbitrary-
+    // other than "GET", "POST" or bounded-upload "PUT" is rejected -- no arbitrary-
     // method escape hatch here.
     [[nodiscard]] std::optional<HttpResponse> request(
         const std::string& method,

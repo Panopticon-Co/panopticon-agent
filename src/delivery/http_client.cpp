@@ -64,7 +64,7 @@ std::optional<HttpResponse> HttpClient::request(
     const std::vector<HttpHeader>& headers,
     const std::string& body,
     std::string& error_message) const {
-    if (method != "GET" && method != "POST") {
+    if (method != "GET" && method != "POST" && method != "PUT") {
         error_message = "unsupported HTTP method";
         return std::nullopt;
     }

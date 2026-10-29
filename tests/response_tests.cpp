@@ -141,6 +141,77 @@ void test_signed_artifact_manifest() {
         std::filesystem::remove_all(path);
 }
 
+void test_resumable_artifact_outbox() {
+    std::string error;
+    const auto key = response::generate_ec_p256_keypair(error);
+    expect(key.has_value(), "resumable artifact key"); if (!key) return;
+    const auto data = std::string{"{\"evidence\":\""} + std::string(400000, 'x') + "\"}";
+    const auto payload = response::sign_artifact_payload(response::make_artifact_payload(
+        "command-1", "correlation-1", "host-1", "process_snapshot", data), "agent-1", *key, 1793232000U);
+    const auto manifest = nlohmann::json::parse(payload).at("manifest");
+    const auto id = manifest.at("artifact_id").get<std::string>(), sha = manifest.at("sha256").get<std::string>();
+    const std::string manifest_sha(64, 'b');
+    std::string received;
+    bool lose_chunk = true, lose_final = true, retained = false;
+    unsigned requests = 0, uploads = 0, completions = 0;
+    const auto progress = [&] {
+        return nlohmann::json{{"schema_version", "1"}, {"artifact_id", id}, {"sha256", sha},
+            {"manifest_sha256", manifest_sha}, {"received_bytes", received.size()}, {"chunk_bytes", 65536U},
+            {"complete", retained}, {"expires_at", retained ? nlohmann::json(nullptr) : nlohmann::json("2026-10-30T00:00:00Z")}}.dump();
+    };
+    const response::ArtifactExchange server = [&](const std::string& method, const std::string& suffix,
+            const std::string& type, const std::string& body, const std::string& digest) -> std::optional<std::string> {
+        ++requests;
+        if (suffix.empty()) {
+            expect(method == "POST" && type == "application/json", "manifest admission framing");
+            expect(nlohmann::json::parse(body).at("manifest") == manifest, "resume never resigns or recollects manifest");
+            return progress();
+        }
+        if (method == "PUT") {
+            ++uploads;
+            const auto offset = std::stoull(suffix.substr(suffix.find_last_of('/') + 1));
+            expect(offset == received.size() && body == data.substr(received.size(), 65536), "resume sends only next exact original chunk");
+            expect(type == "application/octet-stream" && digest.size() == 64, "chunk framing has explicit digest");
+            received += body;
+            if (lose_chunk) { lose_chunk = false; return std::nullopt; }
+            return progress();
+        }
+        ++completions;
+        expect(received == data, "retention requires complete original bytes");
+        expect(nlohmann::json::parse(body).at("manifest_sha256") == manifest_sha, "completion bound to admitted manifest");
+        retained = true;
+        if (lose_final) { lose_final = false; return std::nullopt; }
+        return nlohmann::json{{"artifact_id", id}, {"sha256", sha}, {"retained", true}}.dump();
+    };
+    const auto temp = std::filesystem::temp_directory_path();
+    const auto path = temp / ("officer-resumable-artifacts-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    {
+        response::ArtifactOutbox box{path, "agent-1", "host-1"}; box.save(payload);
+        expect(box.flush([&](const std::string& original) { return response::resume_artifact_upload(original, server); }) == 0,
+            "lost chunk ACK cannot retire artifact");
+        expect(box.pending() == 1 && received.size() == 65536, "durable original survives interrupted upload");
+    }
+    {
+        response::ArtifactOutbox box{path, "agent-1", "host-1"};
+        for (unsigned attempt = 0; attempt < 5 && box.pending(); ++attempt) {
+            requests = 0; bool made_progress = false;
+            box.flush([&](const std::string& original) {
+                expect(original == payload, "restart retains exact signed outbox original");
+                return response::resume_artifact_upload(original, server, &made_progress);
+            });
+            expect(requests <= 6, "one transfer step bounds network work");
+        }
+        expect(box.pending() == 0 && completions == 2 && uploads == 7, "lost final receipt retries without duplicate data or early retirement");
+    }
+    const auto invalid = nlohmann::json{{"schema_version", "1"}, {"artifact_id", id}, {"sha256", sha},
+        {"manifest_sha256", manifest_sha}, {"received_bytes", true}, {"chunk_bytes", 65536U},
+        {"complete", false}, {"expires_at", "2026-10-30T00:00:00Z"}}.dump();
+    expect(!response::resume_artifact_upload(payload, [&](const auto&, const auto&, const auto&, const auto&, const auto&)
+        -> std::optional<std::string> { return invalid; }), "ambiguous progress integer refuses transfer");
+    if (std::filesystem::equivalent(path.parent_path(), temp) && path.filename().string().starts_with("officer-resumable-artifacts-"))
+        std::filesystem::remove_all(path);
+}
+
 void test_parse_kill_process_command_round_trip() {
     std::string error;
     const auto command =
@@ -551,6 +622,7 @@ int main(int argc, char** argv) {
     }
     test_artifact_outbox_and_exact_receipts();
     test_signed_artifact_manifest();
+    test_resumable_artifact_outbox();
     test_current_response_profile();
     test_parse_kill_process_command_round_trip();
     test_parse_collect_file_command_round_trip();

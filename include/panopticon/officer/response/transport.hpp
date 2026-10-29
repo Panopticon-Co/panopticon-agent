@@ -58,7 +58,7 @@ public:
                                                           const EnrolledIdentity& identity,
                                                           const std::string& payload) const;
     [[nodiscard]] std::optional<std::string> submit_artifact(const std::string& manager_url,
-        const EnrolledIdentity& identity, const std::string& payload) const;
+        const EnrolledIdentity& identity, const std::string& payload, bool* made_progress = nullptr) const;
 
 private:
     unsigned timeout_ms_;
