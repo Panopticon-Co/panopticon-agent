@@ -82,7 +82,8 @@ void write(const fs::path& path, const char* content) {
     std::ofstream stream(path, std::ios::binary); stream << content; require(bool(stream), "owned file write");
 }
 // Commit an owned named-stream mutation before waiting for journal evidence.
-// Creation can report STREAM_CHANGE; overwrite is a separate native operation.
+// Separate empty stream creation, extension and overwrite. Force an owned-file
+// close summary so incidental scanner handles cannot delay accumulated reasons.
 // https://learn.microsoft.com/windows/win32/api/winioctl/ns-winioctl-usn_record_v3
 void write_named_stream(const fs::path& path, const char* content, DWORD disposition) {
     HANDLE stream = CreateFileW(path.c_str(), GENERIC_WRITE,
@@ -101,6 +102,20 @@ void write_named_stream(const fs::path& path, const char* content, DWORD disposi
     if (!wrote || !flushed || !closed)
         throw std::runtime_error("owned named stream commit Win32/write=" + std::to_string(write_error)
             + "/flush=" + std::to_string(flush_error) + "/close=" + std::to_string(close_error));
+}
+
+void flush_owned_usn_reasons(const fs::path& path) {
+    HANDLE file = CreateFileW(path.c_str(), GENERIC_WRITE,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, 0, nullptr);
+    if (file == INVALID_HANDLE_VALUE)
+        throw std::runtime_error("owned USN summary open Win32=" + std::to_string(GetLastError()));
+    USN usn{}; DWORD returned = 0;
+    const bool wrote = DeviceIoControl(file, FSCTL_WRITE_USN_CLOSE_RECORD, nullptr, 0,
+        &usn, sizeof(usn), &returned, nullptr) != FALSE;
+    const DWORD error = wrote ? ERROR_SUCCESS : GetLastError();
+    const bool closed = CloseHandle(file) != FALSE;
+    if (!wrote || returned != sizeof(usn) || usn <= 0 || !closed)
+        throw std::runtime_error("owned USN close summary failed Win32=" + std::to_string(error));
 }
 
 void discovery_lifecycle_tests() {
@@ -204,14 +219,21 @@ Json live_tests(bool required) {
         reject.store(false);
         require(until([&] { return (reasons(name_a) & USN_REASON_FILE_CREATE) != 0; }), "actual owned file create observed");
         const fs::path named_stream{a.wstring() + L":panopticon-fixture"};
-        write_named_stream(named_stream, "benign ADS data\n", CREATE_NEW);
-        require(until([&] { return (reasons(name_a) & USN_REASON_STREAM_CHANGE) != 0; }),
-            "actual owned named stream creation observed");
-        // Reopen the existing stream: assert a real content mutation separately
-        // from adding a stream, with native flush and close before observation.
-        write_named_stream(named_stream, "updated ADS data\n", OPEN_EXISTING);
-        if (!until([&] { return (reasons(name_a) & (USN_REASON_NAMED_DATA_EXTEND | USN_REASON_NAMED_DATA_OVERWRITE)) != 0; }))
-            throw std::runtime_error("actual owned named stream mutation not observed; reason_mask="
+        write_named_stream(named_stream, "", CREATE_NEW);
+        flush_owned_usn_reasons(a);
+        if (!until([&] { return (reasons(name_a) & USN_REASON_STREAM_CHANGE) != 0; }))
+            throw std::runtime_error("actual owned named stream creation not observed; reason_mask="
+                + std::to_string(reasons(name_a)) + "; source=" + sensor.snapshot().dump());
+        write_named_stream(named_stream, "benign ADS data\n", OPEN_EXISTING);
+        flush_owned_usn_reasons(a);
+        require(until([&] { return (reasons(name_a) & USN_REASON_NAMED_DATA_EXTEND) != 0; }),
+            "actual owned named stream extension observed");
+        // Equal-length overwrite must produce its own named-data reason; a
+        // previously observed extension cannot satisfy this assertion.
+        write_named_stream(named_stream, "edited ADS data\n", OPEN_EXISTING);
+        flush_owned_usn_reasons(a);
+        if (!until([&] { return (reasons(name_a) & USN_REASON_NAMED_DATA_OVERWRITE) != 0; }))
+            throw std::runtime_error("actual owned named stream overwrite not observed; reason_mask="
                 + std::to_string(reasons(name_a)) + "; source=" + sensor.snapshot().dump());
         require(MoveFileW(a.c_str(), b.c_str()), "owned native rename");
         require(DeleteFileW(b.c_str()), "owned native delete");
