@@ -28,7 +28,7 @@ int verify_untrusted_https(const char* manager_url, const char* directory, const
         response::ReplayLedger ledger{root / "legacy-ledger", 4096};
         std::string error; require_runtime(ledger.load(error), "owned legacy guard loads");
         ResponseRuntime runtime{identity, std::move(ledger), config, manager_url, context,
-            [](const std::string&) { throw std::runtime_error("unexpected OS action"); }, root / "scope"};
+            [](const std::string&) { throw std::runtime_error("unexpected OS action"); }, root / "scope", root / "missing-artifact-signing-key"};
         auto command = nlohmann::json::parse(runtime_command("tls-interrupted", false));
         command["agent_id"] = identity.agent_id; command["host_id"] = identity.host_id;
         runtime.inbox.receive_command(runtime.inbox_scope, "tls-interrupted", command.dump());
@@ -53,7 +53,7 @@ int verify_untrusted_https(const char* manager_url, const char* directory, const
         response::ReplayLedger ledger{root / "legacy-ledger", 4096};
         std::string error; require_runtime(ledger.load(error), "owned legacy guard reopens");
         ResponseRuntime runtime{identity, std::move(ledger), config, manager_url, context,
-            [](const std::string&) { throw std::runtime_error("unexpected repeated OS action"); }, root / "scope"};
+            [](const std::string&) { throw std::runtime_error("unexpected repeated OS action"); }, root / "scope", root / "missing-artifact-signing-key"};
         process_durable_commands(runtime);
         bool exact = false;
         runtime.outcomes.flush([&](const std::string& payload) {
@@ -85,9 +85,16 @@ int main(int argc, char* argv[]) {
             std::string error;
             require_runtime(ledger.load(error), "empty legacy ledger loads");
             ResponseRuntime runtime{identity, std::move(ledger), config, "https://unused.invalid", context,
-                [](const std::string&) { throw std::runtime_error("unexpected OS action evidence"); }, root / "scope"};
+                [](const std::string&) { throw std::runtime_error("unexpected OS action evidence"); }, root / "scope", root / "missing-artifact-signing-key"};
             const auto expired_dispatch = response::parse_command_json(runtime_command("dispatch-expiry", true), error);
             require_runtime(expired_dispatch.has_value(), "dispatch expiry fixture decodes");
+            auto evidence_receipt = response::CommandReceipt{"missing-key", "corr-runtime",
+                response::ReceiptCode::succeeded, "collection fixture"};
+            require_runtime(!retain_collection_artifact(runtime, *expired_dispatch, "process_snapshot",
+                "{}", evidence_receipt) && evidence_receipt.code == response::ReceiptCode::indeterminate,
+                "missing enrolled key refuses signed evidence commit");
+            require_runtime(!std::filesystem::exists(root / "missing-artifact-signing-key"),
+                "missing enrolled key is never silently regenerated");
             const auto expired_receipt = execute_command(runtime, *expired_dispatch,
                 {"dispatch-expiry", "corr-runtime", response::ReceiptCode::succeeded, "previous gate accepted"});
             require_runtime(expired_receipt.code == response::ReceiptCode::expired,
@@ -100,12 +107,12 @@ int main(int argc, char* argv[]) {
             response::ReplayLedger ledger{root / "legacy-ledger", 4096};
             std::string error; require_runtime(ledger.load(error), "legacy ledger reopens");
             ResponseRuntime runtime{identity, std::move(ledger), config, "https://unused.invalid", context,
-                [](const std::string&) { throw std::runtime_error("unexpected repeated OS action"); }, root / "scope"};
+                [](const std::string&) { throw std::runtime_error("unexpected repeated OS action"); }, root / "scope", root / "missing-artifact-signing-key"};
             bool refused = false;
             try {
                 response::ReplayLedger other{root / "other-legacy", 4096};
                 ResponseRuntime duplicate{identity, std::move(other), config, "https://unused.invalid", context,
-                    [](const std::string&) {}, root / "scope"};
+                    [](const std::string&) {}, root / "scope", root / "missing-artifact-signing-key"};
             } catch (const std::exception&) { refused = true; }
             require_runtime(refused, "live response scope owner prevents a second worker");
             process_durable_commands(runtime);
