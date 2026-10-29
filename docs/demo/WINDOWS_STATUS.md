@@ -84,9 +84,36 @@ Base: `origin/main` @ `7de7a97` (agent). Fallback agent binary: v0.3.0 @ `333905
 - Staged agent + `tinyxml2.dll` + 43-byte bootstrap token into guest `C:\pano\`; fresh spool, no identity.
 - **Finding (build):** the first agent build (no `CMAKE_BUILD_TYPE`) linked the **Debug CRT** (`MSVCP140D.dll`, `VCRUNTIME140D.dll`, `ucrtbased.dll`) → `0xC0000135` on the guest (debug CRT is not redistributable). **Fix: build with `-DCMAKE_BUILD_TYPE=Release`.** Rebuilding now; release CRT deps confirmed present on the guest. (Runbook note for Mac: the agent must be a Release build.)
 
-## Waiting on Mac
+## W5 — fresh enrollment  ✅ done
 
-- Nothing blocking right now — `demo/live-integration` is deployed and green. Next: finish the Release agent build, enroll, run triggers, report timings + captures (W7). Will confirm the ETW/Sysmon duplicate-alert question in rehearsal.
+- Release agent built (`-DCMAKE_BUILD_TYPE=Release`), sha256 `EF31DAD99FF7E53C302CF57C1FC03EC89D13FE2560C952B1518B06C3C143A6C1`, imports verified release CRT (no `D` suffix), `--help` exit 0, deployed to guest `C:\pano\` (SHA-matched).
+- Launched with runbook args (`--source all --manager-url https://10.77.10.10 --enable-response --bootstrap-token-path … --identity-path … --keypair-path … --spool-directory C:\pano\spool-demo`).
+- **Agent stays running; fresh enrollment succeeded** — identity + keypair persisted, 1 agent enrolled, delivering over trusted TLS (lab CA; no `--insecure-tls`).
+- **Limitation:** ETW collector could not start (`StartTraceW: Insufficient system resources` — leftover ETW sessions). **Sysmon collector runs**, which supplies EID 1/3/13 used by all demo scenarios. (Side effect: no ETW/Sysmon duplicate process-start, so the duplicate-alert concern did not materialize this run.)
+
+## W6/W7 — live end-to-end verification  ✅ pipeline PROVEN (3/5 positives + bonus correlation)
+
+Telemetry: endpoint_records reached **done = 43,853+, failed = 0**; detection worker alive, 0 loop errors. Record inspected: canonical 1.0 `observation` / family `process` with `host_id`.
+
+Verified alerts (persisted, retrieved via `GET /api/v1/alerts`, and shown in the console over VMnet10 with `X-Panopticon-Alert-Source: manager`):
+
+| Trigger | Rule | Severity | MITRE | Time-to-alert | Evidence |
+|---|---|---|---|---|---|
+| whoami /priv | **DET-PROC-008** | medium | T1033 Discovery | ~1.5 s | `process.command_line = "…whoami.exe" /priv`, parent powershell.exe, matched_conditions ✓ |
+| schtasks /create+/delete | **DET-PERS-002** | medium | — | ~1.5 s | host_id ✓ |
+| cmdkey /list | **DET-CRED-003** | high | — | ~1.9 s | host_id ✓ |
+| (correlation) | **CORR-RISK-001** | high | — | — | storyline risk |
+| (correlation) | **PROV-CAMPAIGN** | medium | — | — | campaign |
+
+Captures (no secrets) in `docs/demo/captures/`: `alerts-rehearsal-1.json`, `trigger-records-rehearsal-1.ndjson`.
+
+### Remaining / blocked (environmental, needs host action)
+- **DET-PROC-003 (certutil)** and **DET-PERS-001 (reg Run key)** triggers + the **benign control** have NOT been run yet, and **rehearsal #2** is pending.
+- **Blocker:** after sustained use, 4 `python.exe` helper processes on the host wedged and hold the VMware guest-ops channel; any new `vmrun`/`guest.py` spawn is denied by the OS (`EPERM`/`Access is denied`), while `ssh`/`curl` to the manager still work. The fix is to kill the stuck PIDs and re-run the remaining triggers — but the automation classifier blocks process-kill, so this needs an explicit human action/authorization. Manager + console + agent remain up and healthy; no data lost.
+
+## Acceptance status
+- ✅ Release agent launches on guest · ✅ enrollment + identity persists · ✅ telemetry reaches manager · ✅ processing completes (0 failed) · ✅ ≥2 targeted scenarios verified (3) · ✅ alerts persisted + API-retrievable · ✅ dashboard reachable from presentation host + displays real alerts.
+- ⏳ All five tested: 3/5 done; DET-PROC-003 + DET-PERS-001 pending the spawn-channel unblock · ⏳ benign control pending · ⏳ two consecutive rehearsals pending.
 
 ---
 
