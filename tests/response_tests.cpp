@@ -1,3 +1,4 @@
+#include "panopticon/officer/response/profile.hpp"
 #include "panopticon/officer/response/command.hpp"
 #include "panopticon/officer/response/file_evidence.hpp"
 #include "panopticon/officer/response/isolation.hpp"
@@ -39,6 +40,25 @@ std::string valid_command_json(const std::string& command_id, const std::string&
            "\"correlation_id\":\"corr-1\","
            "\"target\":" + target_json +
            "}";
+}
+
+void test_current_response_profile() {
+    response::ResponseConfig config;
+    auto profile = nlohmann::json::parse(response::response_profile_json(config, "host-1", std::nullopt));
+    expect(profile["mode"] == "off" && profile["allowed_actions"].empty(), "disabled policy reports no allowed actions");
+    expect(profile["boot_id"].is_null(), "unavailable boot is explicit");
+    config.enabled = true;
+    profile = nlohmann::json::parse(response::response_profile_json(config, "host-1", "boot_" + std::string(64, 'a')));
+    expect(profile["mode"] == "enforce", "Windows loaded runtime enforces policy");
+    expect(profile["implemented_actions"].size() == 7U, "closed native implementation vocabulary");
+    expect(profile["allowed_actions"].size() == 4U, "unconfigured file and isolation actions are excluded");
+    expect(profile["require_signature"] == false, "Windows does not claim signature verification");
+    config.file_collection_root = "C:/lab";
+    config.quarantine_root = "C:/quarantine";
+    config.manager_exception_host = "127.0.0.1";
+    config.manager_exception_port = 443;
+    profile = nlohmann::json::parse(response::response_profile_json(config, "host-1", std::nullopt));
+    expect(profile["allowed_actions"].size() == 7U, "configured native policy reports all seven actions");
 }
 
 void test_parse_kill_process_command_round_trip() {
@@ -430,6 +450,7 @@ int main(int argc, char** argv) {
             {"boot_id", command->process_target.boot_id.value_or("")}}.dump() << '\n';
         return 0;
     }
+    test_current_response_profile();
     test_parse_kill_process_command_round_trip();
     test_parse_collect_file_command_round_trip();
     test_boot_bound_process_command_v2();
