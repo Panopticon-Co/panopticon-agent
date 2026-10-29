@@ -91,29 +91,59 @@ Base: `origin/main` @ `7de7a97` (agent). Fallback agent binary: v0.3.0 @ `333905
 - **Agent stays running; fresh enrollment succeeded** — identity + keypair persisted, 1 agent enrolled, delivering over trusted TLS (lab CA; no `--insecure-tls`).
 - **Limitation:** ETW collector could not start (`StartTraceW: Insufficient system resources` — leftover ETW sessions). **Sysmon collector runs**, which supplies EID 1/3/13 used by all demo scenarios. (Side effect: no ETW/Sysmon duplicate process-start, so the duplicate-alert concern did not materialize this run.)
 
-## W6/W7 — live end-to-end verification  ✅ pipeline PROVEN (3/5 positives + bonus correlation)
+## W6/W7 — live end-to-end verification  ✅ PIPELINE PROVEN (two cold-start rehearsals)
 
-Telemetry: endpoint_records reached **done = 43,853+, failed = 0**; detection worker alive, 0 loop errors. Record inspected: canonical 1.0 `observation` / family `process` with `host_id`.
+Telemetry: endpoint_records reached **done = 100,000+ (R1) / 5,400+ (R2), failed = 0**; worker alive, 0 loop errors. Record inspected: canonical 1.0 `observation` / family `process` with `host_id`.
 
-Verified alerts (persisted, retrieved via `GET /api/v1/alerts`, and shown in the console over VMnet10 with `X-Panopticon-Alert-Source: manager`):
+### Rehearsal #1 (state-dir `demo-state`) and Rehearsal #2 (cold start, state-dir `demo-state-2`)
+All alerts persisted, retrieved via `GET /api/v1/alerts`, and shown in the console over VMnet10 (`X-Panopticon-Alert-Source: manager`). Both rehearsals from a fresh DB + fresh agent enrollment produced the same 4 targeted alerts.
 
-| Trigger | Rule | Severity | MITRE | Time-to-alert | Evidence |
-|---|---|---|---|---|---|
-| whoami /priv | **DET-PROC-008** | medium | T1033 Discovery | ~1.5 s | `process.command_line = "…whoami.exe" /priv`, parent powershell.exe, matched_conditions ✓ |
-| schtasks /create+/delete | **DET-PERS-002** | medium | — | ~1.5 s | host_id ✓ |
-| cmdkey /list | **DET-CRED-003** | high | — | ~1.9 s | host_id ✓ |
-| (correlation) | **CORR-RISK-001** | high | — | — | storyline risk |
-| (correlation) | **PROV-CAMPAIGN** | medium | — | — | campaign |
+| Trigger | Rule | Severity | MITRE | ~Time-to-alert | R1 | R2 |
+|---|---|---|---|---|---|---|
+| whoami /priv | **DET-PROC-008** | medium | T1033 | ~1.5 s | ✅ | ✅ |
+| schtasks /create+/delete | **DET-PERS-002** | medium | — | ~1.5 s | ✅ | ✅ |
+| cmdkey /list | **DET-CRED-003** | high | — | ~1.9 s | ✅ | ✅ |
+| reg add Run key | **DET-PERS-001** | high | — | ~1.7 s | ✅ | ✅ |
+| certutil -urlcache | **DET-PROC-003** | high | T1105 | — | ❌ blocked | ❌ blocked |
+| benign (notepad + whoami) | (none) | — | — | — | ✅ 0 alerts | — |
+| correlation (storyline) | **CORR-RISK-001, DET-SEQ-002, DET-INJ-010, PROV-CAMPAIGN** | — | — | — | ✅ | ✅ |
 
-Captures (no secrets) in `docs/demo/captures/`: `alerts-rehearsal-1.json`, `trigger-records-rehearsal-1.ndjson`.
+DET-PROC-008 evidence confirmed: `process.command_line = "C:\WINDOWS\system32\whoami.exe" /priv`, parent `powershell.exe`, with `matched_conditions`.
 
-### Remaining / blocked (environmental, needs host action)
-- **DET-PROC-003 (certutil)** and **DET-PERS-001 (reg Run key)** triggers + the **benign control** have NOT been run yet, and **rehearsal #2** is pending.
-- **Blocker:** after sustained use, 4 `python.exe` helper processes on the host wedged and hold the VMware guest-ops channel; any new `vmrun`/`guest.py` spawn is denied by the OS (`EPERM`/`Access is denied`), while `ssh`/`curl` to the manager still work. The fix is to kill the stuck PIDs and re-run the remaining triggers — but the automation classifier blocks process-kill, so this needs an explicit human action/authorization. Manager + console + agent remain up and healthy; no data lost.
+**DET-PROC-003 limitation (documented):** Windows Defender in the guest blocks certutil's download at process creation (ThreatID 2147726914, Defender events 1116/1117 at the exact trigger times), so no `process_create` record is emitted and the rule cannot match. This is the plan's anticipated "Defender blocks certutil → expected; skip it." Rule logic itself is correct (verified: `process.name=certutil.exe` + `-urlcache`/`-split`/`http(s)://`). The host sandbox also blocks any download-URL in the command, so a lab-URL substitution could not be used either. **To demo DET-PROC-003 live, add a one-off Defender exclusion for the demo certutil, or show it from the captured record.**
 
-## Acceptance status
-- ✅ Release agent launches on guest · ✅ enrollment + identity persists · ✅ telemetry reaches manager · ✅ processing completes (0 failed) · ✅ ≥2 targeted scenarios verified (3) · ✅ alerts persisted + API-retrievable · ✅ dashboard reachable from presentation host + displays real alerts.
-- ⏳ All five tested: 3/5 done; DET-PROC-003 + DET-PERS-001 pending the spawn-channel unblock · ⏳ benign control pending · ⏳ two consecutive rehearsals pending.
+Captures (no secrets) in `docs/demo/captures/`: `alerts-rehearsal-1.json`, `alerts-rehearsal-2.json`, `trigger-records-rehearsal-1.ndjson`. Fallback DBs preserved on the manager VM: `demo-state/` (R1) and `demo-state-2/` (R2, final).
+
+## Acceptance status (final)
+- ✅ Release agent launches on guest (sha256 `EF31DAD9…A6C1`)
+- ✅ enrollment + identity persists (both rehearsals, fresh each time)
+- ✅ telemetry reaches manager over trusted TLS (lab CA, no `--insecure-tls`)
+- ✅ processing completes (0 failed)
+- ✅ **4 targeted scenarios verified** (exceeds ≥2 bar), twice from cold start
+- ✅ all five tested — DET-PROC-003 fails only due to guest Defender (documented limitation)
+- ✅ benign control evaluated → produced no alerts
+- ✅ alerts persisted + API-retrievable
+- ✅ dashboard reachable from presentation host + displays real alerts
+- ✅ two consecutive cold-start rehearsals passed
+- ⚠️ one-command `demo-up.ps1` wrapper was NOT exercised as a single shot this session — the steps were run equivalently (ssh `demo_up.sh` → fresh-enroll agent in guest → triggers → verify). The host sandbox blocks download-URLs and process-kill, so the wrapper needs those caveats handled before a true one-shot run.
+
+## Reproduction (verified commands)
+
+**Manager (on `pano-new-mgr`, repo `/home/pano/panopticon-manager` @ `demo/live-integration` 398442d):**
+```
+sudo systemctl stop panopticon-manager panopticon-console
+./tools/demo_up.sh --fresh --bind 127.0.0.1:8000 --console-bind 10.77.10.10:8787 \
+  --state-dir /home/pano/demo-state-2 --python /home/pano/manager-venv/bin/python
+# state files: demo-state-2/{bootstrap.token,analyst.token,console.url,manager.url}
+```
+**Agent (elevated, in guest `PANO-NEW-WIN-01`), after copying demo-state-2/bootstrap.token → C:\pano\bootstrap.token:**
+```
+C:\pano\officer-agent.exe --source all --manager-url https://10.77.10.10 --enable-response `
+  --bootstrap-token-path C:\pano\bootstrap.token --identity-path C:\pano\identity `
+  --keypair-path C:\pano\agent.key --spool-directory C:\pano\spool-demo
+```
+**Triggers (elevated, in guest):** `whoami /priv` · `schtasks /create|/delete` · `cmdkey /list` · `reg add|delete …\CurrentVersion\Run` (certutil needs a Defender exclusion). **Benign control:** `notepad.exe` + bare `whoami`.
+**Verify:** `GET https://10.77.10.10/api/v1/alerts` (analyst bearer) and console at `http://10.77.10.10:8787`.
 
 ---
 
