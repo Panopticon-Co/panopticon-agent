@@ -35,10 +35,11 @@ Base: `origin/main` @ `7de7a97` (agent). Fallback agent binary: v0.3.0 @ `333905
 - This 39 GB DB contains the Oct 27–28 live run (genuine demo evidence). Per plan it must be preserved, not deleted — so a decision is required (archive-off + delete to reclaim the dedicated volume, vs. deploy the fresh demo DB on the root fs and leave the full volume untouched). Pending owner decision; sequenced into W4 (requires stopping the systemd unit first).
 - VM snapshots: not yet taken (pending owner approval — snapshotting may interact with external VMware automation).
 
-## W2 — build agent from `origin/main` (`7de7a97`)  ⏸ blocked on download approval
+## W2 — build agent from `origin/main` (`7de7a97`)  🔄 building (download approved)
 
-- Build toolchain is **not on PATH** on the host: `cmake`, `ninja`, `cl.exe` all missing from the shell. VS18 vcpkg toolchain file is present.
-- A clean build needs a VS Developer environment + `vcpkg install` (downloads `nlohmann-json`, `tinyxml2`) → pending owner approval to download.
+- Owner approved the vcpkg download. Building x64-windows out-of-tree at `C:\PanopticonLab\build-officer-x64` via the VS 2026 (v18) x64 Developer shell (cmake + ninja from the VS CMake component).
+- `vcpkg install` completed (nlohmann-json, tinyxml2 built OK); agent compile in progress.
+- sha256 of the resulting `officer-agent.exe` will be recorded here on completion.
 - Fallback ready: v0.3.0 `3339055` binary in the guest (`C:\PanoValidation\wave6-20261027\agent\officer-agent.exe`), which previously delivered live over TLS.
 
 ## W3 — Sysmon EID 1 / 3 / 13  ✅ done
@@ -54,6 +55,18 @@ Base: `origin/main` @ `7de7a97` (agent). Fallback agent binary: v0.3.0 @ `333905
 ## Blockers to report to Mac session
 
 1. **G6 realized (environmental):** manager DB volume `/dev/sdb` is 100% full. Any live demo needs the fresh demo DB on a volume with room. `demo_up.sh --fresh --state-dir <dir>` should target a path NOT on the full `/dev/sdb` (e.g., on root fs), or the full volume must be reclaimed first. `demo_check.sh` free-disk reporting is essential.
+
+## Owner decisions (2026-10-30)
+
+- **W2:** build from `7de7a97` (download approved). v0.3.0 `3339055` is the fallback.
+- **Manager DB (W4):** archive the 39 GB evidence DB off the VM, then delete it to reclaim `/dev/sdb`, then start the fresh demo DB there. Executes at W4 after stopping the systemd unit.
+- **Snapshots:** none.
+- **Guest spool:** preserve; archive off-guest; not deleted without a further explicit OK.
+
+## W6 — demo scripts (prep, not yet exercised)
+
+- `tools/demo/demo-triggers.ps1` — drafted. The §6 trigger harness (benign control + 5 rule-mapped steps), ISO-8601 UTC timestamps for time-to-alert.
+- `tools/demo/demo-up.ps1` — scaffold. One-command bring-up (ssh `demo_up.sh` → token to guest → fresh-enroll agent → `demo_check.sh` green → open console). Output parsing (step 2) and exact agent flags (step 4) are marked `TODO(mac-contract)` pending `demo_up.sh` on `demo/live-integration`.
 
 ## Waiting on Mac
 
