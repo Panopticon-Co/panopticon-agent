@@ -23,11 +23,13 @@ inline std::string response_profile_json(const ResponseConfig& config, const std
         if (!config.manager_exception_host.empty() && config.manager_exception_port != 0)
             allowed.push_back("ISOLATE_HOST");
     }
-    return json{{"schema_version", "1"}, {"platform", "windows"}, {"host_id", host_id},
+    return json{{"schema_version", "2"}, {"platform", "windows"}, {"host_id", host_id},
                 {"boot_id", boot_id ? json(*boot_id) : json(nullptr)},
                 {"mode", config.enabled ? "enforce" : "off"},
                 {"implemented_actions", implemented}, {"allowed_actions", allowed},
-                {"require_boot_binding", true}, {"require_signature", false}}.dump();
+                {"require_boot_binding", true}, {"require_signature", false},
+                {"require_collection_acceptance", true},
+                {"artifact_protocol", "signed-json-v2-resume-v1"}}.dump();
 }
 
 }  // namespace panopticon::officer::response

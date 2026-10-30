@@ -22,7 +22,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Panopticon-Co/panopticon-contracts
-          ref: "dda543765dd4bee3bb32ed0a2bae04508a54ba76"
+          ref: "9cb1ab8a8d9e3c509f5b6f0dfeeced7e97b70d58"
           path: panopticon-contracts-checkout
 
       - name: Move panopticon-contracts to sibling path
@@ -68,6 +68,9 @@ jobs:
 
       - name: Test
         run: |
+          ./build-officer-x64/officer-response-tests.exe --emit-response-profile-fixture > response-profile-fixture.json
+          python ../panopticon-contracts/scripts/validate_response_profile.py response-profile-fixture.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ./build-officer-x64/officer-response-tests.exe --emit-artifact-fixture > artifact-fixture.json
           python ../panopticon-contracts/scripts/validate_artifact_producer.py artifact-fixture.json
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

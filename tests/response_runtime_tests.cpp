@@ -80,6 +80,51 @@ int main(int argc, char* argv[]) {
         response::EnrolledIdentity identity{"agent-runtime", "host-runtime", "owned-unused-test-token"};
         pipeline::NormalizationContext context{};
         response::ResponseConfig config{};
+        unsigned collection_case = 0;
+        for (const auto* action : {"COLLECT_PROCESS_INFO", "COLLECT_NETWORK_CONNECTIONS", "COLLECT_FILE"}) {
+            for (const auto status : {response::TransportOutcome::rejected, response::TransportOutcome::retryable,
+                                      response::TransportOutcome::authentication_failed}) {
+                const auto scope = root / ("collection-gate-" + std::to_string(collection_case++));
+                response::ReplayLedger ledger{scope / "legacy", 4096};
+                std::string ledger_error;
+                require_runtime(ledger.load(ledger_error), "owned collection replay ledger loads");
+                auto enabled = config; enabled.enabled = true;
+                unsigned emitted = 0, accepts = 0;
+                ResponseRuntime runtime{identity, std::move(ledger), enabled, "https://unused.invalid", context,
+                    [&](const std::string&) { ++emitted; }, scope / "scope", scope / "missing-key"};
+                const auto initial_artifact_failures = runtime.artifact_failures.load();
+                runtime.acceptance_transport = [&](const std::string&) { ++accepts; return status; };
+                auto value = nlohmann::json::parse(runtime_command("collect-refused", false));
+                value["action"] = action;
+                if (std::string_view{action} == "COLLECT_NETWORK_CONNECTIONS") {
+                    value["schema_version"] = "1"; value["target"] = nlohmann::json::object();
+                } else if (std::string_view{action} == "COLLECT_FILE") {
+                    value["schema_version"] = "1"; value["target"] = {{"path", "C:\\PanopticonLab\\sample.txt"}};
+                }
+                runtime.inbox.receive_command(runtime.inbox_scope, "collect-refused", value.dump());
+                process_durable_commands(runtime);
+                bool refused_before_execution = false;
+                std::string observed_result;
+                runtime.outcomes.flush([&](const std::string& payload) {
+                    observed_result = payload;
+                    const auto result = nlohmann::json::parse(payload);
+                    refused_before_execution = result["outcome"] == "failed" &&
+                        result["detail"].get<std::string>().find("Manager acceptance") != std::string::npos;
+                    return response::TransportOutcome::acknowledged;
+                });
+                if (!refused_before_execution || accepts != 1 || emitted != 0 ||
+                    runtime.artifact_failures != initial_artifact_failures)
+                    std::cerr << "collection gate case " << action << " accepts=" << accepts << " emitted=" << emitted
+                        << " artifact_failures=" << runtime.artifact_failures.load() << " result=" << observed_result << '\n';
+                require_runtime(refused_before_execution && accepts == 1 && emitted == 0 &&
+                    runtime.artifact_failures == initial_artifact_failures && runtime.pending_artifacts == 0,
+                    "Manager refusal/timeout prevents every collection before collector/evidence execution");
+                runtime.inbox.receive_command(runtime.inbox_scope, "collect-refused", value.dump());
+                process_durable_commands(runtime);
+                require_runtime(accepts == 1 && emitted == 0 && runtime.outcomes.pending() == 0,
+                    "a refused collection cannot execute or re-authorize on replay");
+            }
+        }
         {
             response::ReplayLedger ledger{root / "legacy-ledger", 4096};
             std::string error;
