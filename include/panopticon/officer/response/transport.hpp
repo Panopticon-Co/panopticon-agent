@@ -9,12 +9,13 @@
 
 namespace panopticon::officer::response {
 [[nodiscard]] bool valid_result_ack(const std::string& payload, const std::string& receipt);
+[[nodiscard]] bool valid_collection_accept_ack(const std::string& command_id, const std::string& receipt);
 
 enum class TransportOutcome { acknowledged, retryable, authentication_failed, rejected };
 
 // WinHTTP-based counterpart to panopticon-linux-agent's curl_https_client,
 // covering exactly the four response-path operations: enroll, poll_commands,
-// accept_command (best-effort), submit_command_result. Built on the same
+// accept_command (required for collection), submit_command_result. Built on the same
 // panopticon::officer::delivery::HttpClient the existing telemetry Uploader
 // already uses (see delivery/http_client.hpp's new request() verb entry
 // point) rather than a second parallel HTTP stack. Always verifies the TLS
@@ -49,9 +50,8 @@ public:
                                                              const EnrolledIdentity& identity,
                                                              std::string& error_message,
                                                              const std::string& response_profile = "") const;
-    // Best-effort DISPATCHED -> ACCEPTED acknowledgement; the outcome is
-    // intentionally not distinguished beyond acknowledged/not, mirroring
-    // the Linux agent's "ignore and proceed to execute regardless" contract.
+    // Collection callers require an exact acknowledgement before executing.
+    // Existing changing-action acknowledgement behavior is preserved.
     [[nodiscard]] TransportOutcome accept_command(const std::string& manager_url, const EnrolledIdentity& identity,
                                                    const std::string& command_id) const;
     [[nodiscard]] TransportOutcome submit_command_result(const std::string& manager_url,

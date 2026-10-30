@@ -441,6 +441,8 @@ struct ResponseRuntime {
     std::string manager_url;
     pipeline::NormalizationContext context;
     std::function<void(const std::string&)> emit_line;
+    // Internal transport seam used by component tests; never configured by an endpoint command.
+    std::function<response::TransportOutcome(const std::string&)> acceptance_transport;
     response::ResultOutbox outcomes;
     std::unique_ptr<response::ArtifactOutbox> artifacts;
     std::optional<response::EcKeyPair> artifact_key;
@@ -578,7 +580,7 @@ response::CommandReceipt execute_command(ResponseRuntime& runtime, const respons
     using response::ActionType;
     using response::ReceiptCode;
     if (receipt.code != ReceiptCode::succeeded) return receipt;
-    // The best-effort acceptance request can consume the remaining command
+    // The acceptance request can consume the remaining command
     // lifetime. Recheck at dispatch instead of executing on an earlier gate result.
     const auto now = std::chrono::duration_cast<std::chrono::seconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
@@ -791,8 +793,18 @@ void process_durable_commands(ResponseRuntime& runtime) {
                 receipt.code = response::ReceiptCode::indeterminate;
                 receipt.summary = "legacy acceptance retained; prior execution cannot be proven; action not repeated";
             }
-            if (receipt.code == response::ReceiptCode::succeeded)
-                (void)runtime.client.accept_command(runtime.manager_url, runtime.identity, received->command_id);
+            if (receipt.code == response::ReceiptCode::succeeded) {
+                const auto acceptance = runtime.acceptance_transport
+                    ? runtime.acceptance_transport(received->command_id)
+                    : runtime.client.accept_command(runtime.manager_url, runtime.identity, received->command_id);
+                const bool collection = received->action == response::ActionType::collect_process_info ||
+                    received->action == response::ActionType::collect_network_connections ||
+                    received->action == response::ActionType::collect_file;
+                if (collection && acceptance != response::TransportOutcome::acknowledged) {
+                    receipt.code = response::ReceiptCode::execution_failed;
+                    receipt.summary = "collection not executed: Manager acceptance was refused or unavailable";
+                }
+            }
             receipt = execute_command(runtime, *received, receipt);
         } else if (stored.state == "executing" && received->action == response::ActionType::acquire_file &&
                    stored.key == received->command_id) {

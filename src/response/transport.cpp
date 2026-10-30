@@ -210,7 +210,8 @@ TransportOutcome ResponseTransportClient::accept_command(const std::string& mana
     if (!response) return TransportOutcome::retryable;
     if (response->status_code == 401 || response->status_code == 403) return TransportOutcome::authentication_failed;
     if (response->status_code != 200) return TransportOutcome::rejected;
-    return TransportOutcome::acknowledged;
+    return valid_collection_accept_ack(command_id, response->body)
+        ? TransportOutcome::acknowledged : TransportOutcome::rejected;
 }
 
 TransportOutcome ResponseTransportClient::submit_command_result(const std::string& manager_url,
@@ -415,6 +416,23 @@ std::optional<std::string> ResponseTransportClient::submit_artifact(const std::s
             return reply->body;
         }, made_progress);
     } catch (const json::exception&) { return std::nullopt; }
+}
+
+bool valid_collection_accept_ack(const std::string& command_id, const std::string& receipt) {
+    if (receipt.size() > 4096U) return false;
+    try {
+        std::set<std::string> keys;
+        bool ambiguous = false;
+        const auto value = json::parse(receipt, [&](int depth, json::parse_event_t event, json& item) {
+            if (depth > 1) ambiguous = true;
+            if (event == json::parse_event_t::key && !keys.insert(item.get<std::string>()).second)
+                ambiguous = true;
+            return true;
+        });
+        return !ambiguous && value.is_object() && value.size() == 2 &&
+            value.contains("command_id") && value["command_id"].is_string() && value["command_id"] == command_id &&
+            value.contains("accepted") && value["accepted"].is_boolean() && value["accepted"] == true;
+    } catch (const json::exception&) { return false; }
 }
 
 bool valid_result_ack(const std::string& payload, const std::string& receipt) {

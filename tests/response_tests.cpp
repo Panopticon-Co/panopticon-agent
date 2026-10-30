@@ -49,6 +49,7 @@ void test_current_response_profile() {
     auto profile = nlohmann::json::parse(response::response_profile_json(config, "host-1", std::nullopt));
     expect(profile["schema_version"] == "2", "artifact capability uses versioned profile");
     expect(profile["artifact_protocol"] == "signed-json-v2-resume-v1", "signed durable artifact delivery is explicit");
+    expect(profile["require_collection_acceptance"] == true, "collection requires current Manager acceptance");
     expect(response::response_profile_json(config, "host-1", std::nullopt) ==
         response::response_profile_json(config, "host-1", std::nullopt), "unchanged reports are repeatable");
     expect(profile["mode"] == "off" && profile["allowed_actions"].empty(), "disabled policy reports no allowed actions");
@@ -67,6 +68,16 @@ void test_current_response_profile() {
     profile = nlohmann::json::parse(response::response_profile_json(config, "host-1", std::nullopt));
     expect(profile["allowed_actions"].size() == 7U, "configured native policy reports all seven actions");
     expect(profile["artifact_protocol"] == "signed-json-v2-resume-v1", "capability reporting is stable across policy modes");
+}
+
+void test_collection_acceptance_ack() {
+    expect(response::valid_collection_accept_ack("c1", R"({"command_id":"c1","accepted":true})"), "exact acceptance permits collection");
+    for (const auto* body : {"{}", R"({"command_id":"wrong","accepted":true})",
+         R"({"command_id":"c1","accepted":1})", R"({"command_id":"c1","accepted":false})",
+         R"({"command_id":"c1","accepted":true,"extra":1})",
+         R"({"command_id":"c1","accepted":false,"accepted":true})"})
+        expect(!response::valid_collection_accept_ack("c1", body), "wrong, ambiguous or malformed acceptance refuses collection");
+    expect(!response::valid_collection_accept_ack("c1", std::string(4097, 'x')), "acceptance body is bounded");
 }
 
 void test_artifact_outbox_and_exact_receipts() {
@@ -636,6 +647,7 @@ int main(int argc, char** argv) {
     test_signed_artifact_manifest();
     test_resumable_artifact_outbox();
     test_current_response_profile();
+    test_collection_acceptance_ack();
     test_parse_kill_process_command_round_trip();
     test_parse_collect_file_command_round_trip();
     test_boot_bound_process_command_v2();

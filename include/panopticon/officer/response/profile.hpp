@@ -28,6 +28,7 @@ inline std::string response_profile_json(const ResponseConfig& config, const std
                 {"mode", config.enabled ? "enforce" : "off"},
                 {"implemented_actions", implemented}, {"allowed_actions", allowed},
                 {"require_boot_binding", true}, {"require_signature", false},
+                {"require_collection_acceptance", true},
                 {"artifact_protocol", "signed-json-v2-resume-v1"}}.dump();
 }
 
